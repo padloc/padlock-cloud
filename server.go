@@ -4,6 +4,8 @@ import "net/http"
 import "io/ioutil"
 import "crypto/rand"
 import "fmt"
+import "net/smtp"
+import "os"
 
 // import "strings"
 import "github.com/codegangsta/martini"
@@ -17,7 +19,18 @@ type AuthDB struct {
 	*leveldb.DB
 }
 
+type ActDB struct {
+	*leveldb.DB
+}
+
 type RequestBody []byte
+
+var (
+	emailUser     = os.Getenv("PADLOCK_EMAIL_USERNAME")
+	emailServer   = os.Getenv("PADLOCK_EMAIL_SERVER")
+	emailPort     = os.Getenv("PADLOCK_EMAIL_PORT")
+	emailPassword = os.Getenv("PADLOCK_EMAIL_PASSWORD")
+)
 
 func uuid() string {
 	b := make([]byte, 16)
@@ -38,12 +51,31 @@ func InjectBody(res http.ResponseWriter, req *http.Request, c martini.Context) {
 	c.Map(rb)
 }
 
+func sendMail(rec string, subject string, body string) error {
+	auth := smtp.PlainAuth(
+		"",
+		emailUser,
+		emailPassword,
+		emailServer,
+	)
+
+	message := fmt.Sprintf("Subject: %s\r\n\r\n%s", subject, body)
+	return smtp.SendMail(
+		emailServer+":"+emailPort,
+		auth,
+		emailUser,
+		[]string{rec},
+		[]byte(message),
+	)
+}
+
 func main() {
 	ddb, err := leveldb.OpenFile("db/data", nil)
 	adb, err := leveldb.OpenFile("db/auth", nil)
 
 	dataDB := &DataDB{ddb}
 	authDB := &AuthDB{adb}
+	actDB := &ActDB{adb}
 
 	if err != nil {
 		panic("Failed to open database!")
@@ -55,16 +87,19 @@ func main() {
 	m := martini.Classic()
 	m.Map(dataDB)
 	m.Map(authDB)
+	m.Map(actDB)
 
 	m.Use(InjectBody)
 
-	m.Post("/auth", func(rb RequestBody, adb *AuthDB) string {
+	m.Post("/auth", func(rb RequestBody, db *ActDB) (int, string) {
 		apiKey := uuid()
 		actKey := uuid()
-		data := []byte(apiKey + "," + actKey + ",0")
+		data := []byte(apiKey + "," + actKey)
 		adb.Put(rb, data, nil)
 
-		return apiKey
+		go sendMail(string(rb), "Api key activation", actKey)
+
+		return 200, apiKey
 	})
 
 	m.Get("/:id", func(params martini.Params, db *DataDB) (int, string) {
