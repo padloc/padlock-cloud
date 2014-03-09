@@ -6,8 +6,7 @@ import "crypto/rand"
 import "fmt"
 import "net/smtp"
 import "os"
-
-// import "strings"
+import "strings"
 import "github.com/codegangsta/martini"
 import "github.com/syndtr/goleveldb/leveldb"
 
@@ -40,17 +39,6 @@ func uuid() string {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
 }
 
-func InjectBody(res http.ResponseWriter, req *http.Request, c martini.Context) {
-	b, err := ioutil.ReadAll(req.Body)
-	rb := RequestBody(b)
-
-	if err != nil {
-		http.Error(res, fmt.Sprintf("An error occured while reading the request body: %s", err), http.StatusInternalServerError)
-	}
-
-	c.Map(rb)
-}
-
 func sendMail(rec string, subject string, body string) error {
 	auth := smtp.PlainAuth(
 		"",
@@ -69,13 +57,25 @@ func sendMail(rec string, subject string, body string) error {
 	)
 }
 
+func InjectBody(res http.ResponseWriter, req *http.Request, c martini.Context) {
+	b, err := ioutil.ReadAll(req.Body)
+	rb := RequestBody(b)
+
+	if err != nil {
+		http.Error(res, fmt.Sprintf("An error occured while reading the request body: %s", err), http.StatusInternalServerError)
+	}
+
+	c.Map(rb)
+}
+
 func main() {
 	ddb, err := leveldb.OpenFile("db/data", nil)
 	adb, err := leveldb.OpenFile("db/auth", nil)
+	acdb, err := leveldb.OpenFile("db/act", nil)
 
 	dataDB := &DataDB{ddb}
 	authDB := &AuthDB{adb}
-	actDB := &ActDB{adb}
+	actDB := &ActDB{acdb}
 
 	if err != nil {
 		panic("Failed to open database!")
@@ -83,6 +83,7 @@ func main() {
 
 	defer dataDB.Close()
 	defer authDB.Close()
+	defer actDB.Close()
 
 	m := martini.Classic()
 	m.Map(dataDB)
@@ -93,13 +94,34 @@ func main() {
 
 	m.Post("/auth", func(rb RequestBody, db *ActDB) (int, string) {
 		apiKey := uuid()
-		actKey := uuid()
-		data := []byte(apiKey + "," + actKey)
-		adb.Put(rb, data, nil)
+		actToken := uuid()
+		data := []byte(apiKey + "," + actToken)
+		db.Put(rb, data, nil)
 
-		go sendMail(string(rb), "Api key activation", actKey)
+		go sendMail(string(rb), "Api key activation", actToken)
 
-		return 200, apiKey
+		return http.StatusOK, apiKey
+	})
+
+	m.Get("/activate", func(req *http.Request, actDB *ActDB, authDB *AuthDB) (int, string) {
+		email := req.URL.Query().Get("email")
+		token := req.URL.Query().Get("token")
+
+		data, err := actDB.Get([]byte(email), nil)
+		if err != nil {
+			return http.StatusNotFound, "No api key for " + email
+		}
+
+		keyTok := strings.Split(string(data), ",")
+		apiKey, actToken := keyTok[0], keyTok[1]
+
+		if token == actToken {
+			authDB.Put([]byte(email), []byte(apiKey), nil)
+			actDB.Delete([]byte(email), nil)
+			return http.StatusOK, apiKey
+		} else {
+			return http.StatusUnauthorized, "The provided token does not match."
+		}
 	})
 
 	m.Get("/:id", func(params martini.Params, db *DataDB) (int, string) {
@@ -107,24 +129,24 @@ func main() {
 		data, err := db.Get([]byte(id), nil)
 
 		if err == leveldb.ErrNotFound {
-			return 404, "Could not find data for " + id
+			return http.StatusNotFound, "Could not find data for " + id
 		}
 
 		if err != nil {
-			return 500, fmt.Sprintf("An error occured while fetching the data: %s", err)
+			return http.StatusInternalServerError, fmt.Sprintf("An error occured while fetching the data: %s", err)
 		}
 
-		return 200, string(data)
+		return http.StatusOK, string(data)
 	})
 
 	m.Post("/:id", func(req *http.Request, params martini.Params, rb RequestBody, db *DataDB) (int, string) {
 		err := db.Put([]byte(params["id"]), rb, nil)
 
 		if err != nil {
-			return 500, fmt.Sprintf("An error occured while storing the data: %s", err)
+			return http.StatusInternalServerError, fmt.Sprintf("An error occured while storing the data: %s", err)
 		}
 
-		return 200, string(rb)
+		return http.StatusOK, string(rb)
 	})
 
 	m.Run()
