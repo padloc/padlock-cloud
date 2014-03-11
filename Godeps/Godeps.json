@@ -1,0 +1,24 @@
+{
+	"ImportPath": "github.com/MaKleSoft/padlock-cloud",
+	"GoVersion": "go1.1.1",
+	"Deps": [
+		{
+			"ImportPath": "code.google.com/p/snappy-go/snappy",
+			"Comment": "null-15",
+			"Rev": "12e4b4183793ac4b061921e7980845e750679fd0"
+		},
+		{
+			"ImportPath": "github.com/codegangsta/inject",
+			"Rev": "9aea7a2fa5b79ef7fc00f63a575e72df33b4e886"
+		},
+		{
+			"ImportPath": "github.com/codegangsta/martini",
+			"Comment": "v0.1-130-ge42150e",
+			"Rev": "e42150e93f948a1ed35bd1344c878d94ce2bd6ec"
+		},
+		{
+			"ImportPath": "github.com/syndtr/goleveldb/leveldb",
+			"Rev": "527a7b286bd095794af6c519627b7ed3d8fd067a"
+		}
+	]
+}
