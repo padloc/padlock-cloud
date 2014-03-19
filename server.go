@@ -7,6 +7,7 @@ import "fmt"
 import "net/smtp"
 import "os"
 import "encoding/json"
+import "regexp"
 import "github.com/codegangsta/martini"
 import "github.com/syndtr/goleveldb/leveldb"
 
@@ -65,6 +66,16 @@ func (a *AuthAccount) RemoveKeyForDevice(deviceName string) {
 func (a *AuthAccount) SetKey(apiKey ApiKey) {
 	a.RemoveKeyForDevice(apiKey.DeviceName)
 	a.ApiKeys = append(a.ApiKeys, apiKey)
+}
+
+func (a *AuthAccount) HasKey(key string) bool {
+	for _, apiKey := range a.ApiKeys {
+		if apiKey.Key == key {
+			return true
+		}
+	}
+
+	return false
 }
 
 func SaveAuthAccount(a AuthAccount, db *AuthDB) error {
@@ -131,6 +142,39 @@ func InjectBody(res http.ResponseWriter, req *http.Request, c martini.Context) {
 	c.Map(rb)
 }
 
+func Auth(req *http.Request, w http.ResponseWriter, db *AuthDB, c martini.Context) {
+	re := regexp.MustCompile("ApiKey (?P<email>.+):(?P<key>.+)")
+	authHeader := req.Header.Get("Authorization")
+
+	fmt.Println(authHeader)
+
+	if !re.MatchString(authHeader) {
+		http.Error(w, "No valid authorization header provided", http.StatusUnauthorized)
+		return
+	}
+
+	matches := re.FindStringSubmatch(authHeader)
+	email, key := matches[1], matches[2]
+
+	authAccount, err := FetchAuthAccount(email, db)
+
+	if err != nil {
+		if err == leveldb.ErrNotFound {
+			http.Error(w, fmt.Sprintf("User %s does not exists", email), http.StatusUnauthorized)
+		} else {
+			http.Error(w, fmt.Sprintf("Database error: %s", err), http.StatusInternalServerError)
+		}
+		return
+	}
+
+	if !authAccount.HasKey(key) {
+		http.Error(w, "The provided key was not valid", http.StatusUnauthorized)
+		return
+	}
+
+	c.Map(authAccount)
+}
+
 func RequestApiKey(req *http.Request, db *ActDB, w http.ResponseWriter) (int, string) {
 	req.ParseForm()
 	// TODO: Add validation
@@ -194,6 +238,30 @@ func ActivateApiKey(params martini.Params, actDB *ActDB, authDB *AuthDB) (int, s
 	return http.StatusOK, fmt.Sprintf("The api key for the device %s has been activated!", apiKey.DeviceName)
 }
 
+func GetData(acc AuthAccount, db *DataDB) (int, string) {
+	data, err := db.Get([]byte(acc.Email), nil)
+
+	if err == leveldb.ErrNotFound {
+		return http.StatusNotFound, "Could not find data for " + acc.Email
+	}
+
+	if err != nil {
+		return http.StatusInternalServerError, fmt.Sprintf("Database error: %s", err)
+	}
+
+	return http.StatusOK, string(data)
+}
+
+func PutData(acc AuthAccount, data RequestBody, db *DataDB) (int, string) {
+	err := db.Put([]byte(acc.Email), data, nil)
+
+	if err != nil {
+		return http.StatusInternalServerError, fmt.Sprintf("Database error: %s", err)
+	}
+
+	return http.StatusOK, string(data)
+}
+
 func main() {
 	if dbPath == "" {
 		dbPath = "/Users/martin/padlock/db"
@@ -219,8 +287,6 @@ func main() {
 	m.Map(authDB)
 	m.Map(actDB)
 
-	// m.Use(InjectBody)
-
 	m.Post("/auth", RequestApiKey)
 
 	m.Get("/activate/:token", ActivateApiKey)
@@ -230,30 +296,9 @@ func main() {
 	// 	return 200, string(accData)
 	// })
 
-	// m.Get("/:id", func(params martini.Params, db *DataDB) (int, string) {
-	// 	id := params["id"]
-	// 	data, err := db.Get([]byte(id), nil)
+	m.Get("/", Auth, GetData)
 
-	// 	if err == leveldb.ErrNotFound {
-	// 		return http.StatusNotFound, "Could not find data for " + id
-	// 	}
-
-	// 	if err != nil {
-	// 		return http.StatusInternalServerError, fmt.Sprintf("An error occured while fetching the data: %s", err)
-	// 	}
-
-	// 	return http.StatusOK, string(data)
-	// })
-
-	// m.Post("/:id", func(req *http.Request, params martini.Params, rb RequestBody, db *DataDB) (int, string) {
-	// 	err := db.Put([]byte(params["id"]), rb, nil)
-
-	// 	if err != nil {
-	// 		return http.StatusInternalServerError, fmt.Sprintf("An error occured while storing the data: %s", err)
-	// 	}
-
-	// 	return http.StatusOK, string(rb)
-	// })
+	m.Put("/", Auth, InjectBody, PutData)
 
 	m.Run()
 }
