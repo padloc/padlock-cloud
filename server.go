@@ -131,6 +131,69 @@ func InjectBody(res http.ResponseWriter, req *http.Request, c martini.Context) {
 	c.Map(rb)
 }
 
+func RequestApiKey(req *http.Request, db *ActDB, w http.ResponseWriter) (int, string) {
+	req.ParseForm()
+	// TODO: Add validation
+	email, deviceName := req.PostForm.Get("email"), req.PostForm.Get("device_name")
+
+	key := uuid()
+	token := uuid()
+	apiKey := ApiKey{
+		email,
+		deviceName,
+		key,
+	}
+
+	// TODO: Handle the error?
+	data, _ := json.Marshal(apiKey)
+
+	// TODO: Handle the error
+	db.Put([]byte(token), data, nil)
+
+	// TODO: Use proper email body
+	go sendMail(email, "Api key activation", token)
+
+	w.Header().Set("Content-Type", "application/json")
+
+	return http.StatusOK, string(data)
+}
+
+func ActivateApiKey(params martini.Params, actDB *ActDB, authDB *AuthDB) (int, string) {
+	token := params["token"]
+
+	data, err := actDB.Get([]byte(token), nil)
+	if err != nil {
+		return http.StatusNotFound, "Token not valid"
+	}
+
+	apiKey := ApiKey{}
+	// TODO: Handle error?
+	json.Unmarshal(data, &apiKey)
+
+	acc, err := FetchAuthAccount(apiKey.Email, authDB)
+
+	if err != nil && err != leveldb.ErrNotFound {
+		return http.StatusInternalServerError, fmt.Sprintf("Database error: %s", err)
+	}
+
+	if err == leveldb.ErrNotFound {
+		acc = AuthAccount{}
+		acc.Email = apiKey.Email
+	}
+	acc.SetKey(apiKey)
+
+	err = SaveAuthAccount(acc, authDB)
+
+	// TODO: Handle error?
+	actDB.Delete([]byte(token), nil)
+
+	if err != nil {
+		return http.StatusInternalServerError, fmt.Sprintf("Database error: %s", err)
+	}
+
+	return http.StatusOK, fmt.Sprintf("The api key for the device %s has been activated!", apiKey.DeviceName)
+}
+
 func main() {
 	if dbPath == "" {
 		dbPath = "/Users/martin/padlock/db"
@@ -158,66 +221,9 @@ func main() {
 
 	// m.Use(InjectBody)
 
-	m.Post("/auth", func(req *http.Request, db *ActDB) (int, string) {
-		req.ParseForm()
-		// TODO: Add validation
-		email, deviceName := req.PostForm.Get("email"), req.PostForm.Get("device_name")
+	m.Post("/auth", RequestApiKey)
 
-		key := uuid()
-		token := uuid()
-		apiKey := ApiKey{
-			email,
-			deviceName,
-			key,
-		}
-
-		// TODO: Handle the error?
-		data, _ := json.Marshal(apiKey)
-
-		// TODO: Handle the error
-		db.Put([]byte(token), data, nil)
-
-		// TODO: Use proper email body
-		go sendMail(email, "Api key activation", token)
-
-		return http.StatusOK, string(data)
-	})
-
-	m.Get("/activate/:token", func(params martini.Params, actDB *ActDB, authDB *AuthDB) (int, string) {
-		token := params["token"]
-
-		data, err := actDB.Get([]byte(token), nil)
-		if err != nil {
-			return http.StatusNotFound, "Token not valid"
-		}
-
-		apiKey := ApiKey{}
-		// TODO: Handle error?
-		json.Unmarshal(data, &apiKey)
-
-		acc, err := FetchAuthAccount(apiKey.Email, authDB)
-
-		if err != nil && err != leveldb.ErrNotFound {
-			return http.StatusInternalServerError, fmt.Sprintf("Database error: %s", err)
-		}
-
-		if err == leveldb.ErrNotFound {
-			acc = AuthAccount{}
-			acc.Email = apiKey.Email
-		}
-		acc.SetKey(apiKey)
-
-		err = SaveAuthAccount(acc, authDB)
-
-		// TODO: Handle error?
-		actDB.Delete([]byte(token), nil)
-
-		if err != nil {
-			return http.StatusInternalServerError, fmt.Sprintf("Database error: %s", err)
-		}
-
-		return http.StatusOK, string(data)
-	})
+	m.Get("/activate/:token", ActivateApiKey)
 
 	// m.Get("/:email", func(params martini.Params, db *AuthDB) (int, string) {
 	// 	accData, _ := db.Get([]byte(params["email"]), nil)
