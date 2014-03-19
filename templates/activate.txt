@@ -1,0 +1,8 @@
+Hi there!
+
+You are receiving this email because you were requesting access to the data associated with the email address {{ .email }} from the device {{ .device_name }}. To confirm this, simply visit the link below:
+
+{{ .activation_link }}
+
+Best,
+The Padlock Team

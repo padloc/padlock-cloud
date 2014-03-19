@@ -8,6 +8,8 @@ import "net/smtp"
 import "os"
 import "encoding/json"
 import "regexp"
+import "bytes"
+import "text/template"
 import "github.com/codegangsta/martini"
 import "github.com/syndtr/goleveldb/leveldb"
 
@@ -17,6 +19,7 @@ var (
 	emailPort     = os.Getenv("PADLOCK_EMAIL_PORT")
 	emailPassword = os.Getenv("PADLOCK_EMAIL_PASSWORD")
 	dbPath        = os.Getenv("PADLOCK_DB_PATH")
+	actEmailTemp  = template.Must(template.ParseFiles("templates/activate.txt"))
 )
 
 type DataDB struct {
@@ -194,8 +197,16 @@ func RequestApiKey(req *http.Request, db *ActDB, w http.ResponseWriter) (int, st
 	// TODO: Handle the error
 	db.Put([]byte(token), data, nil)
 
+	var buff bytes.Buffer
+	actEmailTemp.Execute(&buff, map[string]string{
+		"email":           apiKey.Email,
+		"device_name":     apiKey.DeviceName,
+		"activation_link": fmt.Sprintf("http://%s/activate/%s", req.Host, token),
+	})
+	body := buff.String()
+
 	// TODO: Use proper email body
-	go sendMail(email, "Api key activation", token)
+	go sendMail(email, "Api key activation", body)
 
 	w.Header().Set("Content-Type", "application/json")
 
