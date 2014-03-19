@@ -6,9 +6,17 @@ import "crypto/rand"
 import "fmt"
 import "net/smtp"
 import "os"
-import "strings"
+import "encoding/json"
 import "github.com/codegangsta/martini"
 import "github.com/syndtr/goleveldb/leveldb"
+
+var (
+	emailUser     = os.Getenv("PADLOCK_EMAIL_USERNAME")
+	emailServer   = os.Getenv("PADLOCK_EMAIL_SERVER")
+	emailPort     = os.Getenv("PADLOCK_EMAIL_PORT")
+	emailPassword = os.Getenv("PADLOCK_EMAIL_PASSWORD")
+	dbPath        = os.Getenv("PADLOCK_DB_PATH")
+)
 
 type DataDB struct {
 	*leveldb.DB
@@ -24,12 +32,67 @@ type ActDB struct {
 
 type RequestBody []byte
 
-var (
-	emailUser     = os.Getenv("PADLOCK_EMAIL_USERNAME")
-	emailServer   = os.Getenv("PADLOCK_EMAIL_SERVER")
-	emailPort     = os.Getenv("PADLOCK_EMAIL_PORT")
-	emailPassword = os.Getenv("PADLOCK_EMAIL_PASSWORD")
-)
+type ApiKey struct {
+	Email      string `json:"email"`
+	DeviceName string `json:"device_name"`
+	Key        string `json:"key"`
+}
+
+type AuthAccount struct {
+	Email   string
+	ApiKeys []ApiKey
+}
+
+func (a *AuthAccount) KeyForDevice(deviceName string) *ApiKey {
+	for _, apiKey := range a.ApiKeys {
+		if apiKey.DeviceName == deviceName {
+			return &apiKey
+		}
+	}
+
+	return nil
+}
+
+func (a *AuthAccount) RemoveKeyForDevice(deviceName string) {
+	for i, apiKey := range a.ApiKeys {
+		if apiKey.DeviceName == deviceName {
+			a.ApiKeys = append(a.ApiKeys[:i], a.ApiKeys[i+1:]...)
+			return
+		}
+	}
+}
+
+func (a *AuthAccount) SetKey(apiKey ApiKey) {
+	a.RemoveKeyForDevice(apiKey.DeviceName)
+	a.ApiKeys = append(a.ApiKeys, apiKey)
+}
+
+func SaveAuthAccount(a AuthAccount, db *AuthDB) error {
+	key := []byte(a.Email)
+	data, err := json.Marshal(a)
+	if err != nil {
+		return err
+	}
+	return db.Put(key, data, nil)
+}
+
+func FetchAuthAccount(email string, db *AuthDB) (AuthAccount, error) {
+	key := []byte(email)
+	data, err := db.Get(key, nil)
+	acc := AuthAccount{}
+
+	if err != nil {
+		return acc, err
+	}
+
+	err = json.Unmarshal(data, &acc)
+
+	if err != nil {
+		return acc, err
+	}
+
+	return acc, nil
+}
 
 func uuid() string {
 	b := make([]byte, 16)
@@ -69,9 +132,12 @@ func InjectBody(res http.ResponseWriter, req *http.Request, c martini.Context) {
 }
 
 func main() {
-	ddb, err := leveldb.OpenFile("db/data", nil)
-	adb, err := leveldb.OpenFile("db/auth", nil)
-	acdb, err := leveldb.OpenFile("db/act", nil)
+	if dbPath == "" {
+		dbPath = "/Users/martin/padlock/db"
+	}
+	ddb, err := leveldb.OpenFile(dbPath+"/data", nil)
+	adb, err := leveldb.OpenFile(dbPath+"/auth", nil)
+	acdb, err := leveldb.OpenFile(dbPath+"/act", nil)
 
 	dataDB := &DataDB{ddb}
 	authDB := &AuthDB{adb}
@@ -90,64 +156,98 @@ func main() {
 	m.Map(authDB)
 	m.Map(actDB)
 
-	m.Use(InjectBody)
+	// m.Use(InjectBody)
 
-	m.Post("/auth", func(rb RequestBody, db *ActDB) (int, string) {
-		apiKey := uuid()
-		actToken := uuid()
-		data := []byte(apiKey + "," + actToken)
-		db.Put(rb, data, nil)
+	m.Post("/auth", func(req *http.Request, db *ActDB) (int, string) {
+		req.ParseForm()
+		// TODO: Add validation
+		email, deviceName := req.PostForm.Get("email"), req.PostForm.Get("device_name")
 
-		go sendMail(string(rb), "Api key activation", actToken)
+		key := uuid()
+		token := uuid()
+		apiKey := ApiKey{
+			email,
+			deviceName,
+			key,
+		}
 
-		return http.StatusOK, apiKey
+		// TODO: Handle the error?
+		data, _ := json.Marshal(apiKey)
+
+		// TODO: Handle the error
+		db.Put([]byte(token), data, nil)
+
+		// TODO: Use proper email body
+		go sendMail(email, "Api key activation", token)
+
+		return http.StatusOK, string(data)
 	})
 
-	m.Get("/activate", func(req *http.Request, actDB *ActDB, authDB *AuthDB) (int, string) {
-		email := req.URL.Query().Get("email")
-		token := req.URL.Query().Get("token")
+	m.Get("/activate/:token", func(params martini.Params, actDB *ActDB, authDB *AuthDB) (int, string) {
+		token := params["token"]
 
-		data, err := actDB.Get([]byte(email), nil)
+		data, err := actDB.Get([]byte(token), nil)
 		if err != nil {
-			return http.StatusNotFound, "No api key for " + email
+			return http.StatusNotFound, "Token not valid"
 		}
 
-		keyTok := strings.Split(string(data), ",")
-		apiKey, actToken := keyTok[0], keyTok[1]
+		apiKey := ApiKey{}
+		// TODO: Handle error?
+		json.Unmarshal(data, &apiKey)
 
-		if token == actToken {
-			authDB.Put([]byte(email), []byte(apiKey), nil)
-			actDB.Delete([]byte(email), nil)
-			return http.StatusOK, apiKey
-		} else {
-			return http.StatusUnauthorized, "The provided token does not match."
+		acc, err := FetchAuthAccount(apiKey.Email, authDB)
+
+		if err != nil && err != leveldb.ErrNotFound {
+			return http.StatusInternalServerError, fmt.Sprintf("Database error: %s", err)
 		}
-	})
-
-	m.Get("/:id", func(params martini.Params, db *DataDB) (int, string) {
-		id := params["id"]
-		data, err := db.Get([]byte(id), nil)
 
 		if err == leveldb.ErrNotFound {
-			return http.StatusNotFound, "Could not find data for " + id
+			acc = AuthAccount{}
+			acc.Email = apiKey.Email
 		}
+		acc.SetKey(apiKey)
+
+		err = SaveAuthAccount(acc, authDB)
+
+		// TODO: Handle error?
+		actDB.Delete([]byte(token), nil)
 
 		if err != nil {
-			return http.StatusInternalServerError, fmt.Sprintf("An error occured while fetching the data: %s", err)
+			return http.StatusInternalServerError, fmt.Sprintf("Database error: %s", err)
 		}
 
 		return http.StatusOK, string(data)
 	})
 
-	m.Post("/:id", func(req *http.Request, params martini.Params, rb RequestBody, db *DataDB) (int, string) {
-		err := db.Put([]byte(params["id"]), rb, nil)
+	// m.Get("/:email", func(params martini.Params, db *AuthDB) (int, string) {
+	// 	accData, _ := db.Get([]byte(params["email"]), nil)
+	// 	return 200, string(accData)
+	// })
 
-		if err != nil {
-			return http.StatusInternalServerError, fmt.Sprintf("An error occured while storing the data: %s", err)
-		}
+	// m.Get("/:id", func(params martini.Params, db *DataDB) (int, string) {
+	// 	id := params["id"]
+	// 	data, err := db.Get([]byte(id), nil)
 
-		return http.StatusOK, string(rb)
-	})
+	// 	if err == leveldb.ErrNotFound {
+	// 		return http.StatusNotFound, "Could not find data for " + id
+	// 	}
+
+	// 	if err != nil {
+	// 		return http.StatusInternalServerError, fmt.Sprintf("An error occured while fetching the data: %s", err)
+	// 	}
+
+	// 	return http.StatusOK, string(data)
+	// })
+
+	// m.Post("/:id", func(req *http.Request, params martini.Params, rb RequestBody, db *DataDB) (int, string) {
+	// 	err := db.Put([]byte(params["id"]), rb, nil)
+
+	// 	if err != nil {
+	// 		return http.StatusInternalServerError, fmt.Sprintf("An error occured while storing the data: %s", err)
+	// 	}
+
+	// 	return http.StatusOK, string(rb)
+	// })
 
 	m.Run()
 }
