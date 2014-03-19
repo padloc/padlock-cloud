@@ -14,27 +14,69 @@ import "github.com/codegangsta/martini"
 import "github.com/syndtr/goleveldb/leveldb"
 
 var (
+	// Settings for sending emails
 	emailUser     = os.Getenv("PADLOCK_EMAIL_USERNAME")
 	emailServer   = os.Getenv("PADLOCK_EMAIL_SERVER")
 	emailPort     = os.Getenv("PADLOCK_EMAIL_PORT")
 	emailPassword = os.Getenv("PADLOCK_EMAIL_PASSWORD")
-	dbPath        = os.Getenv("PADLOCK_DB_PATH")
-	actEmailTemp  = template.Must(template.ParseFiles("templates/activate.txt"))
+	// Path to the leveldb database
+	dbPath = os.Getenv("PADLOCK_DB_PATH")
+	// Email template for api key activation email
+	actEmailTemp = template.Must(template.ParseFiles("templates/activate.txt"))
 )
 
+func uuid() string {
+	b := make([]byte, 16)
+	rand.Read(b)
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
+}
+
+func sendMail(rec string, subject string, body string) error {
+	auth := smtp.PlainAuth(
+		"",
+		emailUser,
+		emailPassword,
+		emailServer,
+	)
+
+	message := fmt.Sprintf("Subject: %s\r\n\r\n%s", subject, body)
+	return smtp.SendMail(
+		emailServer+":"+emailPort,
+		auth,
+		emailUser,
+		[]string{rec},
+		[]byte(message),
+	)
+}
+
+// These are used so the different databases can be injected as services
+// into hanlder functions
 type DataDB struct {
 	*leveldb.DB
 }
-
 type AuthDB struct {
 	*leveldb.DB
 }
-
 type ActDB struct {
 	*leveldb.DB
 }
 
+// Middleware for reading the request body and injecting it as a service into
+// a hanlder function
 type RequestBody []byte
+
+func InjectBody(res http.ResponseWriter, req *http.Request, c martini.Context) {
+	b, err := ioutil.ReadAll(req.Body)
+	rb := RequestBody(b)
+
+	if err != nil {
+		http.Error(res, fmt.Sprintf("An error occured while reading the request body: %s", err), http.StatusInternalServerError)
+	}
+
+	c.Map(rb)
+}
 
 type ApiKey struct {
 	Email      string `json:"email"`
@@ -106,43 +148,6 @@ func FetchAuthAccount(email string, db *AuthDB) (AuthAccount, error) {
 	}
 
 	return acc, nil
-}
-
-func uuid() string {
-	b := make([]byte, 16)
-	rand.Read(b)
-	b[6] = (b[6] & 0x0f) | 0x40
-	b[8] = (b[8] & 0x3f) | 0x80
-	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
-}
-
-func sendMail(rec string, subject string, body string) error {
-	auth := smtp.PlainAuth(
-		"",
-		emailUser,
-		emailPassword,
-		emailServer,
-	)
-
-	message := fmt.Sprintf("Subject: %s\r\n\r\n%s", subject, body)
-	return smtp.SendMail(
-		emailServer+":"+emailPort,
-		auth,
-		emailUser,
-		[]string{rec},
-		[]byte(message),
-	)
-}
-
-func InjectBody(res http.ResponseWriter, req *http.Request, c martini.Context) {
-	b, err := ioutil.ReadAll(req.Body)
-	rb := RequestBody(b)
-
-	if err != nil {
-		http.Error(res, fmt.Sprintf("An error occured while reading the request body: %s", err), http.StatusInternalServerError)
-	}
-
-	c.Map(rb)
 }
 
 func Auth(req *http.Request, w http.ResponseWriter, db *AuthDB, c martini.Context) {
