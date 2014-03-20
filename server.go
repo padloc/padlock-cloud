@@ -297,13 +297,8 @@ func ActivateApiKey(params martini.Params, actDB *ActDB, authDB *AuthDB) (int, s
 func GetData(acc AuthAccount, db *DataDB) (int, string) {
 	data, err := db.Get([]byte(acc.Email), nil)
 
-	// There is no data for this account yet.
-	// TODO: Return empty response instead of NOT FOUND
-	if err == leveldb.ErrNotFound {
-		return http.StatusNotFound, "Could not find data for " + acc.Email
-	}
-
-	if err != nil {
+	// I case of a not found error we simply return an empty string
+	if err != nil && err != leveldb.ErrNotFound {
 		return http.StatusInternalServerError, fmt.Sprintf("Database error: %s", err)
 	}
 
