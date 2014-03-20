@@ -25,6 +25,7 @@ var (
 	actEmailTemp = template.Must(template.ParseFiles("templates/activate.txt"))
 )
 
+// RFC4122-compliant uuid generator
 func uuid() string {
 	b := make([]byte, 16)
 	rand.Read(b)
@@ -33,6 +34,7 @@ func uuid() string {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
 }
 
+// Helper function for sending emails
 func sendMail(rec string, subject string, body string) error {
 	auth := smtp.PlainAuth(
 		"",
@@ -63,10 +65,11 @@ type ActDB struct {
 	*leveldb.DB
 }
 
-// Middleware for reading the request body and injecting it as a service into
-// a hanlder function
+// Service type for use in handler functions. Gets injectected by the InjectBody
+// middleware
 type RequestBody []byte
 
+// Middleware for reading the request body and injecting it as a RequestBody
 func InjectBody(res http.ResponseWriter, req *http.Request, c martini.Context) {
 	b, err := ioutil.ReadAll(req.Body)
 	rb := RequestBody(b)
@@ -78,17 +81,24 @@ func InjectBody(res http.ResponseWriter, req *http.Request, c martini.Context) {
 	c.Map(rb)
 }
 
+// A wrapper for an api key containing some meta info like the user and device name
 type ApiKey struct {
 	Email      string `json:"email"`
 	DeviceName string `json:"device_name"`
 	Key        string `json:"key"`
 }
 
+// A struct representing a user with a set of api keys
 type AuthAccount struct {
-	Email   string
+	// The email servers as a unique identifier and as a means for
+	// requesting/activating api keys
+	Email string
+	// A set of api keys that can be used to access the data associated with this
+	// account
 	ApiKeys []ApiKey
 }
 
+// Fetches the ApiKey for a given device name. Returns nil if none is found
 func (a *AuthAccount) KeyForDevice(deviceName string) *ApiKey {
 	for _, apiKey := range a.ApiKeys {
 		if apiKey.DeviceName == deviceName {
@@ -99,6 +109,7 @@ func (a *AuthAccount) KeyForDevice(deviceName string) *ApiKey {
 	return nil
 }
 
+// Removes the api key for a given device name
 func (a *AuthAccount) RemoveKeyForDevice(deviceName string) {
 	for i, apiKey := range a.ApiKeys {
 		if apiKey.DeviceName == deviceName {
@@ -108,12 +119,17 @@ func (a *AuthAccount) RemoveKeyForDevice(deviceName string) {
 	}
 }
 
+// Adds an api key to this account. If an api key for the given device
+// is already registered, that one will be replaced
 func (a *AuthAccount) SetKey(apiKey ApiKey) {
 	a.RemoveKeyForDevice(apiKey.DeviceName)
 	a.ApiKeys = append(a.ApiKeys, apiKey)
 }
 
-func (a *AuthAccount) HasKey(key string) bool {
+// Checks if a given api key is valid for this account
+func (a *AuthAccount) Validate(key string) bool {
+	// Check if the account contains any ApiKey with that matches
+	// the given key
 	for _, apiKey := range a.ApiKeys {
 		if apiKey.Key == key {
 			return true
@@ -123,6 +139,7 @@ func (a *AuthAccount) HasKey(key string) bool {
 	return false
 }
 
+// Saves an AuthAccount instance to a given database
 func SaveAuthAccount(a AuthAccount, db *AuthDB) error {
 	key := []byte(a.Email)
 	data, err := json.Marshal(a)
@@ -132,6 +149,7 @@ func SaveAuthAccount(a AuthAccount, db *AuthDB) error {
 	return db.Put(key, data, nil)
 }
 
+// Fetches an AuthAccount with the given email from the given database
 func FetchAuthAccount(email string, db *AuthDB) (AuthAccount, error) {
 	key := []byte(email)
 	data, err := db.Get(key, nil)
@@ -150,20 +168,24 @@ func FetchAuthAccount(email string, db *AuthDB) (AuthAccount, error) {
 	return acc, nil
 }
 
+// Authentication middleware. Checks if a valid authentication header is provided
+// and, in case of a successful authentication, injects the corresponding AuthAccount
+// instance into andy subsequent handlers
 func Auth(req *http.Request, w http.ResponseWriter, db *AuthDB, c martini.Context) {
 	re := regexp.MustCompile("ApiKey (?P<email>.+):(?P<key>.+)")
 	authHeader := req.Header.Get("Authorization")
 
-	fmt.Println(authHeader)
-
+	// Check if the Authorization header exists and is well formed
 	if !re.MatchString(authHeader) {
 		http.Error(w, "No valid authorization header provided", http.StatusUnauthorized)
 		return
 	}
 
+	// Extract email and api key from Authorization header
 	matches := re.FindStringSubmatch(authHeader)
 	email, key := matches[1], matches[2]
 
+	// Fetch account for the given email address
 	authAccount, err := FetchAuthAccount(email, db)
 
 	if err != nil {
@@ -175,7 +197,8 @@ func Auth(req *http.Request, w http.ResponseWriter, db *AuthDB, c martini.Contex
 		return
 	}
 
-	if !authAccount.HasKey(key) {
+	// Check if the provide api key is valid
+	if !authAccount.Validate(key) {
 		http.Error(w, "The provided key was not valid", http.StatusUnauthorized)
 		return
 	}
@@ -183,11 +206,15 @@ func Auth(req *http.Request, w http.ResponseWriter, db *AuthDB, c martini.Contex
 	c.Map(authAccount)
 }
 
-func RequestApiKey(req *http.Request, db *ActDB, w http.ResponseWriter) (int, string) {
+// Handler function for requesting an api key. Generates a key-token pair and stores them.
+// The token can later be used to activate the api key. An email is sent to the corresponding
+// email address with an activation url
+func RequestApiKey(req *http.Request, actDb *ActDB, w http.ResponseWriter) (int, string) {
 	req.ParseForm()
 	// TODO: Add validation
 	email, deviceName := req.PostForm.Get("email"), req.PostForm.Get("device_name")
 
+	// Generate key-token pair
 	key := uuid()
 	token := uuid()
 	apiKey := ApiKey{
@@ -196,12 +223,13 @@ func RequestApiKey(req *http.Request, db *ActDB, w http.ResponseWriter) (int, st
 		key,
 	}
 
+	// Store key-token pair
 	// TODO: Handle the error?
 	data, _ := json.Marshal(apiKey)
-
 	// TODO: Handle the error
-	db.Put([]byte(token), data, nil)
+	actDb.Put([]byte(token), data, nil)
 
+	// Render email
 	var buff bytes.Buffer
 	actEmailTemp.Execute(&buff, map[string]string{
 		"email":           apiKey.Email,
@@ -210,42 +238,53 @@ func RequestApiKey(req *http.Request, db *ActDB, w http.ResponseWriter) (int, st
 	})
 	body := buff.String()
 
-	// TODO: Use proper email body
+	// Send email with activation link
 	go sendMail(email, "Api key activation", body)
 
+	// We're returning a JSON serialization of the ApiKey object
 	w.Header().Set("Content-Type", "application/json")
 
 	return http.StatusOK, string(data)
 }
 
+// Hander function for activating a given api key
 func ActivateApiKey(params martini.Params, actDB *ActDB, authDB *AuthDB) (int, string) {
 	token := params["token"]
 
+	// Let's check if an unactivate api key exists for this token. If not,
+	// the token is obviously not valid
 	data, err := actDB.Get([]byte(token), nil)
 	if err != nil {
 		return http.StatusNotFound, "Token not valid"
 	}
 
+	// We've found a record for this token, so let's create an ApiKey instance
+	// with it
 	apiKey := ApiKey{}
 	// TODO: Handle error?
 	json.Unmarshal(data, &apiKey)
 
+	// Fetch the account for the given email address if there is one
 	acc, err := FetchAuthAccount(apiKey.Email, authDB)
 
 	if err != nil && err != leveldb.ErrNotFound {
 		return http.StatusInternalServerError, fmt.Sprintf("Database error: %s", err)
 	}
 
+	// If an account for this email address, doesn't exist yet, create one
 	if err == leveldb.ErrNotFound {
 		acc = AuthAccount{}
 		acc.Email = apiKey.Email
 	}
+
+	// Add the new key to the account (keys with the same device name will be replaced)
 	acc.SetKey(apiKey)
 
+	// Save the changes
 	err = SaveAuthAccount(acc, authDB)
 
-	// TODO: Handle error?
-	actDB.Delete([]byte(token), nil)
+	// Remove the entry for this token
+	err = actDB.Delete([]byte(token), nil)
 
 	if err != nil {
 		return http.StatusInternalServerError, fmt.Sprintf("Database error: %s", err)
@@ -254,9 +293,12 @@ func ActivateApiKey(params martini.Params, actDB *ActDB, authDB *AuthDB) (int, s
 	return http.StatusOK, fmt.Sprintf("The api key for the device %s has been activated!", apiKey.DeviceName)
 }
 
+// Handler function for retrieving the data associated with a given account
 func GetData(acc AuthAccount, db *DataDB) (int, string) {
 	data, err := db.Get([]byte(acc.Email), nil)
 
+	// There is no data for this account yet.
+	// TODO: Return empty response instead of NOT FOUND
 	if err == leveldb.ErrNotFound {
 		return http.StatusNotFound, "Could not find data for " + acc.Email
 	}
@@ -268,6 +310,7 @@ func GetData(acc AuthAccount, db *DataDB) (int, string) {
 	return http.StatusOK, string(data)
 }
 
+// Handler function for updating the data associated with a given account
 func PutData(acc AuthAccount, data RequestBody, db *DataDB) (int, string) {
 	err := db.Put([]byte(acc.Email), data, nil)
 
@@ -280,25 +323,31 @@ func PutData(acc AuthAccount, data RequestBody, db *DataDB) (int, string) {
 
 func main() {
 	if dbPath == "" {
-		dbPath = "/Users/martin/padlock/db"
+		dbPath = "/var/lib/padlock"
 	}
+
+	// Open databases
 	ddb, err := leveldb.OpenFile(dbPath+"/data", nil)
 	adb, err := leveldb.OpenFile(dbPath+"/auth", nil)
 	acdb, err := leveldb.OpenFile(dbPath+"/act", nil)
-
-	dataDB := &DataDB{ddb}
-	authDB := &AuthDB{adb}
-	actDB := &ActDB{acdb}
 
 	if err != nil {
 		panic("Failed to open database!")
 	}
 
-	defer dataDB.Close()
-	defer authDB.Close()
-	defer actDB.Close()
+	defer ddb.Close()
+	defer adb.Close()
+	defer acdb.Close()
 
+	// Create new martini web server instance
 	m := martini.Classic()
+
+	// Wrap datbases into different types so we can map them
+	dataDB := &DataDB{ddb}
+	authDB := &AuthDB{adb}
+	actDB := &ActDB{acdb}
+
+	// Map databases so they can be injected into handlers
 	m.Map(dataDB)
 	m.Map(authDB)
 	m.Map(actDB)
