@@ -10,6 +10,7 @@ import "encoding/json"
 import "regexp"
 import "bytes"
 import "text/template"
+import htmlTemplate "html/template"
 import "github.com/codegangsta/martini"
 import "github.com/syndtr/goleveldb/leveldb"
 
@@ -23,6 +24,8 @@ var (
 	dbPath = os.Getenv("PADLOCK_DB_PATH")
 	// Email template for api key activation email
 	actEmailTemp = template.Must(template.ParseFiles("templates/activate.txt"))
+	// Template for connected page
+	connectedTemp = htmlTemplate.Must(htmlTemplate.ParseFiles("templates/connected.html"))
 )
 
 // RFC4122-compliant uuid generator
@@ -290,7 +293,12 @@ func ActivateApiKey(params martini.Params, actDB *ActDB, authDB *AuthDB) (int, s
 		return http.StatusInternalServerError, fmt.Sprintf("Database error: %s", err)
 	}
 
-	return http.StatusOK, fmt.Sprintf("The api key for the device %s has been activated!", apiKey.DeviceName)
+	// Render success page
+	var buff bytes.Buffer
+	connectedTemp.Execute(&buff, map[string]string{
+		"device_name": apiKey.DeviceName,
+	})
+	return http.StatusOK, buff.String()
 }
 
 // Handler function for retrieving the data associated with a given account

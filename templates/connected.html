@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Padlock Cloud - Device Connected</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+        <style>
+            body {
+                font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+                font-size: 22px;
+                -webkit-font-smoothing: antialiased;
+            }
+
+            .content {
+                max-width: 500px;
+                padding: 20px;
+                /*text-align: center;*/
+                margin: 0 auto;
+                line-height: 1.5em;
+            }
+
+            button {
+                border: none;
+                background: #59c6ff;
+                color: #fff;
+                font-family: inherit;
+                font-size: 18px;
+                padding: 8px 10px;
+                float: right;
+                cursor: pointer;
+                margin-top: 15px;
+                -webkit-font-smoothing: antialiased
+            }
+        </style>
+    </head>
+    <body>
+        <div class="content">
+            Your device <strong>{{ .device_name }}</strong> was connected successfully!
+            You can now use the app to synchronize with <strong>Padlock Cloud</strong>!
+            <br/>
+            <button onclick="window.open('', '_self').close();">Close Window</button>
+        </div>
+    </body>
+</html>
