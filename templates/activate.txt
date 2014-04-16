@@ -1,6 +1,6 @@
 Hi there!
 
-You are receiving this email because you were requesting access to the data associated with the email address {{ .email }} from the device {{ .device_name }}. To confirm this, simply visit the link below:
+You are receiving this email because you requested to connect the device {{ .device_name }} with the Padlock Cloud account {{ .email }}. To complete the process, simply visit the link below:
 
 {{ .activation_link }}
 
