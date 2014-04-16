@@ -43,7 +43,7 @@ func sendMail(rec string, subject string, body string) error {
 		emailServer,
 	)
 
-	message := fmt.Sprintf("Subject: %s\r\n\r\n%s", subject, body)
+	message := fmt.Sprintf("Subject: %s\r\nFrom: Padlock Cloud <%s>\r\n\r\n%s", subject, emailUser, body)
 	return smtp.SendMail(
 		emailServer+":"+emailPort,
 		auth,
@@ -234,12 +234,12 @@ func RequestApiKey(req *http.Request, actDb *ActDB, w http.ResponseWriter) (int,
 	actEmailTemp.Execute(&buff, map[string]string{
 		"email":           apiKey.Email,
 		"device_name":     apiKey.DeviceName,
-		"activation_link": fmt.Sprintf("http://%s/activate/%s", req.Host, token),
+		"activation_link": fmt.Sprintf("https://%s/activate/%s", req.Host, token),
 	})
 	body := buff.String()
 
 	// Send email with activation link
-	go sendMail(email, "Api key activation", body)
+	go sendMail(email, "Connect to Padlock Cloud", body)
 
 	// We're returning a JSON serialization of the ApiKey object
 	w.Header().Set("Content-Type", "application/json")
