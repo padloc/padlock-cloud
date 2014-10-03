@@ -24,8 +24,12 @@ var (
 	dbPath = os.Getenv("PADLOCK_DB_PATH")
 	// Email template for api key activation email
 	actEmailTemp = template.Must(template.ParseFiles("templates/activate.txt"))
+	// Email template for deletion confirmation email
+	delEmailTemp = template.Must(template.ParseFiles("templates/delete.txt"))
 	// Template for connected page
 	connectedTemp = htmlTemplate.Must(htmlTemplate.ParseFiles("templates/connected.html"))
+	// Template for connected page
+	deletedTemp = htmlTemplate.Must(htmlTemplate.ParseFiles("templates/deleted.html"))
 )
 
 // RFC4122-compliant uuid generator
@@ -67,6 +71,9 @@ type AuthDB struct {
 type ActDB struct {
 	*leveldb.DB
 }
+type DelDB struct {
+	*leveldb.DB
+}
 
 // Service type for use in handler functions. Gets injectected by the InjectBody
 // middleware
@@ -99,6 +106,8 @@ type AuthAccount struct {
 	// A set of api keys that can be used to access the data associated with this
 	// account
 	ApiKeys []ApiKey
+	// Token for verifying delete requests
+	DeleteToken string
 }
 
 // Fetches the ApiKey for a given device name. Returns nil if none is found
@@ -324,6 +333,84 @@ func PutData(acc AuthAccount, data RequestBody, db *DataDB) (int, string) {
 	return http.StatusOK, string(data)
 }
 
+// Handler function for requesting a data reset for a given account
+func RequestDataReset(req *http.Request, params martini.Params, authDB *AuthDB, delDB *DelDB) (int, string) {
+	email := params["email"]
+
+	// Fetch the account for the given email address if there is one
+	acc, err := FetchAuthAccount(email, authDB)
+
+	if err != nil {
+		if err == leveldb.ErrNotFound {
+			return http.StatusNotFound, fmt.Sprintf("User %s does not exists", email)
+		} else {
+			return http.StatusInternalServerError, fmt.Sprintf("Database error: %s", err)
+		}
+	}
+
+	// Dispose of any previous delete tokens for this account
+	err = delDB.Delete([]byte(acc.DeleteToken), nil)
+	if err != nil {
+		return http.StatusInternalServerError, fmt.Sprintf("Database error: %s", err)
+	}
+
+	// Generate a new delete token
+	token := uuid()
+	acc.DeleteToken = token
+
+	// Save the token both in the accounts database and in a separate lookup database
+	err = SaveAuthAccount(acc, authDB)
+	if err != nil {
+		return http.StatusInternalServerError, fmt.Sprintf("Database error: %s", err)
+	}
+	err = delDB.Put([]byte(token), []byte(email), nil)
+	if err != nil {
+		return http.StatusInternalServerError, fmt.Sprintf("Database error: %s", err)
+	}
+
+	// Render email
+	var buff bytes.Buffer
+	delEmailTemp.Execute(&buff, map[string]string{
+		"email":       email,
+		"delete_link": fmt.Sprintf("https://%s/reset/%s", req.Host, acc.DeleteToken),
+	})
+	body := buff.String()
+
+	// Send email with confirmation link
+	go sendMail(email, "Padlock Cloud Delete Request", body)
+
+	return http.StatusAccepted, ""
+}
+
+// Handler function for updating the data associated with a given account
+func ResetData(params martini.Params, delDB *DelDB, db *DataDB) (int, string) {
+	token := params["token"]
+	
+	// Fetch email from lookup database
+	email, err := delDB.Get([]byte(token), nil)
+
+	if err != nil {
+		if err == leveldb.ErrNotFound {
+			return http.StatusNotFound, fmt.Sprintf("This token is not valid")
+		} else {
+			return http.StatusInternalServerError, fmt.Sprintf("Database error: %s", err)
+		}
+	}
+
+	// Delete data from database
+	err = db.Delete(email, nil)
+	if err != nil {
+		return http.StatusInternalServerError, fmt.Sprintf("Database error: %s", err)
+	}
+
+	// Render success page
+	var buff bytes.Buffer
+	deletedTemp.Execute(&buff, map[string]string{
+		"email": string(email),
+	})
+	return http.StatusOK, buff.String()
+}
+
 func main() {
 	if dbPath == "" {
 		dbPath = "/var/lib/padlock"
@@ -333,6 +420,7 @@ func main() {
 	ddb, err := leveldb.OpenFile(dbPath+"/data", nil)
 	adb, err := leveldb.OpenFile(dbPath+"/auth", nil)
 	acdb, err := leveldb.OpenFile(dbPath+"/act", nil)
+	deldb, err := leveldb.OpenFile(dbPath+"/del", nil)
 
 	if err != nil {
 		panic("Failed to open database!")
@@ -341,6 +429,7 @@ func main() {
 	defer ddb.Close()
 	defer adb.Close()
 	defer acdb.Close()
+	defer deldb.Close()
 
 	// Create new martini web server instance
 	m := martini.Classic()
@@ -349,15 +438,20 @@ func main() {
 	dataDB := &DataDB{ddb}
 	authDB := &AuthDB{adb}
 	actDB := &ActDB{acdb}
+	delDB := &DelDB{deldb}
 
 	// Map databases so they can be injected into handlers
 	m.Map(dataDB)
 	m.Map(authDB)
 	m.Map(actDB)
+	m.Map(delDB)
 
 	m.Post("/auth", RequestApiKey)
 
 	m.Get("/activate/:token", ActivateApiKey)
+
+	m.Delete("/:email", RequestDataReset)
+	m.Get("/reset/:token", ResetData)
 
 	// m.Get("/:email", func(params martini.Params, db *AuthDB) (int, string) {
 	// 	accData, _ := db.Get([]byte(params["email"]), nil)
