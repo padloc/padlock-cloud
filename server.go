@@ -130,7 +130,7 @@ func (a *AuthAccount) Validate(key string) bool {
 }
 
 // Saves an AuthAccount instance to a given database
-func SaveAuthAccount(a *AuthAccount) error {
+func (a *AuthAccount) Save() error {
 	key := []byte(a.Email)
 	data, err := json.Marshal(a)
 	if err != nil {
@@ -278,7 +278,7 @@ func ActivateApiKey(w http.ResponseWriter, r *http.Request) {
 	acc.SetKey(apiKey)
 
 	// Save the changes
-	err = SaveAuthAccount(acc)
+	err = acc.Save()
 
 	// Remove the entry for this token
 	err = actDB.Delete([]byte(token), nil)
@@ -362,7 +362,7 @@ func RequestDataReset(w http.ResponseWriter, r *http.Request) {
 	acc.DeleteToken = token
 
 	// Save the token both in the accounts database and in a separate lookup database
-	err = SaveAuthAccount(acc)
+	err = acc.Save()
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Database error: %s", err), http.StatusInternalServerError)
 	}
