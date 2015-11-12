@@ -35,10 +35,14 @@ var (
 	connectedTemp = htmlTemplate.Must(htmlTemplate.ParseFiles("templates/connected.html"))
 	// Template for connected page
 	deletedTemp = htmlTemplate.Must(htmlTemplate.ParseFiles("templates/deleted.html"))
-	authDB      *leveldb.DB
-	dataDB      *leveldb.DB
-	actDB       *leveldb.DB
-	delDB       *leveldb.DB
+	// Database used for storing user accounts
+	authDB *leveldb.DB
+	// Database used for storing data
+	dataDB *leveldb.DB
+	// Database used for storing activation / authentication token pairs
+	actDB *leveldb.DB
+	// Database used for storing delete requests
+	delDB *leveldb.DB
 )
 
 // RFC4122-compliant uuid generator
@@ -158,6 +162,7 @@ func AccountFromEmail(email string) (*AuthAccount, error) {
 // and, in case of a successful authentication, injects the corresponding AuthAccount
 // instance into andy subsequent handlers
 func AccountFromRequest(r *http.Request) (*AuthAccount, error) {
+	// Extract email and authentication token from Authorization header
 	re := regexp.MustCompile("^ApiKey (?P<email>.+):(?P<key>.+)$")
 	authHeader := r.Header.Get("Authorization")
 
@@ -185,6 +190,7 @@ func AccountFromRequest(r *http.Request) (*AuthAccount, error) {
 	return acc, nil
 }
 
+// Extracts a uuid-formated token from a given url
 func TokenFromUrl(url string, baseUrl string) string {
 	re := regexp.MustCompile("^" + baseUrl + "(?P<token>" + uuidPattern + ")$")
 
@@ -439,7 +445,6 @@ func main() {
 	defer delDB.Close()
 
 	http.HandleFunc("/auth", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Println(os.Stdout, "auth")
 		if r.Method == "POST" {
 			RequestApiKey(w, r)
 		} else {
@@ -448,7 +453,6 @@ func main() {
 	})
 
 	http.HandleFunc("/activate/", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Println(os.Stdout, "activate")
 		if r.Method == "GET" {
 			ActivateApiKey(w, r)
 		} else {
@@ -457,7 +461,6 @@ func main() {
 	})
 
 	http.HandleFunc("/reset/", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Println(os.Stdout, "activate")
 		if r.Method == "GET" {
 			ResetData(w, r)
 		} else {
@@ -466,8 +469,6 @@ func main() {
 	})
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Println(os.Stdout, "root %v, %v", r.URL, r.URL.Path)
-
 		if r.URL.Path == "/" {
 			switch r.Method {
 			case "GET":
