@@ -8,11 +8,16 @@ import "net/smtp"
 import "os"
 import "encoding/json"
 import "regexp"
+import "errors"
 import "bytes"
 import "text/template"
 import htmlTemplate "html/template"
-import "github.com/codegangsta/martini"
 import "github.com/syndtr/goleveldb/leveldb"
+
+const defaultDbPath = "/var/lib/padlock"
+const uuidPattern = "[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}"
+
+// const defaultDbPath = "~/padlock-cloud-db"
 
 var (
 	// Settings for sending emails
@@ -30,6 +35,10 @@ var (
 	connectedTemp = htmlTemplate.Must(htmlTemplate.ParseFiles("templates/connected.html"))
 	// Template for connected page
 	deletedTemp = htmlTemplate.Must(htmlTemplate.ParseFiles("templates/deleted.html"))
+	authDB      *leveldb.DB
+	dataDB      *leveldb.DB
+	actDB       *leveldb.DB
+	delDB       *leveldb.DB
 )
 
 // RFC4122-compliant uuid generator
@@ -58,37 +67,6 @@ func sendMail(rec string, subject string, body string) error {
 		[]string{rec},
 		[]byte(message),
 	)
-}
-
-// These are used so the different databases can be injected as services
-// into hanlder functions
-type DataDB struct {
-	*leveldb.DB
-}
-type AuthDB struct {
-	*leveldb.DB
-}
-type ActDB struct {
-	*leveldb.DB
-}
-type DelDB struct {
-	*leveldb.DB
-}
-
-// Service type for use in handler functions. Gets injectected by the InjectBody
-// middleware
-type RequestBody []byte
-
-// Middleware for reading the request body and injecting it as a RequestBody
-func InjectBody(res http.ResponseWriter, req *http.Request, c martini.Context) {
-	b, err := ioutil.ReadAll(req.Body)
-	rb := RequestBody(b)
-
-	if err != nil {
-		http.Error(res, fmt.Sprintf("An error occured while reading the request body: %s", err), http.StatusInternalServerError)
-	}
-
-	c.Map(rb)
 }
 
 // A wrapper for an api key containing some meta info like the user and device name
@@ -152,45 +130,40 @@ func (a *AuthAccount) Validate(key string) bool {
 }
 
 // Saves an AuthAccount instance to a given database
-func SaveAuthAccount(a AuthAccount, db *AuthDB) error {
+func SaveAuthAccount(a *AuthAccount) error {
 	key := []byte(a.Email)
 	data, err := json.Marshal(a)
 	if err != nil {
 		return err
 	}
-	return db.Put(key, data, nil)
+	return authDB.Put(key, data, nil)
 }
 
 // Fetches an AuthAccount with the given email from the given database
-func FetchAuthAccount(email string, db *AuthDB) (AuthAccount, error) {
+func AccountFromEmail(email string) (*AuthAccount, error) {
 	key := []byte(email)
-	data, err := db.Get(key, nil)
+	data, err := authDB.Get(key, nil)
 	acc := AuthAccount{}
 
 	if err != nil {
-		return acc, err
+		return &acc, err
 	}
 
 	err = json.Unmarshal(data, &acc)
 
-	if err != nil {
-		return acc, err
-	}
-
-	return acc, nil
+	return &acc, err
 }
 
 // Authentication middleware. Checks if a valid authentication header is provided
 // and, in case of a successful authentication, injects the corresponding AuthAccount
 // instance into andy subsequent handlers
-func Auth(req *http.Request, w http.ResponseWriter, db *AuthDB, c martini.Context) {
-	re := regexp.MustCompile("ApiKey (?P<email>.+):(?P<key>.+)")
-	authHeader := req.Header.Get("Authorization")
+func AccountFromRequest(r *http.Request) (*AuthAccount, error) {
+	re := regexp.MustCompile("^ApiKey (?P<email>.+):(?P<key>.+)$")
+	authHeader := r.Header.Get("Authorization")
 
 	// Check if the Authorization header exists and is well formed
 	if !re.MatchString(authHeader) {
-		http.Error(w, "No valid authorization header provided", http.StatusUnauthorized)
-		return
+		return nil, errors.New("No valid authorization header provided")
 	}
 
 	// Extract email and api key from Authorization header
@@ -198,33 +171,37 @@ func Auth(req *http.Request, w http.ResponseWriter, db *AuthDB, c martini.Contex
 	email, key := matches[1], matches[2]
 
 	// Fetch account for the given email address
-	authAccount, err := FetchAuthAccount(email, db)
+	acc, err := AccountFromEmail(email)
 
 	if err != nil {
-		if err == leveldb.ErrNotFound {
-			http.Error(w, fmt.Sprintf("User %s does not exists", email), http.StatusUnauthorized)
-		} else {
-			http.Error(w, fmt.Sprintf("Database error: %s", err), http.StatusInternalServerError)
-		}
-		return
+		return nil, err
 	}
 
 	// Check if the provide api key is valid
-	if !authAccount.Validate(key) {
-		http.Error(w, "The provided key was not valid", http.StatusUnauthorized)
-		return
+	if !acc.Validate(key) {
+		return nil, errors.New("Invalid key")
 	}
 
-	c.Map(authAccount)
+	return acc, nil
+}
+
+func TokenFromUrl(url string, baseUrl string) string {
+	re := regexp.MustCompile("^" + baseUrl + "(?P<token>" + uuidPattern + ")$")
+
+	if !re.MatchString(url) {
+		return ""
+	}
+
+	return re.FindStringSubmatch(url)[1]
 }
 
 // Handler function for requesting an api key. Generates a key-token pair and stores them.
 // The token can later be used to activate the api key. An email is sent to the corresponding
 // email address with an activation url
-func RequestApiKey(req *http.Request, actDb *ActDB, w http.ResponseWriter) (int, string) {
-	req.ParseForm()
+func RequestApiKey(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
 	// TODO: Add validation
-	email, deviceName := req.PostForm.Get("email"), req.PostForm.Get("device_name")
+	email, deviceName := r.PostForm.Get("email"), r.PostForm.Get("device_name")
 
 	// Generate key-token pair
 	key := uuid()
@@ -239,14 +216,14 @@ func RequestApiKey(req *http.Request, actDb *ActDB, w http.ResponseWriter) (int,
 	// TODO: Handle the error?
 	data, _ := json.Marshal(apiKey)
 	// TODO: Handle the error
-	actDb.Put([]byte(token), data, nil)
+	actDB.Put([]byte(token), data, nil)
 
 	// Render email
 	var buff bytes.Buffer
 	actEmailTemp.Execute(&buff, map[string]string{
 		"email":           apiKey.Email,
 		"device_name":     apiKey.DeviceName,
-		"activation_link": fmt.Sprintf("https://%s/activate/%s", req.Host, token),
+		"activation_link": fmt.Sprintf("https://%s/activate/%s", r.Host, token),
 	})
 	body := buff.String()
 
@@ -256,18 +233,25 @@ func RequestApiKey(req *http.Request, actDb *ActDB, w http.ResponseWriter) (int,
 	// We're returning a JSON serialization of the ApiKey object
 	w.Header().Set("Content-Type", "application/json")
 
-	return http.StatusOK, string(data)
+	w.WriteHeader(http.StatusCreated)
+	w.Write(data)
 }
 
 // Hander function for activating a given api key
-func ActivateApiKey(params martini.Params, actDB *ActDB, authDB *AuthDB) (int, string) {
-	token := params["token"]
+func ActivateApiKey(w http.ResponseWriter, r *http.Request) {
+	token := TokenFromUrl(r.URL.Path, "/activate/")
+
+	if token == "" {
+		http.Error(w, "Invalid token", http.StatusBadRequest)
+		return
+	}
 
 	// Let's check if an unactivate api key exists for this token. If not,
 	// the token is obviously not valid
 	data, err := actDB.Get([]byte(token), nil)
 	if err != nil {
-		return http.StatusNotFound, "Token not valid"
+		http.Error(w, "Invalid token", http.StatusNotFound)
+		return
 	}
 
 	// We've found a record for this token, so let's create an ApiKey instance
@@ -277,15 +261,16 @@ func ActivateApiKey(params martini.Params, actDB *ActDB, authDB *AuthDB) (int, s
 	json.Unmarshal(data, &apiKey)
 
 	// Fetch the account for the given email address if there is one
-	acc, err := FetchAuthAccount(apiKey.Email, authDB)
+	acc, err := AccountFromEmail(apiKey.Email)
 
 	if err != nil && err != leveldb.ErrNotFound {
-		return http.StatusInternalServerError, fmt.Sprintf("Database error: %s", err)
+		http.Error(w, fmt.Sprintf("Database error: %s", err), http.StatusInternalServerError)
+		return
 	}
 
 	// If an account for this email address, doesn't exist yet, create one
 	if err == leveldb.ErrNotFound {
-		acc = AuthAccount{}
+		acc = &AuthAccount{}
 		acc.Email = apiKey.Email
 	}
 
@@ -293,65 +278,83 @@ func ActivateApiKey(params martini.Params, actDB *ActDB, authDB *AuthDB) (int, s
 	acc.SetKey(apiKey)
 
 	// Save the changes
-	err = SaveAuthAccount(acc, authDB)
+	err = SaveAuthAccount(acc)
 
 	// Remove the entry for this token
 	err = actDB.Delete([]byte(token), nil)
 
-	if err != nil {
-		return http.StatusInternalServerError, fmt.Sprintf("Database error: %s", err)
+	if err != nil && err != leveldb.ErrNotFound {
+		http.Error(w, fmt.Sprintf("Database error: %s", err), http.StatusInternalServerError)
+		return
 	}
 
 	// Render success page
-	var buff bytes.Buffer
-	connectedTemp.Execute(&buff, map[string]string{
+	connectedTemp.Execute(w, map[string]string{
 		"device_name": apiKey.DeviceName,
 	})
-	return http.StatusOK, buff.String()
 }
 
 // Handler function for retrieving the data associated with a given account
-func GetData(acc AuthAccount, db *DataDB) (int, string) {
-	data, err := db.Get([]byte(acc.Email), nil)
+func GetData(w http.ResponseWriter, r *http.Request) {
+	acc, err := AccountFromRequest(r)
+	if acc == nil {
+		http.Error(w, "", http.StatusUnauthorized)
+		return
+	}
+
+	data, err := dataDB.Get([]byte(acc.Email), nil)
 
 	// I case of a not found error we simply return an empty string
 	if err != nil && err != leveldb.ErrNotFound {
-		return http.StatusInternalServerError, fmt.Sprintf("Database error: %s", err)
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
 	}
 
-	return http.StatusOK, string(data)
+	w.Write(data)
 }
 
 // Handler function for updating the data associated with a given account
-func PutData(acc AuthAccount, data RequestBody, db *DataDB) (int, string) {
-	err := db.Put([]byte(acc.Email), data, nil)
-
-	if err != nil {
-		return http.StatusInternalServerError, fmt.Sprintf("Database error: %s", err)
+func PutData(w http.ResponseWriter, r *http.Request) {
+	acc, err := AccountFromRequest(r)
+	if acc == nil {
+		http.Error(w, "", http.StatusUnauthorized)
+		return
 	}
 
-	return http.StatusOK, string(data)
+	data, err := ioutil.ReadAll(r.Body)
+
+	if err != nil {
+		http.Error(w, fmt.Sprintf("An error occured while reading the request body: %s", err), http.StatusInternalServerError)
+	}
+
+	err = dataDB.Put([]byte(acc.Email), data, nil)
+
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Database error: %s", err), http.StatusInternalServerError)
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // Handler function for requesting a data reset for a given account
-func RequestDataReset(req *http.Request, params martini.Params, authDB *AuthDB, delDB *DelDB) (int, string) {
-	email := params["email"]
+func RequestDataReset(w http.ResponseWriter, r *http.Request) {
+	email := r.URL.Path[1:]
 
 	// Fetch the account for the given email address if there is one
-	acc, err := FetchAuthAccount(email, authDB)
+	acc, err := AccountFromEmail(email)
 
 	if err != nil {
 		if err == leveldb.ErrNotFound {
-			return http.StatusNotFound, fmt.Sprintf("User %s does not exists", email)
+			http.Error(w, fmt.Sprintf("User %s does not exists", email), http.StatusNotFound)
 		} else {
-			return http.StatusInternalServerError, fmt.Sprintf("Database error: %s", err)
+			http.Error(w, fmt.Sprintf("Database error: %s", err), http.StatusInternalServerError)
 		}
 	}
 
 	// Dispose of any previous delete tokens for this account
 	err = delDB.Delete([]byte(acc.DeleteToken), nil)
 	if err != nil {
-		return http.StatusInternalServerError, fmt.Sprintf("Database error: %s", err)
+		http.Error(w, fmt.Sprintf("Database error: %s", err), http.StatusInternalServerError)
 	}
 
 	// Generate a new delete token
@@ -359,108 +362,127 @@ func RequestDataReset(req *http.Request, params martini.Params, authDB *AuthDB, 
 	acc.DeleteToken = token
 
 	// Save the token both in the accounts database and in a separate lookup database
-	err = SaveAuthAccount(acc, authDB)
+	err = SaveAuthAccount(acc)
 	if err != nil {
-		return http.StatusInternalServerError, fmt.Sprintf("Database error: %s", err)
+		http.Error(w, fmt.Sprintf("Database error: %s", err), http.StatusInternalServerError)
 	}
 	err = delDB.Put([]byte(token), []byte(email), nil)
 	if err != nil {
-		return http.StatusInternalServerError, fmt.Sprintf("Database error: %s", err)
+		http.Error(w, fmt.Sprintf("Database error: %s", err), http.StatusInternalServerError)
 	}
 
 	// Render email
 	var buff bytes.Buffer
 	delEmailTemp.Execute(&buff, map[string]string{
 		"email":       email,
-		"delete_link": fmt.Sprintf("https://%s/reset/%s", req.Host, acc.DeleteToken),
+		"delete_link": fmt.Sprintf("https://%s/reset/%s", r.Host, acc.DeleteToken),
 	})
 	body := buff.String()
 
 	// Send email with confirmation link
 	go sendMail(email, "Padlock Cloud Delete Request", body)
 
-	return http.StatusAccepted, ""
+	w.WriteHeader(http.StatusAccepted)
 }
 
 // Handler function for updating the data associated with a given account
-func ResetData(params martini.Params, delDB *DelDB, db *DataDB) (int, string) {
-	token := params["token"]
-	
+func ResetData(w http.ResponseWriter, r *http.Request) {
+	token := TokenFromUrl(r.URL.Path, "/reset/")
+
+	if token == "" {
+		http.Error(w, "Invalid token", http.StatusBadRequest)
+	}
+
 	// Fetch email from lookup database
 	email, err := delDB.Get([]byte(token), nil)
 
 	if err != nil {
 		if err == leveldb.ErrNotFound {
-			return http.StatusNotFound, fmt.Sprintf("This token is not valid")
+			http.Error(w, "Invalid token", http.StatusNotFound)
 		} else {
-			return http.StatusInternalServerError, fmt.Sprintf("Database error: %s", err)
+			http.Error(w, fmt.Sprintf("Database error: %s", err), http.StatusInternalServerError)
 		}
 	}
 
 	// Delete data from database
-	err = db.Delete(email, nil)
+	err = dataDB.Delete(email, nil)
 	if err != nil {
-		return http.StatusInternalServerError, fmt.Sprintf("Database error: %s", err)
+		http.Error(w, fmt.Sprintf("Database error: %s", err), http.StatusInternalServerError)
 	}
 
 	// Render success page
-	var buff bytes.Buffer
-	deletedTemp.Execute(&buff, map[string]string{
+	deletedTemp.Execute(w, map[string]string{
 		"email": string(email),
 	})
-	return http.StatusOK, buff.String()
 }
 
 func main() {
 	if dbPath == "" {
-		dbPath = "/var/lib/padlock"
+		dbPath = defaultDbPath
 	}
 
+	var err error
+
 	// Open databases
-	ddb, err := leveldb.OpenFile(dbPath+"/data", nil)
-	adb, err := leveldb.OpenFile(dbPath+"/auth", nil)
-	acdb, err := leveldb.OpenFile(dbPath+"/act", nil)
-	deldb, err := leveldb.OpenFile(dbPath+"/del", nil)
+	dataDB, err = leveldb.OpenFile(dbPath+"/data", nil)
+	authDB, err = leveldb.OpenFile(dbPath+"/auth", nil)
+	actDB, err = leveldb.OpenFile(dbPath+"/act", nil)
+	delDB, err = leveldb.OpenFile(dbPath+"/del", nil)
 
 	if err != nil {
 		panic("Failed to open database!")
 	}
 
-	defer ddb.Close()
-	defer adb.Close()
-	defer acdb.Close()
-	defer deldb.Close()
+	defer dataDB.Close()
+	defer authDB.Close()
+	defer actDB.Close()
+	defer delDB.Close()
 
-	// Create new martini web server instance
-	m := martini.Classic()
+	http.HandleFunc("/auth", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Println(os.Stdout, "auth")
+		if r.Method == "POST" {
+			RequestApiKey(w, r)
+		} else {
+			http.Error(w, "", http.StatusMethodNotAllowed)
+		}
+	})
 
-	// Wrap datbases into different types so we can map them
-	dataDB := &DataDB{ddb}
-	authDB := &AuthDB{adb}
-	actDB := &ActDB{acdb}
-	delDB := &DelDB{deldb}
+	http.HandleFunc("/activate/", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Println(os.Stdout, "activate")
+		if r.Method == "GET" {
+			ActivateApiKey(w, r)
+		} else {
+			http.Error(w, "", http.StatusMethodNotAllowed)
+		}
+	})
 
-	// Map databases so they can be injected into handlers
-	m.Map(dataDB)
-	m.Map(authDB)
-	m.Map(actDB)
-	m.Map(delDB)
+	http.HandleFunc("/reset/", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Println(os.Stdout, "activate")
+		if r.Method == "GET" {
+			ResetData(w, r)
+		} else {
+			http.Error(w, "", http.StatusMethodNotAllowed)
+		}
+	})
 
-	m.Post("/auth", RequestApiKey)
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Println(os.Stdout, "root %v, %v", r.URL, r.URL.Path)
 
-	m.Get("/activate/:token", ActivateApiKey)
+		if r.URL.Path == "/" {
+			switch r.Method {
+			case "GET":
+				GetData(w, r)
+			case "PUT":
+				PutData(w, r)
+			default:
+				http.Error(w, "", http.StatusMethodNotAllowed)
+			}
+		} else if r.Method == "DELETE" {
+			RequestDataReset(w, r)
+		} else {
+			http.Error(w, "", http.StatusNotFound)
+		}
+	})
 
-	m.Delete("/:email", RequestDataReset)
-	m.Get("/reset/:token", ResetData)
-
-	// m.Get("/:email", func(params martini.Params, db *AuthDB) (int, string) {
-	// 	accData, _ := db.Get([]byte(params["email"]), nil)
-	// 	return 200, string(accData)
-	// })
-
-	m.Get("/", Auth, GetData)
-
-	m.Put("/", Auth, InjectBody, PutData)
-
-	m.Run()
+	http.ListenAndServe(":3000", nil)
 }
