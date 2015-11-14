@@ -14,27 +14,28 @@ import "text/template"
 import htmlTemplate "html/template"
 import "github.com/MaKleSoft/padlock-cloud/Godeps/_workspace/src/github.com/syndtr/goleveldb/leveldb"
 
-const defaultDbPath = "/var/lib/padlock"
+const defaultDbPath = "./db"
+const defaultAssetsPath = "./assets"
 const uuidPattern = "[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}"
-
-// const defaultDbPath = "~/padlock-cloud-db"
 
 var (
 	// Settings for sending emails
-	emailUser     = os.Getenv("PADLOCK_EMAIL_USERNAME")
-	emailServer   = os.Getenv("PADLOCK_EMAIL_SERVER")
-	emailPort     = os.Getenv("PADLOCK_EMAIL_PORT")
-	emailPassword = os.Getenv("PADLOCK_EMAIL_PASSWORD")
+	emailUser     string
+	emailServer   string
+	emailPort     string
+	emailPassword string
+	// Path to assets directory
+	assetsPath string
 	// Path to the leveldb database
-	dbPath = os.Getenv("PADLOCK_DB_PATH")
+	dbPath string
 	// Email template for api key activation email
-	actEmailTemp = template.Must(template.ParseFiles("templates/activate.txt"))
+	actEmailTemp *template.Template
 	// Email template for deletion confirmation email
-	delEmailTemp = template.Must(template.ParseFiles("templates/delete.txt"))
+	delEmailTemp *template.Template
 	// Template for connected page
-	connectedTemp = htmlTemplate.Must(htmlTemplate.ParseFiles("templates/connected.html"))
+	connectedTemp *htmlTemplate.Template
 	// Template for connected page
-	deletedTemp = htmlTemplate.Must(htmlTemplate.ParseFiles("templates/deleted.html"))
+	deletedTemp *htmlTemplate.Template
 	// Database used for storing user accounts
 	authDB *leveldb.DB
 	// Database used for storing data
@@ -44,6 +45,31 @@ var (
 	// Database used for storing delete requests
 	delDB *leveldb.DB
 )
+
+func loadEnvConfig() {
+	emailUser = os.Getenv("PADLOCK_EMAIL_USERNAME")
+	emailServer = os.Getenv("PADLOCK_EMAIL_SERVER")
+	emailPort = os.Getenv("PADLOCK_EMAIL_PORT")
+	emailPassword = os.Getenv("PADLOCK_EMAIL_PASSWORD")
+
+	assetsPath = os.Getenv("PADLOCK_ASSETS_PATH")
+	if assetsPath == "" {
+		assetsPath = defaultAssetsPath
+	}
+
+	dbPath = os.Getenv("PADLOCK_DB_PATH")
+	if dbPath == "" {
+		dbPath = defaultDbPath
+	}
+}
+
+func loadTemplates() {
+	dir := assetsPath + "/templates/"
+	actEmailTemp = template.Must(template.ParseFiles(dir + "activate.txt"))
+	delEmailTemp = template.Must(template.ParseFiles(dir + "delete.txt"))
+	connectedTemp = htmlTemplate.Must(htmlTemplate.ParseFiles(dir + "connected.html"))
+	deletedTemp = htmlTemplate.Must(htmlTemplate.ParseFiles(dir + "deleted.html"))
+}
 
 // RFC4122-compliant uuid generator
 func uuid() string {
@@ -423,9 +449,8 @@ func ResetData(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	if dbPath == "" {
-		dbPath = defaultDbPath
-	}
+	loadEnvConfig()
+	loadTemplates()
 
 	var err error
 
