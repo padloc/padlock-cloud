@@ -12,7 +12,7 @@ import "errors"
 import "bytes"
 import "text/template"
 import htmlTemplate "html/template"
-import "github.com/syndtr/goleveldb/leveldb"
+import "github.com/MaKleSoft/padlock-cloud/Godeps/_workspace/src/github.com/syndtr/goleveldb/leveldb"
 
 const defaultDbPath = "/var/lib/padlock"
 const uuidPattern = "[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}"
