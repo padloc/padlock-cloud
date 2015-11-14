@@ -22,91 +22,11 @@ const defaultPort = 3000
 const uuidPattern = "[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}"
 
 var (
-	// Settings for sending emails
-	emailUser     string
-	emailServer   string
-	emailPort     string
-	emailPassword string
-	// Path to assets directory
-	assetsPath string
-	// Path to the leveldb database
-	dbPath string
-	// Port to listen on
-	port int
-	// Email template for api key activation email
-	actEmailTemp *template.Template
-	// Email template for deletion confirmation email
-	delEmailTemp *template.Template
-	// Template for connected page
-	connectedTemp *htmlTemplate.Template
-	// Template for connected page
-	deletedTemp *htmlTemplate.Template
-	// Database used for storing user accounts
-	authDB *leveldb.DB
-	// Database used for storing data
-	dataDB *leveldb.DB
-	// Database used for storing activation / authentication token pairs
-	actDB *leveldb.DB
-	// Database used for storing delete requests
-	delDB *leveldb.DB
+	ErrInvalidToken             = errors.New("padlock: invalid token")
+	ErrNotAuthenticated         = errors.New("padlock: not authenticated")
+	ErrWrongMethod              = errors.New("padlock: wrong http method")
+	ErrStorableTypeNotSupported = errors.New("padlock: storable type not supported")
 )
-
-func parseFlags() {
-	p := flag.Int("p", defaultPort, "Port to listen on")
-	flag.Parse()
-	port = *p
-}
-
-func loadEnv() {
-	emailUser = os.Getenv("PADLOCK_EMAIL_USERNAME")
-	emailServer = os.Getenv("PADLOCK_EMAIL_SERVER")
-	emailPort = os.Getenv("PADLOCK_EMAIL_PORT")
-	emailPassword = os.Getenv("PADLOCK_EMAIL_PASSWORD")
-
-	assetsPath = os.Getenv("PADLOCK_ASSETS_PATH")
-	if assetsPath == "" {
-		assetsPath = defaultAssetsPath
-	}
-
-	dbPath = os.Getenv("PADLOCK_DB_PATH")
-	if dbPath == "" {
-		dbPath = defaultDbPath
-	}
-}
-
-func loadTemplates() {
-	dir := assetsPath + "/templates/"
-	actEmailTemp = template.Must(template.ParseFiles(dir + "activate.txt"))
-	delEmailTemp = template.Must(template.ParseFiles(dir + "delete.txt"))
-	connectedTemp = htmlTemplate.Must(htmlTemplate.ParseFiles(dir + "connected.html"))
-	deletedTemp = htmlTemplate.Must(htmlTemplate.ParseFiles(dir + "deleted.html"))
-}
-
-func openDBs() {
-	var err error
-
-	// Open databases
-	dataDB, err = leveldb.OpenFile(dbPath+"/data", nil)
-	authDB, err = leveldb.OpenFile(dbPath+"/auth", nil)
-	actDB, err = leveldb.OpenFile(dbPath+"/act", nil)
-	delDB, err = leveldb.OpenFile(dbPath+"/del", nil)
-
-	if err != nil {
-		log.Fatal(err)
-	}
-}
-
-func closeDBs() {
-	var err error
-	err = dataDB.Close()
-	err = authDB.Close()
-	err = actDB.Close()
-	err = delDB.Close()
-
-	if err != nil {
-		log.Fatal(err)
-	}
-}
 
 // RFC4122-compliant uuid generator
 func uuid() string {
@@ -117,23 +37,153 @@ func uuid() string {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
 }
 
+// Extracts a uuid-formated token from a given url
+func tokenFromUrl(url string, baseUrl string) (string, error) {
+	re := regexp.MustCompile("^" + baseUrl + "(?P<token>" + uuidPattern + ")$")
+
+	if !re.MatchString(url) {
+		return "", ErrInvalidToken
+	}
+
+	return re.FindStringSubmatch(url)[1], nil
+}
+
+type Sender interface {
+	Send(string, string, string) error
+}
+
+type EmailSender struct {
+	User     string
+	Server   string
+	Port     string
+	Password string
+}
+
 // Helper function for sending emails
-func sendMail(rec string, subject string, body string) error {
+func (sender *EmailSender) Send(rec string, subject string, body string) error {
 	auth := smtp.PlainAuth(
 		"",
-		emailUser,
-		emailPassword,
-		emailServer,
+		sender.User,
+		sender.Password,
+		sender.Server,
 	)
 
-	message := fmt.Sprintf("Subject: %s\r\nFrom: Padlock Cloud <%s>\r\n\r\n%s", subject, emailUser, body)
+	message := fmt.Sprintf("Subject: %s\r\nFrom: Padlock Cloud <%s>\r\n\r\n%s", subject, sender.User, body)
 	return smtp.SendMail(
-		emailServer+":"+emailPort,
+		sender.Server+":"+sender.Port,
 		auth,
-		emailUser,
+		sender.User,
 		[]string{rec},
 		[]byte(message),
 	)
+}
+
+type Storable interface {
+	Key() []byte
+	Serialize() ([]byte, error)
+	Deserialize([]byte) error
+}
+
+type Storage interface {
+	Open() error
+	Close() error
+	Get(Storable) error
+	Put(Storable) error
+	Delete(Storable) error
+}
+
+type LevelDBStorage struct {
+	Path string
+	// Database used for storing user accounts
+	authDB *leveldb.DB
+	// Database used for storing data
+	dataDB *leveldb.DB
+	// Database used for storing activation / authentication token pairs
+	actDB *leveldb.DB
+	// Database used for storing delete requests
+	delDB *leveldb.DB
+}
+
+func (s *LevelDBStorage) Open() error {
+	var err error
+
+	s.dataDB, err = leveldb.OpenFile(s.Path+"/data", nil)
+	s.authDB, err = leveldb.OpenFile(s.Path+"/auth", nil)
+	s.actDB, err = leveldb.OpenFile(s.Path+"/act", nil)
+	s.delDB, err = leveldb.OpenFile(s.Path+"/del", nil)
+
+	return err
+}
+
+func (s *LevelDBStorage) Close() error {
+	var err error
+
+	err = s.dataDB.Close()
+	err = s.authDB.Close()
+	err = s.actDB.Close()
+	err = s.delDB.Close()
+
+	return err
+}
+
+func (s *LevelDBStorage) getDB(t Storable) (*leveldb.DB, error) {
+	switch t.(type) {
+	case *AuthAccount:
+		{
+			return s.authDB, nil
+		}
+	case *AuthRequest:
+		{
+			return s.actDB, nil
+		}
+	case *ResetRequest:
+		{
+			return s.delDB, nil
+		}
+	case *Data:
+		{
+			return s.dataDB, nil
+		}
+	default:
+		return nil, ErrStorableTypeNotSupported
+	}
+}
+
+func (s *LevelDBStorage) Get(t Storable) error {
+	db, err := s.getDB(t)
+	if err != nil {
+		return err
+	}
+
+	data, err := db.Get(t.Key(), nil)
+	if err != nil {
+		return err
+	}
+
+	return t.Deserialize(data)
+}
+
+func (s *LevelDBStorage) Put(t Storable) error {
+	db, err := s.getDB(t)
+	if err != nil {
+		return err
+	}
+
+	data, err := t.Serialize()
+	if err != nil {
+		return err
+	}
+
+	return db.Put(t.Key(), data, nil)
+}
+
+func (s *LevelDBStorage) Delete(t Storable) error {
+	db, err := s.getDB(t)
+	if err != nil {
+		return err
+	}
+
+	return db.Delete(t.Key(), nil)
 }
 
 // A wrapper for an api key containing some meta info like the user and device name
@@ -151,19 +201,18 @@ type AuthAccount struct {
 	// A set of api keys that can be used to access the data associated with this
 	// account
 	ApiKeys []ApiKey
-	// Token for verifying delete requests
-	DeleteToken string
 }
 
-// Fetches the ApiKey for a given device name. Returns nil if none is found
-func (a *AuthAccount) KeyForDevice(deviceName string) *ApiKey {
-	for _, apiKey := range a.ApiKeys {
-		if apiKey.DeviceName == deviceName {
-			return &apiKey
-		}
-	}
+func (acc *AuthAccount) Key() []byte {
+	return []byte(acc.Email)
+}
 
-	return nil
+func (acc *AuthAccount) Deserialize(data []byte) error {
+	return json.Unmarshal(data, acc)
+}
+
+func (acc *AuthAccount) Serialize() ([]byte, error) {
+	return json.Marshal(acc)
 }
 
 // Removes the api key for a given device name
@@ -196,78 +245,132 @@ func (a *AuthAccount) Validate(key string) bool {
 	return false
 }
 
-// Saves an AuthAccount instance to a given database
-func (a *AuthAccount) Save() error {
-	key := []byte(a.Email)
-	data, err := json.Marshal(a)
-	if err != nil {
-		return err
-	}
-	return authDB.Put(key, data, nil)
+type AuthRequest struct {
+	Token  string
+	ApiKey ApiKey
 }
 
-// Fetches an AuthAccount with the given email from the given database
-func AccountFromEmail(email string) (*AuthAccount, error) {
-	key := []byte(email)
-	data, err := authDB.Get(key, nil)
-	acc := AuthAccount{}
-
-	if err != nil {
-		return &acc, err
-	}
-
-	err = json.Unmarshal(data, &acc)
-
-	return &acc, err
+func (ar *AuthRequest) Key() []byte {
+	return []byte(ar.Token)
 }
 
-// Authentication middleware. Checks if a valid authentication header is provided
-// and, in case of a successful authentication, injects the corresponding AuthAccount
-// instance into andy subsequent handlers
-func AccountFromRequest(r *http.Request) (*AuthAccount, error) {
+func (ar *AuthRequest) Deserialize(data []byte) error {
+	return json.Unmarshal(data, &ar.ApiKey)
+}
+
+func (ar *AuthRequest) Serialize() ([]byte, error) {
+	return json.Marshal(&ar.ApiKey)
+}
+
+type ResetRequest struct {
+	Token   string
+	Account string
+}
+
+func (rr *ResetRequest) Key() []byte {
+	return []byte(rr.Token)
+}
+
+func (rr *ResetRequest) Deserialize(data []byte) error {
+	rr.Account = string(data)
+	return nil
+}
+
+func (rr *ResetRequest) Serialize() ([]byte, error) {
+	return []byte(rr.Account), nil
+}
+
+type Data struct {
+	Account *AuthAccount
+	Content []byte
+}
+
+func (d *Data) Key() []byte {
+	return []byte(d.Account.Email)
+}
+
+func (d *Data) Deserialize(data []byte) error {
+	d.Content = data
+	return nil
+}
+
+func (d *Data) Serialize() ([]byte, error) {
+	return d.Content, nil
+}
+
+type App struct {
+	*http.ServeMux
+	Sender
+	Storage
+	// Email template for api key activation email
+	ActEmailTemp *template.Template
+	// Email template for deletion confirmation email
+	DelEmailTemp *template.Template
+	// Template for connected page
+	ConnectedTemp *htmlTemplate.Template
+	// Template for connected page
+	DeletedTemp *htmlTemplate.Template
+}
+
+func (app *App) accountFromRequest(r *http.Request) (*AuthAccount, error) {
 	// Extract email and authentication token from Authorization header
 	re := regexp.MustCompile("^ApiKey (?P<email>.+):(?P<key>.+)$")
 	authHeader := r.Header.Get("Authorization")
 
 	// Check if the Authorization header exists and is well formed
 	if !re.MatchString(authHeader) {
-		return nil, errors.New("No valid authorization header provided")
+		return nil, ErrNotAuthenticated
 	}
 
 	// Extract email and api key from Authorization header
 	matches := re.FindStringSubmatch(authHeader)
 	email, key := matches[1], matches[2]
+	acc := &AuthAccount{Email: email}
 
 	// Fetch account for the given email address
-	acc, err := AccountFromEmail(email)
+	err := app.Get(acc)
 
 	if err != nil {
-		return nil, err
+		return nil, ErrNotAuthenticated
 	}
 
 	// Check if the provide api key is valid
 	if !acc.Validate(key) {
-		return nil, errors.New("Invalid key")
+		return nil, ErrNotAuthenticated
 	}
 
 	return acc, nil
 }
 
-// Extracts a uuid-formated token from a given url
-func TokenFromUrl(url string, baseUrl string) string {
-	re := regexp.MustCompile("^" + baseUrl + "(?P<token>" + uuidPattern + ")$")
-
-	if !re.MatchString(url) {
-		return ""
+func handleError(e error, w http.ResponseWriter, r *http.Request) {
+	switch e {
+	case ErrInvalidToken:
+		{
+			http.Error(w, "", http.StatusBadRequest)
+		}
+	case ErrNotAuthenticated:
+		{
+			http.Error(w, "", http.StatusUnauthorized)
+		}
+	case ErrWrongMethod:
+		{
+			http.Error(w, "", http.StatusMethodNotAllowed)
+		}
+	case leveldb.ErrNotFound:
+		{
+			http.Error(w, "", http.StatusNotFound)
+		}
+	default:
+		{
+			http.Error(w, "", http.StatusInternalServerError)
+		}
 	}
-
-	return re.FindStringSubmatch(url)[1]
 }
 
 // Handler function for requesting an api key. Generates a key-token pair and stores them.
 // The token can later be used to activate the api key. An email is sent to the corresponding
 // email address with an activation url
-func RequestApiKey(w http.ResponseWriter, r *http.Request) {
+func (app *App) RequestApiKey(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	// TODO: Add validation
 	email, deviceName := r.PostForm.Get("email"), r.PostForm.Get("device_name")
@@ -281,15 +384,15 @@ func RequestApiKey(w http.ResponseWriter, r *http.Request) {
 		key,
 	}
 
-	// Store key-token pair
-	// TODO: Handle the error?
-	data, _ := json.Marshal(apiKey)
-	// TODO: Handle the error
-	actDB.Put([]byte(token), data, nil)
+	err := app.Put(&AuthRequest{token, apiKey})
+	if err != nil {
+		handleError(err, w, r)
+		return
+	}
 
 	// Render email
 	var buff bytes.Buffer
-	actEmailTemp.Execute(&buff, map[string]string{
+	app.ActEmailTemp.Execute(&buff, map[string]string{
 		"email":           apiKey.Email,
 		"device_name":     apiKey.DeviceName,
 		"activation_link": fmt.Sprintf("https://%s/activate/%s", r.Host, token),
@@ -297,247 +400,306 @@ func RequestApiKey(w http.ResponseWriter, r *http.Request) {
 	body := buff.String()
 
 	// Send email with activation link
-	go sendMail(email, "Connect to Padlock Cloud", body)
+	go app.Send(email, "Connect to Padlock Cloud", body)
 
 	// We're returning a JSON serialization of the ApiKey object
 	w.Header().Set("Content-Type", "application/json")
+
+	data, err := json.Marshal(apiKey)
+
+	if err != nil {
+		handleError(err, w, r)
+		return
+	}
 
 	w.WriteHeader(http.StatusCreated)
 	w.Write(data)
 }
 
 // Hander function for activating a given api key
-func ActivateApiKey(w http.ResponseWriter, r *http.Request) {
-	token := TokenFromUrl(r.URL.Path, "/activate/")
-
-	if token == "" {
-		http.Error(w, "Invalid token", http.StatusBadRequest)
+func (app *App) ActivateApiKey(w http.ResponseWriter, r *http.Request) {
+	token, err := tokenFromUrl(r.URL.Path, "/activate/")
+	if err != nil {
+		handleError(err, w, r)
 		return
 	}
 
+	authRequest := &AuthRequest{Token: token}
 	// Let's check if an unactivate api key exists for this token. If not,
 	// the token is obviously not valid
-	data, err := actDB.Get([]byte(token), nil)
+	err = app.Get(authRequest)
 	if err != nil {
-		http.Error(w, "Invalid token", http.StatusNotFound)
+		handleError(err, w, r)
 		return
 	}
 
-	// We've found a record for this token, so let's create an ApiKey instance
-	// with it
-	apiKey := ApiKey{}
-	// TODO: Handle error?
-	json.Unmarshal(data, &apiKey)
+	acc := &AuthAccount{Email: authRequest.ApiKey.Email}
 
 	// Fetch the account for the given email address if there is one
-	acc, err := AccountFromEmail(apiKey.Email)
-
+	err = app.Get(acc)
 	if err != nil && err != leveldb.ErrNotFound {
-		http.Error(w, fmt.Sprintf("Database error: %s", err), http.StatusInternalServerError)
+		handleError(err, w, r)
 		return
-	}
-
-	// If an account for this email address, doesn't exist yet, create one
-	if err == leveldb.ErrNotFound {
-		acc = &AuthAccount{}
-		acc.Email = apiKey.Email
 	}
 
 	// Add the new key to the account (keys with the same device name will be replaced)
-	acc.SetKey(apiKey)
+	acc.SetKey(authRequest.ApiKey)
 
 	// Save the changes
-	err = acc.Save()
-
-	// Remove the entry for this token
-	err = actDB.Delete([]byte(token), nil)
-
-	if err != nil && err != leveldb.ErrNotFound {
-		http.Error(w, fmt.Sprintf("Database error: %s", err), http.StatusInternalServerError)
-		return
+	err = app.Put(acc)
+	if err != nil {
+		handleError(err, w, r)
 	}
 
+	// Remove the entry for this token
+	app.Delete(authRequest)
+
+	var buff bytes.Buffer
 	// Render success page
-	connectedTemp.Execute(w, map[string]string{
-		"device_name": apiKey.DeviceName,
+	err = app.ConnectedTemp.Execute(&buff, map[string]string{
+		"device_name": authRequest.ApiKey.DeviceName,
 	})
+
+	if err != nil {
+		handleError(err, w, r)
+	}
+
+	buff.WriteTo(w)
 }
 
 // Handler function for retrieving the data associated with a given account
-func GetData(w http.ResponseWriter, r *http.Request) {
-	acc, err := AccountFromRequest(r)
+func (app *App) GetData(w http.ResponseWriter, r *http.Request) {
+	acc, err := app.accountFromRequest(r)
 	if acc == nil {
-		http.Error(w, "", http.StatusUnauthorized)
+		handleError(err, w, r)
 		return
 	}
 
-	data, err := dataDB.Get([]byte(acc.Email), nil)
+	data := &Data{Account: acc}
+	err = app.Get(data)
 
 	// I case of a not found error we simply return an empty string
 	if err != nil && err != leveldb.ErrNotFound {
-		http.Error(w, "Database error", http.StatusInternalServerError)
+		handleError(err, w, r)
 		return
 	}
 
-	w.Write(data)
+	w.Write(data.Content)
 }
 
 // Handler function for updating the data associated with a given account
-func PutData(w http.ResponseWriter, r *http.Request) {
-	acc, err := AccountFromRequest(r)
-	if acc == nil {
-		http.Error(w, "", http.StatusUnauthorized)
+func (app *App) PutData(w http.ResponseWriter, r *http.Request) {
+	acc, err := app.accountFromRequest(r)
+	if err != nil {
+		handleError(err, w, r)
 		return
 	}
 
-	data, err := ioutil.ReadAll(r.Body)
-
+	data := &Data{Account: acc}
+	content, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("An error occured while reading the request body: %s", err), http.StatusInternalServerError)
+		handleError(err, w, r)
+		return
 	}
+	data.Content = content
 
-	err = dataDB.Put([]byte(acc.Email), data, nil)
-
+	err = app.Put(data)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Database error: %s", err), http.StatusInternalServerError)
+		handleError(err, w, r)
+		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
 }
 
 // Handler function for requesting a data reset for a given account
-func RequestDataReset(w http.ResponseWriter, r *http.Request) {
+func (app *App) RequestDataReset(w http.ResponseWriter, r *http.Request) {
 	email := r.URL.Path[1:]
 
 	// Fetch the account for the given email address if there is one
-	acc, err := AccountFromEmail(email)
+	err := app.Get(&AuthAccount{Email: email})
 
 	if err != nil {
-		if err == leveldb.ErrNotFound {
-			http.Error(w, fmt.Sprintf("User %s does not exists", email), http.StatusNotFound)
-		} else {
-			http.Error(w, fmt.Sprintf("Database error: %s", err), http.StatusInternalServerError)
-		}
-	}
-
-	// Dispose of any previous delete tokens for this account
-	err = delDB.Delete([]byte(acc.DeleteToken), nil)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Database error: %s", err), http.StatusInternalServerError)
+		handleError(err, w, r)
+		return
 	}
 
 	// Generate a new delete token
 	token := uuid()
-	acc.DeleteToken = token
 
-	// Save the token both in the accounts database and in a separate lookup database
-	err = acc.Save()
+	// Save token/email pair in database to we can verify it later
+	err = app.Put(&ResetRequest{token, email})
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Database error: %s", err), http.StatusInternalServerError)
-	}
-	err = delDB.Put([]byte(token), []byte(email), nil)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Database error: %s", err), http.StatusInternalServerError)
+		handleError(err, w, r)
+		return
 	}
 
 	// Render email
 	var buff bytes.Buffer
-	delEmailTemp.Execute(&buff, map[string]string{
+	err = app.DelEmailTemp.Execute(&buff, map[string]string{
 		"email":       email,
-		"delete_link": fmt.Sprintf("https://%s/reset/%s", r.Host, acc.DeleteToken),
+		"delete_link": fmt.Sprintf("https://%s/reset/%s", r.Host, token),
 	})
-	body := buff.String()
+
+	if err != nil {
+		handleError(err, w, r)
+		return
+	}
 
 	// Send email with confirmation link
-	go sendMail(email, "Padlock Cloud Delete Request", body)
+	body := buff.String()
+	go app.Send(email, "Padlock Cloud Delete Request", body)
 
 	w.WriteHeader(http.StatusAccepted)
 }
 
 // Handler function for updating the data associated with a given account
-func ResetData(w http.ResponseWriter, r *http.Request) {
-	token := TokenFromUrl(r.URL.Path, "/reset/")
-
-	if token == "" {
-		http.Error(w, "Invalid token", http.StatusBadRequest)
-	}
-
-	// Fetch email from lookup database
-	email, err := delDB.Get([]byte(token), nil)
+func (app *App) ResetData(w http.ResponseWriter, r *http.Request) {
+	token, err := tokenFromUrl(r.URL.Path, "/reset/")
 
 	if err != nil {
-		if err == leveldb.ErrNotFound {
-			http.Error(w, "Invalid token", http.StatusNotFound)
-		} else {
-			http.Error(w, fmt.Sprintf("Database error: %s", err), http.StatusInternalServerError)
-		}
+		handleError(err, w, r)
+		return
+	}
+
+	resetRequest := &ResetRequest{Token: token}
+	// Fetch email from lookup database
+	err = app.Get(resetRequest)
+
+	if err != nil {
+		handleError(err, w, r)
+		return
 	}
 
 	// Delete data from database
-	err = dataDB.Delete(email, nil)
+	err = app.Delete(&Data{Account: &AuthAccount{Email: resetRequest.Account}})
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Database error: %s", err), http.StatusInternalServerError)
+		handleError(err, w, r)
+		return
 	}
 
+	var buff bytes.Buffer
 	// Render success page
-	deletedTemp.Execute(w, map[string]string{
-		"email": string(email),
+	err = app.DeletedTemp.Execute(&buff, map[string]string{
+		"email": string(resetRequest.Account),
 	})
+
+	if err != nil {
+		handleError(err, w, r)
+		return
+	}
+
+	buff.WriteTo(w)
+
+	// Delete the request token
+	app.Delete(resetRequest)
 }
 
-func main() {
-	parseFlags()
-	loadEnv()
-	loadTemplates()
-
-	openDBs()
-	defer closeDBs()
-
-	http.HandleFunc("/auth", func(w http.ResponseWriter, r *http.Request) {
+func (app *App) setupRoutes() {
+	app.HandleFunc("/auth", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "POST" {
-			RequestApiKey(w, r)
+			app.RequestApiKey(w, r)
 		} else {
 			http.Error(w, "", http.StatusMethodNotAllowed)
 		}
 	})
 
-	http.HandleFunc("/activate/", func(w http.ResponseWriter, r *http.Request) {
+	app.HandleFunc("/activate/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "GET" {
-			ActivateApiKey(w, r)
+			app.ActivateApiKey(w, r)
 		} else {
 			http.Error(w, "", http.StatusMethodNotAllowed)
 		}
 	})
 
-	http.HandleFunc("/reset/", func(w http.ResponseWriter, r *http.Request) {
+	app.HandleFunc("/reset/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "GET" {
-			ResetData(w, r)
+			app.ResetData(w, r)
 		} else {
 			http.Error(w, "", http.StatusMethodNotAllowed)
 		}
 	})
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	app.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
 			switch r.Method {
 			case "GET":
-				GetData(w, r)
+				app.GetData(w, r)
 			case "PUT":
-				PutData(w, r)
+				app.PutData(w, r)
 			default:
 				http.Error(w, "", http.StatusMethodNotAllowed)
 			}
 		} else if r.Method == "DELETE" {
-			RequestDataReset(w, r)
+			app.RequestDataReset(w, r)
 		} else {
 			http.Error(w, "", http.StatusNotFound)
 		}
 	})
+}
 
-	log.Printf("Starting server on port %v", port)
-	err := http.ListenAndServe(fmt.Sprintf(":%d", port), nil)
+func (app *App) Init() {
+	app.ServeMux = http.NewServeMux()
+	app.setupRoutes()
+}
+
+func (app *App) Start(addr string) {
+	app.Init()
+
+	err := app.Storage.Open()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer app.Storage.Close()
+
+	err = http.ListenAndServe(addr, app)
 
 	if err != nil {
 		log.Fatal(err)
 	}
+}
+
+func loadEnv(app *App, storage *LevelDBStorage, emailSender *EmailSender, assetsPath *string) {
+	emailSender.User = os.Getenv("PADLOCK_EMAIL_USERNAME")
+	emailSender.Server = os.Getenv("PADLOCK_EMAIL_SERVER")
+	emailSender.Port = os.Getenv("PADLOCK_EMAIL_PORT")
+	emailSender.Password = os.Getenv("PADLOCK_EMAIL_PASSWORD")
+	*assetsPath = os.Getenv("PADLOCK_ASSETS_PATH")
+	if *assetsPath == "" {
+		*assetsPath = defaultAssetsPath
+	}
+	storage.Path = os.Getenv("PADLOCK_DB_PATH")
+	if storage.Path == "" {
+		storage.Path = defaultDbPath
+	}
+}
+
+func loadTemplates(app *App, path string) {
+	app.ActEmailTemp = template.Must(template.ParseFiles(path + "activate.txt"))
+	app.DelEmailTemp = template.Must(template.ParseFiles(path + "delete.txt"))
+	app.ConnectedTemp = htmlTemplate.Must(htmlTemplate.ParseFiles(path + "connected.html"))
+	app.DeletedTemp = htmlTemplate.Must(htmlTemplate.ParseFiles(path + "deleted.html"))
+}
+
+func main() {
+	app := &App{}
+
+	storage := &LevelDBStorage{}
+	app.Storage = storage
+
+	sender := &EmailSender{}
+	app.Sender = sender
+
+	var assetsPath string
+
+	loadEnv(app, storage, sender, &assetsPath)
+
+	loadTemplates(app, assetsPath+"/templates/")
+
+	port := flag.Int("p", defaultPort, "Port to listen on")
+	flag.Parse()
+
+	log.Printf("Starting server on port %v", *port)
+	app.Start(fmt.Sprintf(":%d", *port))
 }
