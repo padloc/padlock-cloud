@@ -4,6 +4,7 @@ import "net/http"
 import "io/ioutil"
 import "crypto/rand"
 import "fmt"
+import "log"
 import "net/smtp"
 import "os"
 import "encoding/json"
@@ -69,6 +70,32 @@ func loadTemplates() {
 	delEmailTemp = template.Must(template.ParseFiles(dir + "delete.txt"))
 	connectedTemp = htmlTemplate.Must(htmlTemplate.ParseFiles(dir + "connected.html"))
 	deletedTemp = htmlTemplate.Must(htmlTemplate.ParseFiles(dir + "deleted.html"))
+}
+
+func openDBs() {
+	var err error
+
+	// Open databases
+	dataDB, err = leveldb.OpenFile(dbPath+"/data", nil)
+	authDB, err = leveldb.OpenFile(dbPath+"/auth", nil)
+	actDB, err = leveldb.OpenFile(dbPath+"/act", nil)
+	delDB, err = leveldb.OpenFile(dbPath+"/del", nil)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+func closeDBs() {
+	var err error
+	err = dataDB.Close()
+	err = authDB.Close()
+	err = actDB.Close()
+	err = delDB.Close()
+
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 
 // RFC4122-compliant uuid generator
@@ -452,22 +479,8 @@ func main() {
 	loadEnvConfig()
 	loadTemplates()
 
-	var err error
-
-	// Open databases
-	dataDB, err = leveldb.OpenFile(dbPath+"/data", nil)
-	authDB, err = leveldb.OpenFile(dbPath+"/auth", nil)
-	actDB, err = leveldb.OpenFile(dbPath+"/act", nil)
-	delDB, err = leveldb.OpenFile(dbPath+"/del", nil)
-
-	if err != nil {
-		panic("Failed to open database!")
-	}
-
-	defer dataDB.Close()
-	defer authDB.Close()
-	defer actDB.Close()
-	defer delDB.Close()
+	openDBs()
+	defer closeDBs()
 
 	http.HandleFunc("/auth", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "POST" {
@@ -510,5 +523,9 @@ func main() {
 		}
 	})
 
-	http.ListenAndServe(":3000", nil)
+	err := http.ListenAndServe(":3000", nil)
+
+	if err != nil {
+		log.Fatal(err)
+	}
 }
