@@ -12,11 +12,13 @@ import "regexp"
 import "errors"
 import "bytes"
 import "text/template"
+import "flag"
 import htmlTemplate "html/template"
 import "github.com/MaKleSoft/padlock-cloud/Godeps/_workspace/src/github.com/syndtr/goleveldb/leveldb"
 
 const defaultDbPath = "./db"
 const defaultAssetsPath = "./assets"
+const defaultPort = 3000
 const uuidPattern = "[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}"
 
 var (
@@ -29,6 +31,8 @@ var (
 	assetsPath string
 	// Path to the leveldb database
 	dbPath string
+	// Port to listen on
+	port int
 	// Email template for api key activation email
 	actEmailTemp *template.Template
 	// Email template for deletion confirmation email
@@ -47,7 +51,13 @@ var (
 	delDB *leveldb.DB
 )
 
-func loadEnvConfig() {
+func parseFlags() {
+	p := flag.Int("p", defaultPort, "Port to listen on")
+	flag.Parse()
+	port = *p
+}
+
+func loadEnv() {
 	emailUser = os.Getenv("PADLOCK_EMAIL_USERNAME")
 	emailServer = os.Getenv("PADLOCK_EMAIL_SERVER")
 	emailPort = os.Getenv("PADLOCK_EMAIL_PORT")
@@ -476,7 +486,8 @@ func ResetData(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	loadEnvConfig()
+	parseFlags()
+	loadEnv()
 	loadTemplates()
 
 	openDBs()
@@ -523,7 +534,8 @@ func main() {
 		}
 	})
 
-	err := http.ListenAndServe(":3000", nil)
+	log.Printf("Starting server on port %v", port)
+	err := http.ListenAndServe(fmt.Sprintf(":%d", port), nil)
 
 	if err != nil {
 		log.Fatal(err)
