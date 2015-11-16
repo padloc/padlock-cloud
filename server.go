@@ -11,10 +11,9 @@ import "encoding/json"
 import "regexp"
 import "errors"
 import "bytes"
-import "text/template"
 import "flag"
+import "text/template"
 import htmlTemplate "html/template"
-import "github.com/MaKleSoft/padlock-cloud/Godeps/_workspace/src/github.com/syndtr/goleveldb/leveldb"
 
 const defaultDbPath = "./db"
 const defaultAssetsPath = "./assets"
@@ -22,10 +21,9 @@ const defaultPort = 3000
 const uuidPattern = "[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}"
 
 var (
-	ErrInvalidToken             = errors.New("padlock: invalid token")
-	ErrNotAuthenticated         = errors.New("padlock: not authenticated")
-	ErrWrongMethod              = errors.New("padlock: wrong http method")
-	ErrStorableTypeNotSupported = errors.New("padlock: storable type not supported")
+	ErrInvalidToken     = errors.New("padlock: invalid token")
+	ErrNotAuthenticated = errors.New("padlock: not authenticated")
+	ErrWrongMethod      = errors.New("padlock: wrong http method")
 )
 
 // RFC4122-compliant uuid generator
@@ -76,114 +74,6 @@ func (sender *EmailSender) Send(rec string, subject string, body string) error {
 		[]string{rec},
 		[]byte(message),
 	)
-}
-
-type Storable interface {
-	Key() []byte
-	Serialize() ([]byte, error)
-	Deserialize([]byte) error
-}
-
-type Storage interface {
-	Open() error
-	Close() error
-	Get(Storable) error
-	Put(Storable) error
-	Delete(Storable) error
-}
-
-type LevelDBStorage struct {
-	Path string
-	// Database used for storing user accounts
-	authDB *leveldb.DB
-	// Database used for storing data
-	dataDB *leveldb.DB
-	// Database used for storing activation / authentication token pairs
-	actDB *leveldb.DB
-	// Database used for storing delete requests
-	delDB *leveldb.DB
-}
-
-func (s *LevelDBStorage) Open() error {
-	var err error
-
-	s.dataDB, err = leveldb.OpenFile(s.Path+"/data", nil)
-	s.authDB, err = leveldb.OpenFile(s.Path+"/auth", nil)
-	s.actDB, err = leveldb.OpenFile(s.Path+"/act", nil)
-	s.delDB, err = leveldb.OpenFile(s.Path+"/del", nil)
-
-	return err
-}
-
-func (s *LevelDBStorage) Close() error {
-	var err error
-
-	err = s.dataDB.Close()
-	err = s.authDB.Close()
-	err = s.actDB.Close()
-	err = s.delDB.Close()
-
-	return err
-}
-
-func (s *LevelDBStorage) getDB(t Storable) (*leveldb.DB, error) {
-	switch t.(type) {
-	case *AuthAccount:
-		{
-			return s.authDB, nil
-		}
-	case *AuthRequest:
-		{
-			return s.actDB, nil
-		}
-	case *ResetRequest:
-		{
-			return s.delDB, nil
-		}
-	case *Data:
-		{
-			return s.dataDB, nil
-		}
-	default:
-		return nil, ErrStorableTypeNotSupported
-	}
-}
-
-func (s *LevelDBStorage) Get(t Storable) error {
-	db, err := s.getDB(t)
-	if err != nil {
-		return err
-	}
-
-	data, err := db.Get(t.Key(), nil)
-	if err != nil {
-		return err
-	}
-
-	return t.Deserialize(data)
-}
-
-func (s *LevelDBStorage) Put(t Storable) error {
-	db, err := s.getDB(t)
-	if err != nil {
-		return err
-	}
-
-	data, err := t.Serialize()
-	if err != nil {
-		return err
-	}
-
-	return db.Put(t.Key(), data, nil)
-}
-
-func (s *LevelDBStorage) Delete(t Storable) error {
-	db, err := s.getDB(t)
-	if err != nil {
-		return err
-	}
-
-	return db.Delete(t.Key(), nil)
 }
 
 // A wrapper for an api key containing some meta info like the user and device name
@@ -356,7 +246,7 @@ func handleError(e error, w http.ResponseWriter, r *http.Request) {
 		{
 			http.Error(w, "", http.StatusMethodNotAllowed)
 		}
-	case leveldb.ErrNotFound:
+	case ErrNotFound:
 		{
 			http.Error(w, "", http.StatusNotFound)
 		}
@@ -437,7 +327,7 @@ func (app *App) ActivateApiKey(w http.ResponseWriter, r *http.Request) {
 
 	// Fetch the account for the given email address if there is one
 	err = app.Get(acc)
-	if err != nil && err != leveldb.ErrNotFound {
+	if err != nil && err != ErrNotFound {
 		handleError(err, w, r)
 		return
 	}
@@ -479,7 +369,7 @@ func (app *App) GetData(w http.ResponseWriter, r *http.Request) {
 	err = app.Get(data)
 
 	// I case of a not found error we simply return an empty string
-	if err != nil && err != leveldb.ErrNotFound {
+	if err != nil && err != ErrNotFound {
 		handleError(err, w, r)
 		return
 	}
