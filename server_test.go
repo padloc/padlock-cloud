@@ -2,6 +2,7 @@ package main
 
 import "testing"
 import "os"
+import "fmt"
 import "text/template"
 import htmlTemplate "html/template"
 import "net/http"
@@ -11,38 +12,57 @@ import "log"
 import "io/ioutil"
 import "regexp"
 import "encoding/json"
+import "bytes"
 
-type NullSender struct{}
+type RecordSender struct {
+	Receiver string
+	Subject  string
+	Message  string
+}
 
-func (s *NullSender) Send(string, string, string) error {
+func (s *RecordSender) Send(rec string, subj string, message string) error {
+	s.Receiver = rec
+	s.Subject = subj
+	s.Message = message
 	return nil
 }
 
 var (
 	app        *App
 	server     *httptest.Server
+	storage    *MemoryStorage
+	sender     *RecordSender
 	testEmail  = "martin@padlock.io"
 	testDevice = "My Device"
+	testData   = "Hello World!"
 )
 
 func TestMain(m *testing.M) {
-	log.Println("test main")
-	app = &App{}
-	app.Storage = &MemoryStorage{}
-	app.Sender = &NullSender{}
-	app.Templates = &Templates{
+	storage = &MemoryStorage{}
+	sender = &RecordSender{}
+	templates := &Templates{
 		template.Must(template.New("").Parse("{{ .device_name }}, {{ .email }}, {{ .activation_link }}")),
 		template.Must(template.New("").Parse("{{ .email }}, {{ .delete_link }}")),
 		htmlTemplate.Must(htmlTemplate.New("").Parse("{{ .device_name }}")),
 		htmlTemplate.Must(htmlTemplate.New("").Parse("{{ .email }}")),
 	}
-	app.Init()
+
+	app := NewApp(storage, sender, templates, false)
+
 	app.Storage.Open()
 	defer app.Storage.Close()
 
 	server = httptest.NewServer(app)
 
 	os.Exit(m.Run())
+}
+
+func request(method string, path string, body string, apiKey *ApiKey) (*http.Response, error) {
+	req, _ := http.NewRequest(method, server.URL+path, bytes.NewBuffer([]byte(body)))
+	if apiKey != nil {
+		req.Header.Add("Authorization", fmt.Sprintf("ApiKey %s:%s", apiKey.Email, apiKey.Key))
+	}
+	return http.DefaultClient.Do(req)
 }
 
 func checkResponse(t *testing.T, res *http.Response, code int, body string) []byte {
@@ -68,22 +88,16 @@ func checkResponse(t *testing.T, res *http.Response, code int, body string) []by
 	return resBody
 }
 
-func TestFullCycle(t *testing.T) {
-	res, _ := http.Get(server.URL)
-	checkResponse(t, res, http.StatusUnauthorized, "\\s")
-
-	res, err := http.PostForm(server.URL+"/auth", url.Values{
+func TestLifeCycle(t *testing.T) {
+	res, _ := http.PostForm(server.URL+"/auth", url.Values{
 		"device_name": {testDevice},
 		"email":       {testEmail},
 	})
-	if err != nil {
-		log.Fatal(err)
-	}
 
 	body := checkResponse(t, res, http.StatusCreated, "")
 	apiKey := &ApiKey{}
 
-	err = json.Unmarshal(body, apiKey)
+	err := json.Unmarshal(body, apiKey)
 	if err != nil {
 		t.Error("Failed to parse response body into ApiKey object", err)
 	}
@@ -103,9 +117,45 @@ func TestFullCycle(t *testing.T) {
 	if !match {
 		t.Errorf("Expected %s to be a RFC4122-compliant uuid")
 	}
-}
 
-//
-// func TestAuthRequest(t *testing.T) {
-//
-// }
+	if sender.Receiver != testEmail {
+		t.Errorf("Expected activation message to be sent to %s, instead got %s", testEmail, sender.Receiver)
+	}
+
+	linkPattern := server.URL + "/activate/" + uuidPattern
+	msgPattern := fmt.Sprintf("%s, %s, %s", testDevice, testEmail, linkPattern)
+	match, _ = regexp.MatchString(msgPattern, sender.Message)
+	if !match {
+		t.Errorf("Expected activation message to match \"%s\", got \"%s\"", msgPattern, sender.Message)
+	}
+	link := regexp.MustCompile(linkPattern).FindString(sender.Message)
+
+	res, _ = http.Get(link)
+	checkResponse(t, res, http.StatusOK, fmt.Sprintf("^%s$", testDevice))
+
+	res, _ = request("GET", "", "", apiKey)
+	checkResponse(t, res, http.StatusOK, "^$")
+
+	res, _ = request("PUT", "", testData, apiKey)
+	checkResponse(t, res, http.StatusNoContent, "")
+
+	res, _ = request("GET", "", "", apiKey)
+	checkResponse(t, res, http.StatusOK, fmt.Sprintf("^%s$", testData))
+
+	res, _ = request("DELETE", "/"+testEmail, "", nil)
+	checkResponse(t, res, http.StatusAccepted, "")
+
+	linkPattern = server.URL + "/reset/" + uuidPattern
+	msgPattern = fmt.Sprintf("%s, %s", testEmail, linkPattern)
+	match, _ = regexp.MatchString(msgPattern, sender.Message)
+	if !match {
+		t.Errorf("Expected activation message to match \"%s\", got \"%s\"", msgPattern, sender.Message)
+	}
+	link = regexp.MustCompile(linkPattern).FindString(sender.Message)
+
+	res, _ = http.Get(link)
+	checkResponse(t, res, http.StatusOK, fmt.Sprintf("^%s$", testEmail))
+
+	res, _ = request("GET", "", "", apiKey)
+	checkResponse(t, res, http.StatusOK, "^$")
+}
