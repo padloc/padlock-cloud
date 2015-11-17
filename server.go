@@ -556,15 +556,16 @@ func (app *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	app.ServeMux.ServeHTTP(w, r)
 }
 
-func (app *App) Init() {
-	app.RequireTLS = true
+func (app *App) Init(storage Storage, sender Sender, templates *Templates, requireTLS bool) {
 	app.ServeMux = http.NewServeMux()
 	app.setupRoutes()
+	app.Storage = storage
+	app.Sender = sender
+	app.Templates = templates
+	app.RequireTLS = requireTLS
 }
 
 func (app *App) Start(addr string) {
-	app.Init()
-
 	err := app.Storage.Open()
 	if err != nil {
 		log.Fatal(err)
@@ -579,7 +580,13 @@ func (app *App) Start(addr string) {
 	}
 }
 
-func loadEnv(app *App, storage *LevelDBStorage, emailSender *EmailSender, assetsPath *string) {
+func NewApp(storage Storage, sender Sender, templates *Templates, requireTLS bool) *App {
+	app := &App{}
+	app.Init(storage, sender, templates, requireTLS)
+	return app
+}
+
+func loadEnv(storage *LevelDBStorage, emailSender *EmailSender, assetsPath *string) {
 	emailSender.User = os.Getenv("PADLOCK_EMAIL_USERNAME")
 	emailSender.Server = os.Getenv("PADLOCK_EMAIL_SERVER")
 	emailSender.Port = os.Getenv("PADLOCK_EMAIL_PORT")
@@ -604,19 +611,13 @@ func loadTemplates(path string) *Templates {
 }
 
 func main() {
-	app := &App{}
-
 	storage := &LevelDBStorage{}
-	app.Storage = storage
-
 	sender := &EmailSender{}
-	app.Sender = sender
-
 	var assetsPath string
+	loadEnv(storage, sender, &assetsPath)
+	templates := loadTemplates(assetsPath + "/templates/")
 
-	loadEnv(app, storage, sender, &assetsPath)
-
-	app.Templates = loadTemplates(assetsPath + "/templates/")
+	app := NewApp(storage, sender, templates, true)
 
 	port := flag.Int("p", defaultPort, "Port to listen on")
 	flag.Parse()
