@@ -8,6 +8,7 @@ import "github.com/MaKleSoft/padlock-cloud/Godeps/_workspace/src/github.com/synd
 var (
 	ErrStorableTypeNotSupported = errors.New("padlock: storable type not supported")
 	ErrNotFound                 = errors.New("padlock: not found")
+	ErrStorageClosed            = errors.New("padlock: storage closed")
 )
 
 type Storable interface {
@@ -76,6 +77,14 @@ func (s *LevelDBStorage) getDB(t Storable) (*leveldb.DB, error) {
 }
 
 func (s *LevelDBStorage) Get(t Storable) error {
+	if s.stores == nil {
+		return ErrStorageClosed
+	}
+
+	if t == nil {
+		return ErrStorableTypeNotSupported
+	}
+
 	db, err := s.getDB(t)
 	if err != nil {
 		return err
@@ -92,6 +101,14 @@ func (s *LevelDBStorage) Get(t Storable) error {
 }
 
 func (s *LevelDBStorage) Put(t Storable) error {
+	if s.stores == nil {
+		return ErrStorageClosed
+	}
+
+	if t == nil {
+		return ErrStorableTypeNotSupported
+	}
+
 	db, err := s.getDB(t)
 	if err != nil {
 		return err
@@ -106,6 +123,14 @@ func (s *LevelDBStorage) Put(t Storable) error {
 }
 
 func (s *LevelDBStorage) Delete(t Storable) error {
+	if s.stores == nil {
+		return ErrStorageClosed
+	}
+
+	if t == nil {
+		return ErrStorableTypeNotSupported
+	}
+
 	db, err := s.getDB(t)
 	if err != nil {
 		return err
@@ -129,6 +154,14 @@ func (s *MemoryStorage) Close() error {
 }
 
 func (s *MemoryStorage) Get(t Storable) error {
+	if s.store == nil {
+		return ErrStorageClosed
+	}
+
+	if t == nil {
+		return ErrStorableTypeNotSupported
+	}
+
 	tm := s.store[reflect.TypeOf(t)]
 	if tm == nil {
 		return ErrNotFound
@@ -141,6 +174,14 @@ func (s *MemoryStorage) Get(t Storable) error {
 }
 
 func (s *MemoryStorage) Put(t Storable) error {
+	if s.store == nil {
+		return ErrStorageClosed
+	}
+
+	if t == nil {
+		return ErrStorableTypeNotSupported
+	}
+
 	data, err := json.Marshal(t)
 	if err != nil {
 		return err
@@ -155,6 +196,14 @@ func (s *MemoryStorage) Put(t Storable) error {
 }
 
 func (s *MemoryStorage) Delete(t Storable) error {
+	if s.store == nil {
+		return ErrStorageClosed
+	}
+
+	if t == nil {
+		return ErrStorableTypeNotSupported
+	}
+
 	ts := s.store[reflect.TypeOf(t)]
 	if ts != nil {
 		delete(ts, string(t.Key()))
