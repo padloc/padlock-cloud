@@ -188,18 +188,22 @@ func (d *Data) Serialize() ([]byte, error) {
 	return d.Content, nil
 }
 
+type Templates struct {
+	// Email template for api key activation email
+	ActivationEmail *template.Template
+	// Email template for deletion confirmation email
+	DataResetEmail *template.Template
+	// Template for connected page
+	ConnectionSuccess *htmlTemplate.Template
+	// Template for connected page
+	DataResetSuccess *htmlTemplate.Template
+}
+
 type App struct {
 	*http.ServeMux
 	Sender
 	Storage
-	// Email template for api key activation email
-	ActEmailTemp *template.Template
-	// Email template for deletion confirmation email
-	DelEmailTemp *template.Template
-	// Template for connected page
-	ConnectedTemp *htmlTemplate.Template
-	// Template for connected page
-	DeletedTemp *htmlTemplate.Template
+	*Templates
 }
 
 func (app *App) accountFromRequest(r *http.Request) (*AuthAccount, error) {
@@ -282,7 +286,7 @@ func (app *App) RequestApiKey(w http.ResponseWriter, r *http.Request) {
 
 	// Render email
 	var buff bytes.Buffer
-	app.ActEmailTemp.Execute(&buff, map[string]string{
+	app.Templates.ActivationEmail.Execute(&buff, map[string]string{
 		"email":           apiKey.Email,
 		"device_name":     apiKey.DeviceName,
 		"activation_link": fmt.Sprintf("https://%s/activate/%s", r.Host, token),
@@ -346,7 +350,7 @@ func (app *App) ActivateApiKey(w http.ResponseWriter, r *http.Request) {
 
 	var buff bytes.Buffer
 	// Render success page
-	err = app.ConnectedTemp.Execute(&buff, map[string]string{
+	err = app.Templates.ConnectionSuccess.Execute(&buff, map[string]string{
 		"device_name": authRequest.ApiKey.DeviceName,
 	})
 
@@ -426,7 +430,7 @@ func (app *App) RequestDataReset(w http.ResponseWriter, r *http.Request) {
 
 	// Render email
 	var buff bytes.Buffer
-	err = app.DelEmailTemp.Execute(&buff, map[string]string{
+	err = app.Templates.DataResetEmail.Execute(&buff, map[string]string{
 		"email":       email,
 		"delete_link": fmt.Sprintf("https://%s/reset/%s", r.Host, token),
 	})
@@ -470,7 +474,7 @@ func (app *App) ResetData(w http.ResponseWriter, r *http.Request) {
 
 	var buff bytes.Buffer
 	// Render success page
-	err = app.DeletedTemp.Execute(&buff, map[string]string{
+	err = app.Templates.DataResetSuccess.Execute(&buff, map[string]string{
 		"email": string(resetRequest.Account),
 	})
 
@@ -565,11 +569,13 @@ func loadEnv(app *App, storage *LevelDBStorage, emailSender *EmailSender, assets
 	}
 }
 
-func loadTemplates(app *App, path string) {
-	app.ActEmailTemp = template.Must(template.ParseFiles(path + "activate.txt"))
-	app.DelEmailTemp = template.Must(template.ParseFiles(path + "delete.txt"))
-	app.ConnectedTemp = htmlTemplate.Must(htmlTemplate.ParseFiles(path + "connected.html"))
-	app.DeletedTemp = htmlTemplate.Must(htmlTemplate.ParseFiles(path + "deleted.html"))
+func loadTemplates(path string) *Templates {
+	return &Templates{
+		template.Must(template.ParseFiles(path + "activate.txt")),
+		template.Must(template.ParseFiles(path + "delete.txt")),
+		htmlTemplate.Must(htmlTemplate.ParseFiles(path + "connected.html")),
+		htmlTemplate.Must(htmlTemplate.ParseFiles(path + "deleted.html")),
+	}
 }
 
 func main() {
@@ -585,7 +591,7 @@ func main() {
 
 	loadEnv(app, storage, sender, &assetsPath)
 
-	loadTemplates(app, assetsPath+"/templates/")
+	app.Templates = loadTemplates(assetsPath + "/templates/")
 
 	port := flag.Int("p", defaultPort, "Port to listen on")
 	flag.Parse()
