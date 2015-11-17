@@ -23,6 +23,7 @@ var (
 	ErrNotAuthenticated   = errors.New("padlock: not authenticated")
 	ErrWrongMethod        = errors.New("padlock: wrong http method")
 	ErrInsecureConnection = errors.New("padlock: insecure connection")
+	ErrPanic              = errors.New("padlock: panic")
 )
 
 // RFC4122-compliant uuid generator
@@ -206,12 +207,17 @@ type Templates struct {
 	DataResetSuccess *htmlTemplate.Template
 }
 
+type Config struct {
+	RequireTLS  bool
+	NotifyEmail string
+}
+
 type App struct {
 	*http.ServeMux
 	Sender
 	Storage
 	*Templates
-	RequireTLS bool
+	Config
 }
 
 func (app *App) accountFromRequest(r *http.Request) (*AuthAccount, error) {
@@ -244,7 +250,7 @@ func (app *App) accountFromRequest(r *http.Request) (*AuthAccount, error) {
 	return acc, nil
 }
 
-func handleError(e error, w http.ResponseWriter, r *http.Request) {
+func (app *App) handleError(e error, w http.ResponseWriter, r *http.Request) {
 	switch e {
 	case ErrInvalidToken:
 		{
@@ -269,6 +275,13 @@ func handleError(e error, w http.ResponseWriter, r *http.Request) {
 	default:
 		{
 			http.Error(w, "", http.StatusInternalServerError)
+
+			log.Printf("Internal Server Error: %v", e)
+
+			if app.NotifyEmail != "" {
+				go app.Send(app.NotifyEmail, "Padlock Cloud Error Notification",
+					fmt.Sprintf("Internal server error: %v\nRequest: %v", e, r))
+			}
 		}
 	}
 }
@@ -292,7 +305,7 @@ func (app *App) RequestApiKey(w http.ResponseWriter, r *http.Request) {
 
 	err := app.Put(&AuthRequest{token, apiKey})
 	if err != nil {
-		handleError(err, w, r)
+		app.handleError(err, w, r)
 		return
 	}
 
@@ -314,7 +327,7 @@ func (app *App) RequestApiKey(w http.ResponseWriter, r *http.Request) {
 	data, err := json.Marshal(apiKey)
 
 	if err != nil {
-		handleError(err, w, r)
+		app.handleError(err, w, r)
 		return
 	}
 
@@ -326,7 +339,7 @@ func (app *App) RequestApiKey(w http.ResponseWriter, r *http.Request) {
 func (app *App) ActivateApiKey(w http.ResponseWriter, r *http.Request) {
 	token, err := tokenFromUrl(r.URL.Path, "/activate/")
 	if err != nil {
-		handleError(err, w, r)
+		app.handleError(err, w, r)
 		return
 	}
 
@@ -335,7 +348,7 @@ func (app *App) ActivateApiKey(w http.ResponseWriter, r *http.Request) {
 	// the token is obviously not valid
 	err = app.Get(authRequest)
 	if err != nil {
-		handleError(err, w, r)
+		app.handleError(err, w, r)
 		return
 	}
 
@@ -344,7 +357,7 @@ func (app *App) ActivateApiKey(w http.ResponseWriter, r *http.Request) {
 	// Fetch the account for the given email address if there is one
 	err = app.Get(acc)
 	if err != nil && err != ErrNotFound {
-		handleError(err, w, r)
+		app.handleError(err, w, r)
 		return
 	}
 
@@ -354,7 +367,7 @@ func (app *App) ActivateApiKey(w http.ResponseWriter, r *http.Request) {
 	// Save the changes
 	err = app.Put(acc)
 	if err != nil {
-		handleError(err, w, r)
+		app.handleError(err, w, r)
 	}
 
 	// Remove the entry for this token
@@ -367,7 +380,7 @@ func (app *App) ActivateApiKey(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		handleError(err, w, r)
+		app.handleError(err, w, r)
 	}
 
 	buff.WriteTo(w)
@@ -377,7 +390,7 @@ func (app *App) ActivateApiKey(w http.ResponseWriter, r *http.Request) {
 func (app *App) GetData(w http.ResponseWriter, r *http.Request) {
 	acc, err := app.accountFromRequest(r)
 	if err != nil {
-		handleError(err, w, r)
+		app.handleError(err, w, r)
 		return
 	}
 
@@ -386,7 +399,7 @@ func (app *App) GetData(w http.ResponseWriter, r *http.Request) {
 
 	// I case of a not found error we simply return an empty string
 	if err != nil && err != ErrNotFound {
-		handleError(err, w, r)
+		app.handleError(err, w, r)
 		return
 	}
 
@@ -397,21 +410,21 @@ func (app *App) GetData(w http.ResponseWriter, r *http.Request) {
 func (app *App) PutData(w http.ResponseWriter, r *http.Request) {
 	acc, err := app.accountFromRequest(r)
 	if err != nil {
-		handleError(err, w, r)
+		app.handleError(err, w, r)
 		return
 	}
 
 	data := &Data{Account: acc}
 	content, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		handleError(err, w, r)
+		app.handleError(err, w, r)
 		return
 	}
 	data.Content = content
 
 	err = app.Put(data)
 	if err != nil {
-		handleError(err, w, r)
+		app.handleError(err, w, r)
 		return
 	}
 
@@ -426,7 +439,7 @@ func (app *App) RequestDataReset(w http.ResponseWriter, r *http.Request) {
 	err := app.Get(&AuthAccount{Email: email})
 
 	if err != nil {
-		handleError(err, w, r)
+		app.handleError(err, w, r)
 		return
 	}
 
@@ -436,7 +449,7 @@ func (app *App) RequestDataReset(w http.ResponseWriter, r *http.Request) {
 	// Save token/email pair in database to we can verify it later
 	err = app.Put(&ResetRequest{token, email})
 	if err != nil {
-		handleError(err, w, r)
+		app.handleError(err, w, r)
 		return
 	}
 
@@ -449,7 +462,7 @@ func (app *App) RequestDataReset(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		handleError(err, w, r)
+		app.handleError(err, w, r)
 		return
 	}
 
@@ -465,7 +478,7 @@ func (app *App) ResetData(w http.ResponseWriter, r *http.Request) {
 	token, err := tokenFromUrl(r.URL.Path, "/reset/")
 
 	if err != nil {
-		handleError(err, w, r)
+		app.handleError(err, w, r)
 		return
 	}
 
@@ -474,14 +487,14 @@ func (app *App) ResetData(w http.ResponseWriter, r *http.Request) {
 	err = app.Get(resetRequest)
 
 	if err != nil {
-		handleError(err, w, r)
+		app.handleError(err, w, r)
 		return
 	}
 
 	// Delete data from database
 	err = app.Delete(&Data{Account: &AuthAccount{Email: resetRequest.Account}})
 	if err != nil {
-		handleError(err, w, r)
+		app.handleError(err, w, r)
 		return
 	}
 
@@ -492,7 +505,7 @@ func (app *App) ResetData(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		handleError(err, w, r)
+		app.handleError(err, w, r)
 		return
 	}
 
@@ -546,21 +559,34 @@ func (app *App) setupRoutes() {
 }
 
 func (app *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		if e := recover(); e != nil {
+			log.Printf("Recovered from panic: %v", e)
+
+			app.handleError(ErrPanic, w, r)
+
+			if app.NotifyEmail != "" {
+				go app.Send(app.NotifyEmail, "Padlock Cloud Error Notification",
+					fmt.Sprintf("Recovered from panic: %v\nRequest: %v", e, r))
+			}
+		}
+	}()
+
 	if app.RequireTLS && r.TLS == nil {
-		handleError(ErrInsecureConnection, w, r)
+		app.handleError(ErrInsecureConnection, w, r)
 		return
 	}
 
 	app.ServeMux.ServeHTTP(w, r)
 }
 
-func (app *App) Init(storage Storage, sender Sender, templates *Templates, requireTLS bool) {
+func (app *App) Init(storage Storage, sender Sender, templates *Templates, config Config) {
 	app.ServeMux = http.NewServeMux()
 	app.setupRoutes()
 	app.Storage = storage
 	app.Sender = sender
 	app.Templates = templates
-	app.RequireTLS = requireTLS
+	app.Config = config
 }
 
 func (app *App) Start(addr string) {
@@ -578,8 +604,8 @@ func (app *App) Start(addr string) {
 	}
 }
 
-func NewApp(storage Storage, sender Sender, templates *Templates, requireTLS bool) *App {
+func NewApp(storage Storage, sender Sender, templates *Templates, config Config) *App {
 	app := &App{}
-	app.Init(storage, sender, templates, requireTLS)
+	app.Init(storage, sender, templates, config)
 	return app
 }

@@ -47,7 +47,7 @@ func TestMain(m *testing.M) {
 		htmlTemplate.Must(htmlTemplate.New("").Parse("{{ .email }}")),
 	}
 
-	app = NewApp(storage, sender, templates, false)
+	app = NewApp(storage, sender, templates, Config{RequireTLS: false})
 
 	app.Storage.Open()
 	defer app.Storage.Close()

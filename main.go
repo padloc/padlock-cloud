@@ -7,12 +7,13 @@ import htmlTemplate "html/template"
 import "log"
 import "fmt"
 
-func loadEnv(storage *LevelDBStorage, emailSender *EmailSender, assetsPath *string) {
+func loadEnv(storage *LevelDBStorage, emailSender *EmailSender, assetsPath *string, notifyEmail *string) {
 	emailSender.User = os.Getenv("PADLOCK_EMAIL_USERNAME")
 	emailSender.Server = os.Getenv("PADLOCK_EMAIL_SERVER")
 	emailSender.Port = os.Getenv("PADLOCK_EMAIL_PORT")
 	emailSender.Password = os.Getenv("PADLOCK_EMAIL_PASSWORD")
 	*assetsPath = os.Getenv("PADLOCK_ASSETS_PATH")
+	*notifyEmail = os.Getenv("PADLOCK_NOTIFY_EMAIL")
 	if *assetsPath == "" {
 		*assetsPath = defaultAssetsPath
 	}
@@ -34,11 +35,11 @@ func loadTemplates(path string) *Templates {
 func main() {
 	storage := &LevelDBStorage{}
 	sender := &EmailSender{}
-	var assetsPath string
-	loadEnv(storage, sender, &assetsPath)
+	var assetsPath, notifyEmail string
+	loadEnv(storage, sender, &assetsPath, &notifyEmail)
 	templates := loadTemplates(assetsPath + "/templates/")
 
-	app := NewApp(storage, sender, templates, true)
+	app := NewApp(storage, sender, templates, Config{RequireTLS: true, NotifyEmail: "martin@padlock.io"})
 
 	port := flag.Int("p", defaultPort, "Port to listen on")
 	flag.Parse()
