@@ -47,7 +47,7 @@ func TestMain(m *testing.M) {
 		htmlTemplate.Must(htmlTemplate.New("").Parse("{{ .email }}")),
 	}
 
-	app := NewApp(storage, sender, templates, false)
+	app = NewApp(storage, sender, templates, false)
 
 	app.Storage.Open()
 	defer app.Storage.Close()
@@ -110,10 +110,7 @@ func TestLifeCycle(t *testing.T) {
 		t.Errorf("Expected email to match %s, is %s", testDevice, apiKey.DeviceName)
 	}
 
-	match, err := regexp.MatchString(uuidPattern, apiKey.Key)
-	if err != nil {
-		log.Fatal(err)
-	}
+	match, _ := regexp.MatchString(uuidPattern, apiKey.Key)
 	if !match {
 		t.Errorf("Expected %s to be a RFC4122-compliant uuid")
 	}
@@ -158,4 +155,25 @@ func TestLifeCycle(t *testing.T) {
 
 	res, _ = request("GET", "", "", apiKey)
 	checkResponse(t, res, http.StatusOK, "^$")
+}
+
+func TestErrorConditions(t *testing.T) {
+	res, _ := request("GET", "", "", nil)
+	checkResponse(t, res, http.StatusUnauthorized, "")
+
+	res, _ = request("POST", "", "", nil)
+	checkResponse(t, res, http.StatusMethodNotAllowed, "")
+
+	res, _ = request("DELETE", "", "", nil)
+	checkResponse(t, res, http.StatusMethodNotAllowed, "")
+
+	res, _ = request("GET", "/auth", "", nil)
+	checkResponse(t, res, http.StatusMethodNotAllowed, "")
+
+	res, _ = request("GET", "/invalidpath", "", nil)
+	checkResponse(t, res, http.StatusNotFound, "")
+
+	app.RequireTLS = true
+	res, _ = request("GET", "", "", nil)
+	checkResponse(t, res, http.StatusForbidden, "")
 }
