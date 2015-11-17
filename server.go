@@ -21,9 +21,10 @@ const defaultPort = 3000
 const uuidPattern = "[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}"
 
 var (
-	ErrInvalidToken     = errors.New("padlock: invalid token")
-	ErrNotAuthenticated = errors.New("padlock: not authenticated")
-	ErrWrongMethod      = errors.New("padlock: wrong http method")
+	ErrInvalidToken       = errors.New("padlock: invalid token")
+	ErrNotAuthenticated   = errors.New("padlock: not authenticated")
+	ErrWrongMethod        = errors.New("padlock: wrong http method")
+	ErrInsecureConnection = errors.New("padlock: insecure connection")
 )
 
 // RFC4122-compliant uuid generator
@@ -46,8 +47,16 @@ func tokenFromUrl(url string, baseUrl string) (string, error) {
 	return re.FindStringSubmatch(url)[1], nil
 }
 
+func schemeFromRequest(r *http.Request) string {
+	if r.TLS != nil {
+		return "https"
+	} else {
+		return "http"
+	}
+}
+
 type Sender interface {
-	Send(string, string, string) error
+	Send(receiver string, subject string, message string) error
 }
 
 type EmailSender struct {
@@ -204,6 +213,7 @@ type App struct {
 	Sender
 	Storage
 	*Templates
+	RequireTLS bool
 }
 
 func (app *App) accountFromRequest(r *http.Request) (*AuthAccount, error) {
@@ -254,6 +264,10 @@ func handleError(e error, w http.ResponseWriter, r *http.Request) {
 		{
 			http.Error(w, "", http.StatusNotFound)
 		}
+	case ErrInsecureConnection:
+		{
+			http.Error(w, "", http.StatusForbidden)
+		}
 	default:
 		{
 			http.Error(w, "", http.StatusInternalServerError)
@@ -289,7 +303,7 @@ func (app *App) RequestApiKey(w http.ResponseWriter, r *http.Request) {
 	app.Templates.ActivationEmail.Execute(&buff, map[string]string{
 		"email":           apiKey.Email,
 		"device_name":     apiKey.DeviceName,
-		"activation_link": fmt.Sprintf("https://%s/activate/%s", r.Host, token),
+		"activation_link": fmt.Sprintf("%s://%s/activate/%s", schemeFromRequest(r), r.Host, token),
 	})
 	body := buff.String()
 
@@ -430,9 +444,10 @@ func (app *App) RequestDataReset(w http.ResponseWriter, r *http.Request) {
 
 	// Render email
 	var buff bytes.Buffer
+
 	err = app.Templates.DataResetEmail.Execute(&buff, map[string]string{
 		"email":       email,
-		"delete_link": fmt.Sprintf("https://%s/reset/%s", r.Host, token),
+		"delete_link": fmt.Sprintf("%s://%s/reset/%s", schemeFromRequest(r), r.Host, token),
 	})
 
 	if err != nil {
@@ -532,7 +547,17 @@ func (app *App) setupRoutes() {
 	})
 }
 
+func (app *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if app.RequireTLS && r.TLS == nil {
+		handleError(ErrInsecureConnection, w, r)
+		return
+	}
+
+	app.ServeMux.ServeHTTP(w, r)
+}
+
 func (app *App) Init() {
+	app.RequireTLS = true
 	app.ServeMux = http.NewServeMux()
 	app.setupRoutes()
 }
