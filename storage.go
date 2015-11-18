@@ -3,6 +3,7 @@ package main
 import "reflect"
 import "errors"
 import "encoding/json"
+import "path/filepath"
 import "github.com/MaKleSoft/padlock-cloud/Godeps/_workspace/src/github.com/syndtr/goleveldb/leveldb"
 
 var (
@@ -41,7 +42,7 @@ func (s *LevelDBStorage) Open() error {
 	s.stores = make(map[reflect.Type]*leveldb.DB)
 
 	for t, loc := range StorableTypes {
-		db, err := leveldb.OpenFile(s.Path+"/"+loc, nil)
+		db, err := leveldb.OpenFile(filepath.Join(s.Path, loc), nil)
 		if err != nil {
 			return err
 		}

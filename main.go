@@ -6,6 +6,7 @@ import "text/template"
 import htmlTemplate "html/template"
 import "log"
 import "fmt"
+import "path/filepath"
 
 func loadEnv(storage *LevelDBStorage, emailSender *EmailSender, assetsPath *string, notifyEmail *string) {
 	emailSender.User = os.Getenv("PADLOCK_EMAIL_USERNAME")
@@ -25,10 +26,10 @@ func loadEnv(storage *LevelDBStorage, emailSender *EmailSender, assetsPath *stri
 
 func loadTemplates(path string) *Templates {
 	return &Templates{
-		template.Must(template.ParseFiles(path + "activate.txt")),
-		template.Must(template.ParseFiles(path + "delete.txt")),
-		htmlTemplate.Must(htmlTemplate.ParseFiles(path + "connected.html")),
-		htmlTemplate.Must(htmlTemplate.ParseFiles(path + "deleted.html")),
+		template.Must(template.ParseFiles(filepath.Join(path, "activate.txt"))),
+		template.Must(template.ParseFiles(filepath.Join(path, "delete.txt"))),
+		htmlTemplate.Must(htmlTemplate.ParseFiles(filepath.Join(path, "connected.html"))),
+		htmlTemplate.Must(htmlTemplate.ParseFiles(filepath.Join(path, "deleted.html"))),
 	}
 }
 
@@ -37,7 +38,7 @@ func main() {
 	sender := &EmailSender{}
 	var assetsPath, notifyEmail string
 	loadEnv(storage, sender, &assetsPath, &notifyEmail)
-	templates := loadTemplates(assetsPath + "/templates/")
+	templates := loadTemplates(filepath.Join(assetsPath, "templates"))
 
 	app := NewApp(storage, sender, templates, Config{RequireTLS: true, NotifyEmail: "martin@padlock.io"})
 
