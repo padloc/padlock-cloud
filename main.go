@@ -40,10 +40,13 @@ func main() {
 	loadEnv(storage, sender, &assetsPath, &notifyEmail)
 	templates := loadTemplates(filepath.Join(assetsPath, "templates"))
 
-	app := NewApp(storage, sender, templates, Config{RequireTLS: true, NotifyEmail: "martin@padlock.io"})
-
 	port := flag.Int("p", defaultPort, "Port to listen on")
+	requireTLS := flag.Bool("https-only", false, "Set to true to only allow requests via https")
 	flag.Parse()
+
+	log.Printf("Require tls: %s", *requireTLS)
+
+	app := NewApp(storage, sender, templates, Config{RequireTLS: *requireTLS, NotifyEmail: notifyEmail})
 
 	log.Printf("Starting server on port %v", *port)
 	app.Start(fmt.Sprintf(":%d", *port))
