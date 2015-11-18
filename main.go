@@ -8,6 +8,10 @@ import "log"
 import "fmt"
 import "path/filepath"
 
+const defaultDbPath = "./db"
+const defaultAssetsPath = "./assets"
+const defaultPort = 3000
+
 func loadEnv(storage *LevelDBStorage, emailSender *EmailSender, assetsPath *string, notifyEmail *string) {
 	emailSender.User = os.Getenv("PADLOCK_EMAIL_USERNAME")
 	emailSender.Server = os.Getenv("PADLOCK_EMAIL_SERVER")
