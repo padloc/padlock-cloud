@@ -28,7 +28,7 @@ type Storage interface {
 
 var StorableTypes = map[reflect.Type]string{
 	reflect.TypeOf((*Data)(nil)).Elem():         "data",
-	reflect.TypeOf((*AuthAccount)(nil)).Elem():  "auth",
+	reflect.TypeOf((*Account)(nil)).Elem():      "auth",
 	reflect.TypeOf((*AuthRequest)(nil)).Elem():  "act",
 	reflect.TypeOf((*ResetRequest)(nil)).Elem(): "del",
 }
@@ -141,7 +141,6 @@ func (s *LevelDBStorage) Delete(t Storable) error {
 }
 
 type MemoryStorage struct {
-	acc   *AuthAccount
 	store map[reflect.Type](map[string][]byte)
 }
 

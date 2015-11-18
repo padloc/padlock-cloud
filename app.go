@@ -89,7 +89,7 @@ type ApiKey struct {
 }
 
 // A struct representing a user with a set of api keys
-type AuthAccount struct {
+type Account struct {
 	// The email servers as a unique identifier and as a means for
 	// requesting/activating api keys
 	Email string
@@ -98,20 +98,20 @@ type AuthAccount struct {
 	ApiKeys []ApiKey
 }
 
-func (acc *AuthAccount) Key() []byte {
+func (acc *Account) Key() []byte {
 	return []byte(acc.Email)
 }
 
-func (acc *AuthAccount) Deserialize(data []byte) error {
+func (acc *Account) Deserialize(data []byte) error {
 	return json.Unmarshal(data, acc)
 }
 
-func (acc *AuthAccount) Serialize() ([]byte, error) {
+func (acc *Account) Serialize() ([]byte, error) {
 	return json.Marshal(acc)
 }
 
 // Removes the api key for a given device name
-func (a *AuthAccount) RemoveKeyForDevice(deviceName string) {
+func (a *Account) RemoveKeyForDevice(deviceName string) {
 	for i, apiKey := range a.ApiKeys {
 		if apiKey.DeviceName == deviceName {
 			a.ApiKeys = append(a.ApiKeys[:i], a.ApiKeys[i+1:]...)
@@ -122,13 +122,13 @@ func (a *AuthAccount) RemoveKeyForDevice(deviceName string) {
 
 // Adds an api key to this account. If an api key for the given device
 // is already registered, that one will be replaced
-func (a *AuthAccount) SetKey(apiKey ApiKey) {
+func (a *Account) SetKey(apiKey ApiKey) {
 	a.RemoveKeyForDevice(apiKey.DeviceName)
 	a.ApiKeys = append(a.ApiKeys, apiKey)
 }
 
 // Checks if a given api key is valid for this account
-func (a *AuthAccount) Validate(key string) bool {
+func (a *Account) Validate(key string) bool {
 	// Check if the account contains any ApiKey with that matches
 	// the given key
 	for _, apiKey := range a.ApiKeys {
@@ -176,7 +176,7 @@ func (rr *ResetRequest) Serialize() ([]byte, error) {
 }
 
 type Data struct {
-	Account *AuthAccount
+	Account *Account
 	Content []byte
 }
 
@@ -217,7 +217,7 @@ type App struct {
 	Config
 }
 
-func (app *App) accountFromRequest(r *http.Request) (*AuthAccount, error) {
+func (app *App) accountFromRequest(r *http.Request) (*Account, error) {
 	// Extract email and authentication token from Authorization header
 	re := regexp.MustCompile("^ApiKey (?P<email>.+):(?P<key>.+)$")
 	authHeader := r.Header.Get("Authorization")
@@ -230,7 +230,7 @@ func (app *App) accountFromRequest(r *http.Request) (*AuthAccount, error) {
 	// Extract email and api key from Authorization header
 	matches := re.FindStringSubmatch(authHeader)
 	email, key := matches[1], matches[2]
-	acc := &AuthAccount{Email: email}
+	acc := &Account{Email: email}
 
 	// Fetch account for the given email address
 	err := app.Get(acc)
@@ -349,7 +349,7 @@ func (app *App) ActivateApiKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	acc := &AuthAccount{Email: authRequest.ApiKey.Email}
+	acc := &Account{Email: authRequest.ApiKey.Email}
 
 	// Fetch the account for the given email address if there is one
 	err = app.Get(acc)
@@ -433,7 +433,7 @@ func (app *App) RequestDataReset(w http.ResponseWriter, r *http.Request) {
 	email := r.URL.Path[1:]
 
 	// Fetch the account for the given email address if there is one
-	err := app.Get(&AuthAccount{Email: email})
+	err := app.Get(&Account{Email: email})
 
 	if err != nil {
 		app.handleError(err, w, r)
@@ -489,7 +489,7 @@ func (app *App) ResetData(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Delete data from database
-	err = app.Delete(&Data{Account: &AuthAccount{Email: resetRequest.Account}})
+	err = app.Delete(&Data{Account: &Account{Email: resetRequest.Account}})
 	if err != nil {
 		app.handleError(err, w, r)
 		return
