@@ -6,26 +6,44 @@ import "encoding/json"
 import "path/filepath"
 import "github.com/MaKleSoft/padlock-cloud/Godeps/_workspace/src/github.com/syndtr/goleveldb/leveldb"
 
+// Error singletons
 var (
+	// A particular implementation of the Storable implementation is not supported
 	ErrStorableTypeNotSupported = errors.New("padlock: storable type not supported")
-	ErrNotFound                 = errors.New("padlock: not found")
-	ErrStorageClosed            = errors.New("padlock: storage closed")
+	// An object was not found
+	ErrNotFound = errors.New("padlock: not found")
+	// A query was attempted on a closed storage
+	ErrStorageClosed = errors.New("padlock: storage closed")
 )
 
+// Common interface for types that can be stored using the `Storage` interface.
 type Storable interface {
+	// This method is used for retrieving a key hat can be used to identify an object
+	// The returned value should be unique and constant
 	Key() []byte
+	// Creates a string representation of an object. Data returned from this method should
+	// be able to be fed into the `Deserialize` method to retrieve the original state
 	Serialize() ([]byte, error)
+	// Populates the fields from serialized data.
 	Deserialize([]byte) error
 }
 
+// Common interface for storage implementations
 type Storage interface {
+	// Prepares the database for use
 	Open() error
+	// Closes the database and performs cleanup actions
 	Close() error
+	// Populates a given `Storable` object with data retrieved from the store
 	Get(Storable) error
+	// Updates the store with the data from a given `Storable` object
 	Put(Storable) error
+	// Removes a given `Storable` object from the store
 	Delete(Storable) error
 }
 
+// Map of supported `Storable` implementations along with identifier strings that can be used for
+// internal store or file names
 var StorableTypes = map[reflect.Type]string{
 	reflect.TypeOf((*Data)(nil)).Elem():         "data",
 	reflect.TypeOf((*Account)(nil)).Elem():      "auth",
@@ -33,14 +51,20 @@ var StorableTypes = map[reflect.Type]string{
 	reflect.TypeOf((*ResetRequest)(nil)).Elem(): "del",
 }
 
+// LevelDB implementation of the `Storage` interface
 type LevelDBStorage struct {
-	Path   string
+	// Path to directory on disc where database files should be stored
+	Path string
+	// Map of `leveldb.DB` instances associated with different `Storable` types
 	stores map[reflect.Type]*leveldb.DB
 }
 
+// Implementation of the `Storage.Open` interface method
 func (s *LevelDBStorage) Open() error {
+	// Instantiate stores map
 	s.stores = make(map[reflect.Type]*leveldb.DB)
 
+	// Create `leveldb.DB` instance for each supported `Storable` type
 	for t, loc := range StorableTypes {
 		db, err := leveldb.OpenFile(filepath.Join(s.Path, loc), nil)
 		if err != nil {
@@ -52,9 +76,11 @@ func (s *LevelDBStorage) Open() error {
 	return nil
 }
 
+// Implementation of the `Storage.Close` interface method
 func (s *LevelDBStorage) Close() error {
 	var err error
 
+	// Close all existing `leveldb.DB` instances
 	for _, db := range s.stores {
 		err = db.Close()
 		if err != nil {
@@ -67,6 +93,7 @@ func (s *LevelDBStorage) Close() error {
 	return nil
 }
 
+// Get `leveldb.DB` instance for a given type
 func (s *LevelDBStorage) getDB(t Storable) (*leveldb.DB, error) {
 	db := s.stores[reflect.TypeOf(t).Elem()]
 
@@ -77,6 +104,7 @@ func (s *LevelDBStorage) getDB(t Storable) (*leveldb.DB, error) {
 	return db, nil
 }
 
+// Implementation of the `Storage.Get` interface method
 func (s *LevelDBStorage) Get(t Storable) error {
 	if s.stores == nil {
 		return ErrStorageClosed
@@ -101,6 +129,7 @@ func (s *LevelDBStorage) Get(t Storable) error {
 	return t.Deserialize(data)
 }
 
+// Implementation of the `Storage.Put` interface method
 func (s *LevelDBStorage) Put(t Storable) error {
 	if s.stores == nil {
 		return ErrStorageClosed
@@ -123,6 +152,7 @@ func (s *LevelDBStorage) Put(t Storable) error {
 	return db.Put(t.Key(), data, nil)
 }
 
+// Implementation of the `Storage.Delete` interface method
 func (s *LevelDBStorage) Delete(t Storable) error {
 	if s.stores == nil {
 		return ErrStorageClosed
@@ -140,6 +170,7 @@ func (s *LevelDBStorage) Delete(t Storable) error {
 	return db.Delete(t.Key(), nil)
 }
 
+// In-memory implemenation of the `Storage` interface Mainly used for testing
 type MemoryStorage struct {
 	store map[reflect.Type](map[string][]byte)
 }
