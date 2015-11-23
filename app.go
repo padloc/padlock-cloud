@@ -332,9 +332,8 @@ func (app *App) handleError(e error, w http.ResponseWriter, r *http.Request) {
 // email address with an activation url. Expects `email` and `device_name` parameters through either
 // multipart/form-data or application/x-www-urlencoded parameters
 func (app *App) RequestApiKey(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
 	// TODO: Add validation
-	email, deviceName := r.PostForm.Get("email"), r.PostForm.Get("device_name")
+	email, deviceName := r.PostFormValue("email"), r.PostFormValue("device_name")
 
 	// Generate key-token pair
 	key := uuid()
