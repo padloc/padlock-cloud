@@ -7,6 +7,7 @@ import htmlTemplate "html/template"
 import "log"
 import "fmt"
 import "path/filepath"
+import "os/signal"
 
 const defaultDbPath = "./db"
 const defaultAssetsPath = "./assets"
@@ -48,9 +49,16 @@ func main() {
 	requireTLS := flag.Bool("https-only", false, "Set to true to only allow requests via https")
 	flag.Parse()
 
-	log.Printf("Require tls: %s", *requireTLS)
-
 	app := NewApp(storage, sender, templates, Config{RequireTLS: *requireTLS, NotifyEmail: notifyEmail})
+
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, os.Kill)
+	go func() {
+		s := <-c
+		log.Printf("Received %v signal. Exiting...", s)
+		app.Stop()
+		os.Exit(0)
+	}()
 
 	log.Printf("Starting server on port %v", *port)
 	app.Start(fmt.Sprintf(":%d", *port))
