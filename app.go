@@ -353,11 +353,15 @@ func (app *App) RequestApiKey(w http.ResponseWriter, r *http.Request) {
 
 	// Render activation email
 	var buff bytes.Buffer
-	app.Templates.ActivationEmail.Execute(&buff, map[string]string{
+	err = app.Templates.ActivationEmail.Execute(&buff, map[string]string{
 		"email":           apiKey.Email,
 		"device_name":     apiKey.DeviceName,
 		"activation_link": fmt.Sprintf("%s://%s/activate/%s", schemeFromRequest(r), r.Host, token),
 	})
+	if err != nil {
+		app.handleError(err, w, r)
+		return
+	}
 	body := buff.String()
 
 	// Send email with activation link
