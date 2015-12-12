@@ -45,7 +45,7 @@ type Storage interface {
 // Map of supported `Storable` implementations along with identifier strings that can be used for
 // internal store or file names
 var StorableTypes = map[reflect.Type]string{
-	reflect.TypeOf((*Data)(nil)).Elem():         "data",
+	reflect.TypeOf((*Store)(nil)).Elem():        "data",
 	reflect.TypeOf((*Account)(nil)).Elem():      "auth",
 	reflect.TypeOf((*AuthRequest)(nil)).Elem():  "act",
 	reflect.TypeOf((*ResetRequest)(nil)).Elem(): "del",

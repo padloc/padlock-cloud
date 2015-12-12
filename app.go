@@ -12,6 +12,7 @@ import "errors"
 import "bytes"
 import "text/template"
 import htmlTemplate "html/template"
+import "time"
 
 // Error singletons
 var (
@@ -97,10 +98,11 @@ func (sender *EmailSender) Send(rec string, subject string, body string) error {
 }
 
 // A wrapper for an api key containing some meta info like the user and device name
-type ApiKey struct {
-	Email      string `json:"email"`
-	DeviceName string `json:"device_name"`
-	Key        string `json:"key"`
+type AuthToken struct {
+	Email    string `json:"email"`
+	Token    string `json:"token"`
+	Created  time.Time
+	LastUsed time.Time
 }
 
 // A struct representing a user with a set of api keys
@@ -110,7 +112,7 @@ type Account struct {
 	Email string
 	// A set of api keys that can be used to access the data associated with this
 	// account
-	ApiKeys []ApiKey
+	AuthTokens []AuthToken
 }
 
 // Implements the `Key` method of the `Storable` interface
@@ -128,29 +130,18 @@ func (acc *Account) Serialize() ([]byte, error) {
 	return json.Marshal(acc)
 }
 
-// Removes the api key for a given device name
-func (a *Account) RemoveKeyForDevice(deviceName string) {
-	for i, apiKey := range a.ApiKeys {
-		if apiKey.DeviceName == deviceName {
-			a.ApiKeys = append(a.ApiKeys[:i], a.ApiKeys[i+1:]...)
-			return
-		}
-	}
-}
-
 // Adds an api key to this account. If an api key for the given device
 // is already registered, that one will be replaced
-func (a *Account) SetKey(apiKey ApiKey) {
-	a.RemoveKeyForDevice(apiKey.DeviceName)
-	a.ApiKeys = append(a.ApiKeys, apiKey)
+func (a *Account) AddAuthToken(token AuthToken) {
+	a.AuthTokens = append(a.AuthTokens, token)
 }
 
 // Checks if a given api key is valid for this account
-func (a *Account) Validate(key string) bool {
-	// Check if the account contains any ApiKey with that matches
+func (a *Account) ValidateAuthToken(token string) bool {
+	// Check if the account contains any AuthToken with that matches
 	// the given key
-	for _, apiKey := range a.ApiKeys {
-		if apiKey.Key == key {
+	for _, authToken := range a.AuthTokens {
+		if authToken.Token == token {
 			return true
 		}
 	}
@@ -159,10 +150,10 @@ func (a *Account) Validate(key string) bool {
 }
 
 // AuthRequest represents an api key - activation token pair used to activate a given api key
-// `AuthRequest.Token` is used to activate the ApiKey through a separate channel (e.g. email)
+// `AuthRequest.Token` is used to activate the AuthToken through a separate channel (e.g. email)
 type AuthRequest struct {
-	Token  string
-	ApiKey ApiKey
+	Token     string
+	AuthToken AuthToken
 }
 
 // Implementation of the `Storable.Key` interface method
@@ -172,12 +163,12 @@ func (ar *AuthRequest) Key() []byte {
 
 // Implementation of the `Storable.Deserialize` method
 func (ar *AuthRequest) Deserialize(data []byte) error {
-	return json.Unmarshal(data, &ar.ApiKey)
+	return json.Unmarshal(data, &ar.AuthToken)
 }
 
 // Implementation of the `Storable.Serialize` method
 func (ar *AuthRequest) Serialize() ([]byte, error) {
-	return json.Marshal(&ar.ApiKey)
+	return json.Marshal(&ar.AuthToken)
 }
 
 // Represents a request for reseting the data associated with a given account. `RequestReset.Token` is used
@@ -203,25 +194,25 @@ func (rr *ResetRequest) Serialize() ([]byte, error) {
 	return []byte(rr.Account), nil
 }
 
-// Data represents the data associated to a given account
-type Data struct {
+// Store represents the data associated to a given account
+type Store struct {
 	Account *Account
 	Content []byte
 }
 
 // Implementation of the `Storable.Key` interface method
-func (d *Data) Key() []byte {
+func (d *Store) Key() []byte {
 	return []byte(d.Account.Email)
 }
 
 // Implementation of the `Storable.Deserialize` interface method
-func (d *Data) Deserialize(data []byte) error {
+func (d *Store) Deserialize(data []byte) error {
 	d.Content = data
 	return nil
 }
 
 // Implementation of the `Storable.Serialize` interface method
-func (d *Data) Serialize() ([]byte, error) {
+func (d *Store) Serialize() ([]byte, error) {
 	return d.Content, nil
 }
 
@@ -261,7 +252,7 @@ type App struct {
 // any of the accounts in the database.
 func (app *App) accountFromRequest(r *http.Request) (*Account, error) {
 	// Extract email and authentication token from Authorization header
-	re := regexp.MustCompile("^ApiKey (?P<email>.+):(?P<key>.+)$")
+	re := regexp.MustCompile("^AuthToken (?P<email>.+):(?P<token>.+)$")
 	authHeader := r.Header.Get("Authorization")
 
 	// Check if the Authorization header exists and is well formed
@@ -269,9 +260,9 @@ func (app *App) accountFromRequest(r *http.Request) (*Account, error) {
 		return nil, ErrNotAuthenticated
 	}
 
-	// Extract email and api key from Authorization header
+	// Extract email and auth token from Authorization header
 	matches := re.FindStringSubmatch(authHeader)
-	email, key := matches[1], matches[2]
+	email, token := matches[1], matches[2]
 	acc := &Account{Email: email}
 
 	// Fetch account for the given email address
@@ -281,8 +272,8 @@ func (app *App) accountFromRequest(r *http.Request) (*Account, error) {
 		return nil, ErrNotAuthenticated
 	}
 
-	// Check if the provide api key is valid
-	if !acc.Validate(key) {
+	// Check if the provide api token is valid
+	if !acc.ValidateAuthToken(token) {
 		return nil, ErrNotAuthenticated
 	}
 
@@ -331,21 +322,21 @@ func (app *App) handleError(e error, w http.ResponseWriter, r *http.Request) {
 // The token can later be used to activate the api key. An email is sent to the corresponding
 // email address with an activation url. Expects `email` and `device_name` parameters through either
 // multipart/form-data or application/x-www-urlencoded parameters
-func (app *App) RequestApiKey(w http.ResponseWriter, r *http.Request) {
+func (app *App) RequestAuthToken(w http.ResponseWriter, r *http.Request) {
 	// TODO: Add validation
-	email, deviceName := r.PostFormValue("email"), r.PostFormValue("device_name")
+	email := r.PostFormValue("email")
 
 	// Generate key-token pair
-	key := uuid()
-	token := uuid()
-	apiKey := ApiKey{
+	actToken := uuid()
+	authToken := AuthToken{
 		email,
-		deviceName,
-		key,
+		uuid(),
+		time.Now(),
+		time.Now(),
 	}
 
 	// Save key-token pair to database for activating it later in a separate request
-	err := app.Put(&AuthRequest{token, apiKey})
+	err := app.Put(&AuthRequest{actToken, authToken})
 	if err != nil {
 		app.handleError(err, w, r)
 		return
@@ -354,9 +345,8 @@ func (app *App) RequestApiKey(w http.ResponseWriter, r *http.Request) {
 	// Render activation email
 	var buff bytes.Buffer
 	err = app.Templates.ActivationEmail.Execute(&buff, map[string]string{
-		"email":           apiKey.Email,
-		"device_name":     apiKey.DeviceName,
-		"activation_link": fmt.Sprintf("%s://%s/activate/%s", schemeFromRequest(r), r.Host, token),
+		"email":           authToken.Email,
+		"activation_link": fmt.Sprintf("%s://%s/activate/%s", schemeFromRequest(r), r.Host, actToken),
 	})
 	if err != nil {
 		app.handleError(err, w, r)
@@ -368,7 +358,7 @@ func (app *App) RequestApiKey(w http.ResponseWriter, r *http.Request) {
 	go app.Send(email, "Connect to Padlock Cloud", body)
 
 	// Serialize api key
-	data, err := json.Marshal(apiKey)
+	data, err := json.Marshal(authToken)
 	if err != nil {
 		app.handleError(err, w, r)
 		return
@@ -399,7 +389,7 @@ func (app *App) ActivateApiKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create account instance with the given email address.
-	acc := &Account{Email: authRequest.ApiKey.Email}
+	acc := &Account{Email: authRequest.AuthToken.Email}
 
 	// Fetch existing account data. It's fine if no existing data is found. In that case we'll create
 	// a new entry in the database
@@ -410,7 +400,7 @@ func (app *App) ActivateApiKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Add the new key to the account (keys with the same device name will be replaced)
-	acc.SetKey(authRequest.ApiKey)
+	acc.AddAuthToken(authRequest.AuthToken)
 
 	// Save the changes
 	err = app.Put(acc)
@@ -424,7 +414,7 @@ func (app *App) ActivateApiKey(w http.ResponseWriter, r *http.Request) {
 	// Render success page
 	var buff bytes.Buffer
 	err = app.Templates.ConnectionSuccess.Execute(&buff, map[string]string{
-		"device_name": authRequest.ApiKey.DeviceName,
+		"email": authRequest.AuthToken.Email,
 	})
 	if err != nil {
 		app.handleError(err, w, r)
@@ -444,7 +434,7 @@ func (app *App) GetData(w http.ResponseWriter, r *http.Request) {
 	// Retrieve data from database. If not database entry is found, the `Content` field simply stays empty.
 	// This is not considered an error. Instead we simply return an empty response body. Clients should
 	// know how to deal with this.
-	data := &Data{Account: acc}
+	data := &Store{Account: acc}
 	err = app.Get(data)
 	if err != nil && err != ErrNotFound {
 		app.handleError(err, w, r)
@@ -468,8 +458,8 @@ func (app *App) PutData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Read data from request body into `Data` instance
-	data := &Data{Account: acc}
+	// Read data from request body into `Store` instance
+	data := &Store{Account: acc}
 	content, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		app.handleError(err, w, r)
@@ -548,7 +538,7 @@ func (app *App) ResetData(w http.ResponseWriter, r *http.Request) {
 
 	// If the corresponding delete request was found in the database, we consider the data reset request
 	// as verified so we can proceed with deleting the data for the corresponding account
-	err = app.Delete(&Data{Account: &Account{Email: resetRequest.Account}})
+	err = app.Delete(&Store{Account: &Account{Email: resetRequest.Account}})
 	if err != nil {
 		app.handleError(err, w, r)
 		return
@@ -574,7 +564,7 @@ func (app *App) setupRoutes() {
 	// Endpoint for requesting api keys, only POST method is supported
 	app.HandleFunc("/auth", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "POST" {
-			app.RequestApiKey(w, r)
+			app.RequestAuthToken(w, r)
 		} else {
 			http.Error(w, "", http.StatusMethodNotAllowed)
 		}
