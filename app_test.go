@@ -11,7 +11,6 @@ import "net/url"
 import "log"
 import "io/ioutil"
 import "regexp"
-import "encoding/json"
 import "bytes"
 
 // Mock implementation of the `Sender` interface. Simply records arguments passed to the `Send` method
@@ -29,22 +28,21 @@ func (s *RecordSender) Send(rec string, subj string, message string) error {
 }
 
 var (
-	app        *App
-	server     *httptest.Server
-	storage    *MemoryStorage
-	sender     *RecordSender
-	testEmail  = "martin@padlock.io"
-	testDevice = "My Device"
-	testData   = "Hello World!"
+	app       *App
+	server    *httptest.Server
+	storage   *MemoryStorage
+	sender    *RecordSender
+	testEmail = "martin@padlock.io"
+	testData  = "Hello World!"
 )
 
 func TestMain(m *testing.M) {
 	storage = &MemoryStorage{}
 	sender = &RecordSender{}
 	templates := &Templates{
-		template.Must(template.New("").Parse("{{ .device_name }}, {{ .email }}, {{ .activation_link }}")),
+		template.Must(template.New("").Parse("{{ .email }}, {{ .activation_link }}")),
 		template.Must(template.New("").Parse("{{ .email }}, {{ .delete_link }}")),
-		htmlTemplate.Must(htmlTemplate.New("").Parse("{{ .device_name }}")),
+		htmlTemplate.Must(htmlTemplate.New("").Parse("")),
 		htmlTemplate.Must(htmlTemplate.New("").Parse("{{ .email }}")),
 	}
 
@@ -59,10 +57,10 @@ func TestMain(m *testing.M) {
 }
 
 // Helper function for creating (optionally authenticated) requests
-func request(method string, path string, body string, apiKey *ApiKey) (*http.Response, error) {
+func request(method string, path string, body string, authToken *AuthToken) (*http.Response, error) {
 	req, _ := http.NewRequest(method, server.URL+path, bytes.NewBuffer([]byte(body)))
-	if apiKey != nil {
-		req.Header.Add("Authorization", fmt.Sprintf("ApiKey %s:%s", apiKey.Email, apiKey.Key))
+	if authToken != nil {
+		req.Header.Add("Authorization", fmt.Sprintf("AuthToken %s:%s", authToken.Email, authToken.Token))
 	}
 	return http.DefaultClient.Do(req)
 }
@@ -107,36 +105,22 @@ func checkResponse(t *testing.T, res *http.Response, code int, body string) []by
 // - Confirming a data reset
 func TestLifeCycle(t *testing.T) {
 	// Post request for api key
-	res, _ := http.PostForm(server.URL+"/auth", url.Values{
-		"device_name": {testDevice},
-		"email":       {testEmail},
+	res, _ := http.PostForm(server.URL+"/auth/", url.Values{
+		"email": {testEmail},
 	})
 
-	// Response should have response code 201 - CREATED
-	body := checkResponse(t, res, http.StatusCreated, "")
+	// No account with this email exists yet and we have not specified 'create=true' in our request
+	// so the status code of th response should be "PRECONDITION FAILED"
+	checkResponse(t, res, http.StatusPreconditionFailed, "")
 
-	// Response body should be a json object containing the api key
-	apiKey := &ApiKey{}
-	err := json.Unmarshal(body, apiKey)
-	if err != nil {
-		t.Error("Failed to parse response body into ApiKey object", err)
-	}
+	// Post request for api key
+	res, _ = http.PostForm(server.URL+"/auth/", url.Values{
+		"email":  {testEmail},
+		"create": {"true"},
+	})
 
-	// Email field should match the original email
-	if apiKey.Email != testEmail {
-		t.Errorf("Expected email to match %s, is %s", testEmail, apiKey.Email)
-	}
-
-	// Device name should match the original device name
-	if apiKey.DeviceName != testDevice {
-		t.Errorf("Expected email to match %s, is %s", testDevice, apiKey.DeviceName)
-	}
-
-	// Key field should be a RFC4122-compliant uuid
-	match, _ := regexp.MatchString(uuidPattern, apiKey.Key)
-	if !match {
-		t.Errorf("Expected %s to be a RFC4122-compliant uuid")
-	}
+	// Response status code should be "ACCEPTED", response body should be the RFC4122-compliant auth token
+	token := checkResponse(t, res, http.StatusAccepted, uuidPattern)
 
 	// Activation message should be sent to the correct email
 	if sender.Receiver != testEmail {
@@ -144,9 +128,9 @@ func TestLifeCycle(t *testing.T) {
 	}
 
 	// Activation message should contain a valid activation link
-	linkPattern := server.URL + "/activate/" + uuidPattern
-	msgPattern := fmt.Sprintf("%s, %s, %s", testDevice, testEmail, linkPattern)
-	match, _ = regexp.MatchString(msgPattern, sender.Message)
+	linkPattern := server.URL + "/auth/" + uuidPattern
+	msgPattern := fmt.Sprintf("%s, %s", testEmail, linkPattern)
+	match, _ := regexp.MatchString(msgPattern, sender.Message)
 	if !match {
 		t.Errorf("Expected activation message to match \"%s\", got \"%s\"", msgPattern, sender.Message)
 	}
@@ -154,27 +138,32 @@ func TestLifeCycle(t *testing.T) {
 
 	// 'visit' activation link
 	res, _ = http.Get(link)
-	checkResponse(t, res, http.StatusOK, fmt.Sprintf("^%s$", testDevice))
+	checkResponse(t, res, http.StatusOK, "")
+
+	authToken := &AuthToken{
+		Email: testEmail,
+		Token: string(token),
+	}
 
 	// Get data request authenticated with obtained api key should return with status code 200 - OK and
 	// empty response body (since we haven't written any data yet)
-	res, _ = request("GET", "", "", apiKey)
+	res, _ = request("GET", "/store/", "", authToken)
 	checkResponse(t, res, http.StatusOK, "^$")
 
 	// Put request should return with status code 204 - NO CONTENT
-	res, _ = request("PUT", "", testData, apiKey)
+	res, _ = request("PUT", "/store/", testData, authToken)
 	checkResponse(t, res, http.StatusNoContent, "")
 
 	// Now get data request should return the data previously save through PUT
-	res, _ = request("GET", "", "", apiKey)
+	res, _ = request("GET", "/store/", "", authToken)
 	checkResponse(t, res, http.StatusOK, fmt.Sprintf("^%s$", testData))
 
 	// Send data reset request. Response should have status code 202 - ACCEPTED
-	res, _ = request("DELETE", "/"+testEmail, "", nil)
+	res, _ = request("DELETE", "/store/", "", authToken)
 	checkResponse(t, res, http.StatusAccepted, "")
 
 	// Confirmation message should contain a valid confirmation link
-	linkPattern = server.URL + "/reset/" + uuidPattern
+	linkPattern = server.URL + "/deletestore/" + uuidPattern
 	msgPattern = fmt.Sprintf("%s, %s", testEmail, linkPattern)
 	match, _ = regexp.MatchString(msgPattern, sender.Message)
 	if !match {
@@ -187,22 +176,18 @@ func TestLifeCycle(t *testing.T) {
 	checkResponse(t, res, http.StatusOK, fmt.Sprintf("^%s$", testEmail))
 
 	// After data reset, data should be an empty string
-	res, _ = request("GET", "", "", apiKey)
+	res, _ = request("GET", "/store/", "", authToken)
 	checkResponse(t, res, http.StatusOK, "^$")
 }
 
 // Test correct handling of various error conditions
 func TestErrorConditions(t *testing.T) {
 	// A request without a valid authorization header should return with status code 401 - Unauthorized
-	res, _ := request("GET", "", "", nil)
+	res, _ := request("GET", "/store/", "", nil)
 	checkResponse(t, res, http.StatusUnauthorized, "")
 
 	// Requests with unsupported HTTP methods should return with 405 - method not allowed
-	res, _ = request("POST", "", "", nil)
-	checkResponse(t, res, http.StatusMethodNotAllowed, "")
-	res, _ = request("DELETE", "", "", nil)
-	checkResponse(t, res, http.StatusMethodNotAllowed, "")
-	res, _ = request("GET", "/auth", "", nil)
+	res, _ = request("POST", "/store/", "", nil)
 	checkResponse(t, res, http.StatusMethodNotAllowed, "")
 
 	// Requests to unsupported paths should return with 404 - not found

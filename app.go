@@ -142,6 +142,7 @@ func (a *Account) ValidateAuthToken(token string) bool {
 	// the given key
 	for _, authToken := range a.AuthTokens {
 		if authToken.Token == token {
+			authToken.LastUsed = time.Now()
 			return true
 		}
 	}
@@ -154,6 +155,7 @@ func (a *Account) ValidateAuthToken(token string) bool {
 type AuthRequest struct {
 	Token     string
 	AuthToken AuthToken
+	Created   time.Time
 }
 
 // Implementation of the `Storable.Key` interface method
@@ -173,24 +175,25 @@ func (ar *AuthRequest) Serialize() ([]byte, error) {
 
 // Represents a request for reseting the data associated with a given account. `RequestReset.Token` is used
 // for validating the request through a separate channel (e.g. email)
-type ResetRequest struct {
+type DeleteStoreRequest struct {
 	Token   string
 	Account string
+	Created time.Time
 }
 
 // Implementation of the `Storable.Key` interface method
-func (rr *ResetRequest) Key() []byte {
+func (rr *DeleteStoreRequest) Key() []byte {
 	return []byte(rr.Token)
 }
 
 // Implementation of the `Storable.Deserialize` interface method
-func (rr *ResetRequest) Deserialize(data []byte) error {
+func (rr *DeleteStoreRequest) Deserialize(data []byte) error {
 	rr.Account = string(data)
 	return nil
 }
 
 // Implementation of the `Storable.Serialize` interface method
-func (rr *ResetRequest) Serialize() ([]byte, error) {
+func (rr *DeleteStoreRequest) Serialize() ([]byte, error) {
 	return []byte(rr.Account), nil
 }
 
@@ -219,13 +222,13 @@ func (d *Store) Serialize() ([]byte, error) {
 // Wrapper for holding references to template instances used for rendering emails, webpages etc.
 type Templates struct {
 	// Email template for api key activation email
-	ActivationEmail *template.Template
+	ActivateAuthTokenEmail *template.Template
 	// Email template for deletion confirmation email
-	DataResetEmail *template.Template
+	DeleteStoreEmail *template.Template
 	// Template for connected page
-	ConnectionSuccess *htmlTemplate.Template
+	ActivateAuthTokenSuccess *htmlTemplate.Template
 	// Template for connected page
-	DataResetSuccess *htmlTemplate.Template
+	DeleteStoreSuccess *htmlTemplate.Template
 }
 
 // Config contains various configuration data
@@ -252,7 +255,7 @@ type App struct {
 // any of the accounts in the database.
 func (app *App) accountFromRequest(r *http.Request) (*Account, error) {
 	// Extract email and authentication token from Authorization header
-	re := regexp.MustCompile("^AuthToken (?P<email>.+):(?P<token>.+)$")
+	re := regexp.MustCompile("^AuthToken (.+):(.+)$")
 	authHeader := r.Header.Get("Authorization")
 
 	// Check if the Authorization header exists and is well formed
@@ -267,7 +270,6 @@ func (app *App) accountFromRequest(r *http.Request) (*Account, error) {
 
 	// Fetch account for the given email address
 	err := app.Get(acc)
-
 	if err != nil {
 		return nil, ErrNotAuthenticated
 	}
@@ -276,6 +278,9 @@ func (app *App) accountFromRequest(r *http.Request) (*Account, error) {
 	if !acc.ValidateAuthToken(token) {
 		return nil, ErrNotAuthenticated
 	}
+
+	// Save account info to persist last used data for auth tokens
+	app.Put(acc)
 
 	return acc, nil
 }
@@ -323,8 +328,24 @@ func (app *App) handleError(e error, w http.ResponseWriter, r *http.Request) {
 // email address with an activation url. Expects `email` and `device_name` parameters through either
 // multipart/form-data or application/x-www-urlencoded parameters
 func (app *App) RequestAuthToken(w http.ResponseWriter, r *http.Request) {
-	// TODO: Add validation
 	email := r.PostFormValue("email")
+	create := r.PostFormValue("create") == "true"
+
+	// Make sure email field is set
+	if email == "" {
+		http.Error(w, "", http.StatusBadRequest)
+		return
+	}
+
+	// If the client does not explicitly state that the server should create a new account for this email
+	// address in case it does not exist, we have to check if an account exists first
+	if !create {
+		err := app.Get(&Account{Email: email})
+		if err == ErrNotFound {
+			http.Error(w, "", http.StatusPreconditionFailed)
+			return
+		}
+	}
 
 	// Generate key-token pair
 	actToken := uuid()
@@ -336,7 +357,7 @@ func (app *App) RequestAuthToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Save key-token pair to database for activating it later in a separate request
-	err := app.Put(&AuthRequest{actToken, authToken})
+	err := app.Put(&AuthRequest{actToken, authToken, time.Now()})
 	if err != nil {
 		app.handleError(err, w, r)
 		return
@@ -344,9 +365,9 @@ func (app *App) RequestAuthToken(w http.ResponseWriter, r *http.Request) {
 
 	// Render activation email
 	var buff bytes.Buffer
-	err = app.Templates.ActivationEmail.Execute(&buff, map[string]string{
+	err = app.Templates.ActivateAuthTokenEmail.Execute(&buff, map[string]string{
 		"email":           authToken.Email,
-		"activation_link": fmt.Sprintf("%s://%s/activate/%s", schemeFromRequest(r), r.Host, actToken),
+		"activation_link": fmt.Sprintf("%s://%s/auth/%s", schemeFromRequest(r), r.Host, actToken),
 	})
 	if err != nil {
 		app.handleError(err, w, r)
@@ -357,23 +378,15 @@ func (app *App) RequestAuthToken(w http.ResponseWriter, r *http.Request) {
 	// Send email with activation link
 	go app.Send(email, "Connect to Padlock Cloud", body)
 
-	// Serialize api key
-	data, err := json.Marshal(authToken)
-	if err != nil {
-		app.handleError(err, w, r)
-		return
-	}
-
-	// Send JSON representation of api key along with CREATED status code
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	w.Write(data)
+	// Return auth token
+	w.WriteHeader(http.StatusAccepted)
+	w.Write([]byte(authToken.Token))
 }
 
 // Hander function for activating a given api key
-func (app *App) ActivateApiKey(w http.ResponseWriter, r *http.Request) {
+func (app *App) ActivateAuthToken(w http.ResponseWriter, r *http.Request) {
 	// Extract activation token from url
-	token, err := tokenFromUrl(r.URL.Path, "/activate/")
+	token, err := tokenFromUrl(r.URL.Path, "/auth/")
 	if err != nil {
 		app.handleError(err, w, r)
 		return
@@ -413,7 +426,7 @@ func (app *App) ActivateApiKey(w http.ResponseWriter, r *http.Request) {
 
 	// Render success page
 	var buff bytes.Buffer
-	err = app.Templates.ConnectionSuccess.Execute(&buff, map[string]string{
+	err = app.Templates.ActivateAuthTokenSuccess.Execute(&buff, map[string]string{
 		"email": authRequest.AuthToken.Email,
 	})
 	if err != nil {
@@ -423,7 +436,7 @@ func (app *App) ActivateApiKey(w http.ResponseWriter, r *http.Request) {
 }
 
 // Handler function for retrieving the data associated with a given account
-func (app *App) GetData(w http.ResponseWriter, r *http.Request) {
+func (app *App) ReadStore(w http.ResponseWriter, r *http.Request) {
 	// Fetch account based on provided credentials
 	acc, err := app.accountFromRequest(r)
 	if err != nil {
@@ -447,10 +460,10 @@ func (app *App) GetData(w http.ResponseWriter, r *http.Request) {
 
 // Handler function for updating the data associated with a given account. This does NOT implement a
 // diffing algorith of any kind since Padlock Cloud is completely ignorant of the data structures involved.
-// Instead, clients should retrieve existing data through the `GetData` endpoint first, perform any necessary
+// Instead, clients should retrieve existing data through the `ReadStore` endpoint first, perform any necessary
 // decryption/parsing, consolidate the data with any existing local data and then reupload the full,
 // encrypted data set
-func (app *App) PutData(w http.ResponseWriter, r *http.Request) {
+func (app *App) WriteStore(w http.ResponseWriter, r *http.Request) {
 	// Fetch account based on provided credentials
 	acc, err := app.accountFromRequest(r)
 	if err != nil {
@@ -479,12 +492,9 @@ func (app *App) PutData(w http.ResponseWriter, r *http.Request) {
 }
 
 // Handler function for requesting a data reset for a given account
-func (app *App) RequestDataReset(w http.ResponseWriter, r *http.Request) {
-	// Extract email from URL
-	email := r.URL.Path[1:]
-
-	// Fetch the account for the given email address if there is one.
-	err := app.Get(&Account{Email: email})
+func (app *App) RequestDeleteStore(w http.ResponseWriter, r *http.Request) {
+	// Fetch account based on provided credentials
+	acc, err := app.accountFromRequest(r)
 	if err != nil {
 		app.handleError(err, w, r)
 		return
@@ -494,7 +504,7 @@ func (app *App) RequestDataReset(w http.ResponseWriter, r *http.Request) {
 	token := uuid()
 
 	// Save token/email pair in database to we can verify it later
-	err = app.Put(&ResetRequest{token, email})
+	err = app.Put(&DeleteStoreRequest{token, acc.Email, time.Now()})
 	if err != nil {
 		app.handleError(err, w, r)
 		return
@@ -502,9 +512,9 @@ func (app *App) RequestDataReset(w http.ResponseWriter, r *http.Request) {
 
 	// Render confirmation email
 	var buff bytes.Buffer
-	err = app.Templates.DataResetEmail.Execute(&buff, map[string]string{
-		"email":       email,
-		"delete_link": fmt.Sprintf("%s://%s/reset/%s", schemeFromRequest(r), r.Host, token),
+	err = app.Templates.DeleteStoreEmail.Execute(&buff, map[string]string{
+		"email":       acc.Email,
+		"delete_link": fmt.Sprintf("%s://%s/deletestore/%s", schemeFromRequest(r), r.Host, token),
 	})
 	if err != nil {
 		app.handleError(err, w, r)
@@ -513,23 +523,23 @@ func (app *App) RequestDataReset(w http.ResponseWriter, r *http.Request) {
 
 	// Send email with confirmation link
 	body := buff.String()
-	go app.Send(email, "Padlock Cloud Delete Request", body)
+	go app.Send(acc.Email, "Padlock Cloud Delete Request", body)
 
 	// Send ACCEPTED status code
 	w.WriteHeader(http.StatusAccepted)
 }
 
 // Handler function for updating the data associated with a given account
-func (app *App) ResetData(w http.ResponseWriter, r *http.Request) {
+func (app *App) CompleteDeleteStore(w http.ResponseWriter, r *http.Request) {
 	// Extract confirmation token from url
-	token, err := tokenFromUrl(r.URL.Path, "/reset/")
+	token, err := tokenFromUrl(r.URL.Path, "/deletestore/")
 	if err != nil {
 		app.handleError(err, w, r)
 		return
 	}
 
 	// Fetch reset request from database
-	resetRequest := &ResetRequest{Token: token}
+	resetRequest := &DeleteStoreRequest{Token: token}
 	err = app.Get(resetRequest)
 	if err != nil {
 		app.handleError(err, w, r)
@@ -546,7 +556,7 @@ func (app *App) ResetData(w http.ResponseWriter, r *http.Request) {
 
 	// Render success page
 	var buff bytes.Buffer
-	err = app.Templates.DataResetSuccess.Execute(&buff, map[string]string{
+	err = app.Templates.DeleteStoreSuccess.Execute(&buff, map[string]string{
 		"email": string(resetRequest.Account),
 	})
 	if err != nil {
@@ -562,50 +572,43 @@ func (app *App) ResetData(w http.ResponseWriter, r *http.Request) {
 // Registeres http handlers for various routes
 func (app *App) setupRoutes() {
 	// Endpoint for requesting api keys, only POST method is supported
-	app.HandleFunc("/auth", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "POST" {
+	app.HandleFunc("/auth/", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "GET":
+			app.ActivateAuthToken(w, r)
+		case "POST":
 			app.RequestAuthToken(w, r)
-		} else {
+		default:
 			http.Error(w, "", http.StatusMethodNotAllowed)
 		}
 	})
 
-	// Endpoint for activating api keys. Only GET method is supported
-	app.HandleFunc("/activate/", func(w http.ResponseWriter, r *http.Request) {
+	// Endpoint for reading, writing and deleting store data
+	app.HandleFunc("/store/", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "GET":
+			app.ReadStore(w, r)
+		case "PUT":
+			app.WriteStore(w, r)
+		case "DELETE":
+			app.RequestDeleteStore(w, r)
+		default:
+			http.Error(w, "", http.StatusMethodNotAllowed)
+		}
+	})
+
+	// Endpoint for requesting a data reset. Only GET supported
+	app.HandleFunc("/deletestore/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "GET" {
-			app.ActivateApiKey(w, r)
+			app.CompleteDeleteStore(w, r)
 		} else {
 			http.Error(w, "", http.StatusMethodNotAllowed)
 		}
 	})
 
 	// Endpoint for requesting a data reset. Only GET supported
-	app.HandleFunc("/reset/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "GET" {
-			app.ResetData(w, r)
-		} else {
-			http.Error(w, "", http.StatusMethodNotAllowed)
-		}
-	})
-
-	// Endpoint for getting/putting data. Supported methods are GET and PUT
-	// DELETE method is supported if email address is provided as part of the url
-	// TODO: Use POST for requesting data reset, deprecate DELETE method
 	app.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/" {
-			switch r.Method {
-			case "GET":
-				app.GetData(w, r)
-			case "PUT":
-				app.PutData(w, r)
-			default:
-				http.Error(w, "", http.StatusMethodNotAllowed)
-			}
-		} else if r.Method == "DELETE" {
-			app.RequestDataReset(w, r)
-		} else {
-			http.Error(w, "", http.StatusNotFound)
-		}
+		http.Error(w, "", http.StatusNotFound)
 	})
 }
 
