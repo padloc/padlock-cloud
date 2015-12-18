@@ -37,6 +37,7 @@ func loadTemplates(path string) *Templates {
 		template.Must(template.ParseFiles(filepath.Join(path, "delete.txt"))),
 		htmlTemplate.Must(htmlTemplate.ParseFiles(filepath.Join(path, "connected.html"))),
 		htmlTemplate.Must(htmlTemplate.ParseFiles(filepath.Join(path, "deleted.html"))),
+		template.Must(template.ParseFiles(filepath.Join(path, "outdated.txt"))),
 	}
 }
 

@@ -13,6 +13,9 @@ import "bytes"
 import "text/template"
 import htmlTemplate "html/template"
 import "time"
+import "strconv"
+
+const version = 1
 
 // Error singletons
 var (
@@ -41,14 +44,14 @@ func uuid() string {
 }
 
 // Extracts a uuid-formated token from a given url
-func tokenFromUrl(url string, baseUrl string) (string, error) {
-	re := regexp.MustCompile("^" + baseUrl + "(?P<token>" + uuidPattern + ")$")
+func tokenFromRequest(r *http.Request) (string, error) {
+	token := r.URL.Query().Get("t")
 
-	if !re.MatchString(url) {
+	if m, _ := regexp.MatchString(uuidPattern, token); !m {
 		return "", ErrInvalidToken
 	}
 
-	return re.FindStringSubmatch(url)[1], nil
+	return token, nil
 }
 
 // Returns the appropriate protocol based on whether a request was made via https or not
@@ -58,6 +61,21 @@ func schemeFromRequest(r *http.Request) string {
 	} else {
 		return "http"
 	}
+}
+
+func versionFromRequest(r *http.Request) int {
+	var vString string
+	accept := r.Header.Get("Accept")
+
+	reg := regexp.MustCompile("^application/vnd.padlock;version=(\\d)$")
+	if reg.MatchString(accept) {
+		vString = reg.FindStringSubmatch(accept)[1]
+	} else {
+		vString = r.URL.Query().Get("v")
+	}
+
+	version, _ := strconv.Atoi(vString)
+	return version
 }
 
 // Sender is a interface that exposes the `Send` method for sending messages with a subject to a given
@@ -225,10 +243,12 @@ type Templates struct {
 	ActivateAuthTokenEmail *template.Template
 	// Email template for deletion confirmation email
 	DeleteStoreEmail *template.Template
-	// Template for connected page
+	// Template for success page for activating an auth token
 	ActivateAuthTokenSuccess *htmlTemplate.Template
-	// Template for connected page
+	// Template for success page for deleting account data
 	DeleteStoreSuccess *htmlTemplate.Template
+	// Email template for clients using an outdated api version
+	OutdatedVersionEmail *template.Template
 }
 
 // Config contains various configuration data
@@ -367,7 +387,7 @@ func (app *App) RequestAuthToken(w http.ResponseWriter, r *http.Request) {
 	var buff bytes.Buffer
 	err = app.Templates.ActivateAuthTokenEmail.Execute(&buff, map[string]string{
 		"email":           authToken.Email,
-		"activation_link": fmt.Sprintf("%s://%s/auth/%s", schemeFromRequest(r), r.Host, actToken),
+		"activation_link": fmt.Sprintf("%s://%s/auth/?v=%d&t=%s", schemeFromRequest(r), r.Host, version, actToken),
 	})
 	if err != nil {
 		app.handleError(err, w, r)
@@ -386,7 +406,7 @@ func (app *App) RequestAuthToken(w http.ResponseWriter, r *http.Request) {
 // Hander function for activating a given api key
 func (app *App) ActivateAuthToken(w http.ResponseWriter, r *http.Request) {
 	// Extract activation token from url
-	token, err := tokenFromUrl(r.URL.Path, "/auth/")
+	token, err := tokenFromRequest(r)
 	if err != nil {
 		app.handleError(err, w, r)
 		return
@@ -514,7 +534,7 @@ func (app *App) RequestDeleteStore(w http.ResponseWriter, r *http.Request) {
 	var buff bytes.Buffer
 	err = app.Templates.DeleteStoreEmail.Execute(&buff, map[string]string{
 		"email":       acc.Email,
-		"delete_link": fmt.Sprintf("%s://%s/deletestore/%s", schemeFromRequest(r), r.Host, token),
+		"delete_link": fmt.Sprintf("%s://%s/deletestore/?v=%d&t=%s", schemeFromRequest(r), r.Host, version, token),
 	})
 	if err != nil {
 		app.handleError(err, w, r)
@@ -532,7 +552,7 @@ func (app *App) RequestDeleteStore(w http.ResponseWriter, r *http.Request) {
 // Handler function for updating the data associated with a given account
 func (app *App) CompleteDeleteStore(w http.ResponseWriter, r *http.Request) {
 	// Extract confirmation token from url
-	token, err := tokenFromUrl(r.URL.Path, "/deletestore/")
+	token, err := tokenFromRequest(r)
 	if err != nil {
 		app.handleError(err, w, r)
 		return
@@ -612,9 +632,39 @@ func (app *App) setupRoutes() {
 	})
 }
 
+func (app *App) OutdatedVersion(w http.ResponseWriter, r *http.Request) {
+	acc, _ := app.accountFromRequest(r)
+	var email string
+
+	if acc != nil {
+		email = acc.Email
+	} else if r.Method == "DELETE" {
+		email = r.URL.Path[1:]
+	} else {
+		email = r.PostFormValue("email")
+	}
+
+	if email != "" {
+		// Render activation email
+		var buff bytes.Buffer
+		err := app.Templates.OutdatedVersionEmail.Execute(&buff, nil)
+		if err != nil {
+			app.handleError(err, w, r)
+			return
+		}
+		body := buff.String()
+
+		// Send email with activation link
+		go app.Send(email, "Please update your version of Padlock", body)
+	}
+
+	http.Error(w, "", http.StatusNotAcceptable)
+}
+
 // Implements `http.Handler.ServeHTTP` interface method. Handles panic recovery and TLS checking, Delegates
 // requests to embedded `http.ServeMux`
 func (app *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+
 	defer func() {
 		if e := recover(); e != nil {
 			log.Printf("Recovered from panic: %v", e)
@@ -631,6 +681,11 @@ func (app *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Only accept connections via https if `RequireTLS` configuration is true
 	if app.RequireTLS && r.TLS == nil {
 		app.handleError(ErrInsecureConnection, w, r)
+		return
+	}
+
+	if versionFromRequest(r) != version {
+		app.OutdatedVersion(w, r)
 		return
 	}
 
