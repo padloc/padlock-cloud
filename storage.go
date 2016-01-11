@@ -1,10 +1,13 @@
-package main
+package padlockcloud
 
 import "reflect"
 import "errors"
+import "os"
 import "encoding/json"
 import "path/filepath"
 import "github.com/MaKleSoft/padlock-cloud/Godeps/_workspace/src/github.com/syndtr/goleveldb/leveldb"
+
+const defaultDbPath = "./db"
 
 // Error singletons
 var (
@@ -40,6 +43,8 @@ type Storage interface {
 	Put(Storable) error
 	// Removes a given `Storable` object from the store
 	Delete(Storable) error
+	// Load configuration from environment variables
+	LoadEnv()
 }
 
 // Map of supported `Storable` implementations along with identifier strings that can be used for
@@ -49,6 +54,10 @@ var StorableTypes = map[reflect.Type]string{
 	reflect.TypeOf((*Account)(nil)).Elem():            "auth",
 	reflect.TypeOf((*AuthRequest)(nil)).Elem():        "act",
 	reflect.TypeOf((*DeleteStoreRequest)(nil)).Elem(): "del",
+}
+
+func AddStorable(t interface{}, loc string) {
+	StorableTypes[reflect.TypeOf(t).Elem()] = loc
 }
 
 // LevelDB implementation of the `Storage` interface
@@ -170,6 +179,13 @@ func (s *LevelDBStorage) Delete(t Storable) error {
 	return db.Delete(t.Key(), nil)
 }
 
+func (s *LevelDBStorage) LoadEnv() {
+	s.Path = os.Getenv("PADLOCK_DB_PATH")
+	if s.Path == "" {
+		s.Path = defaultDbPath
+	}
+}
+
 // In-memory implemenation of the `Storage` interface Mainly used for testing
 type MemoryStorage struct {
 	store map[reflect.Type](map[string][]byte)
@@ -241,3 +257,5 @@ func (s *MemoryStorage) Delete(t Storable) error {
 	}
 	return nil
 }
+
+func (s *MemoryStorage) LoadEnv() {}
