@@ -16,6 +16,7 @@ import htmlTemplate "html/template"
 import "time"
 import "strconv"
 import "path/filepath"
+import "github.com/rs/cors"
 
 const (
 	version           = 1
@@ -716,8 +717,14 @@ func (app *App) Start(addr string) {
 	// Close database connection when the method returns
 	defer app.Storage.Close()
 
+	handler := cors.New(cors.Options{
+		AllowedOrigins: []string{"*"},
+		AllowedMethods: []string{"HEAD", "GET", "POST", "PUT", "DELETE"},
+		AllowedHeaders: []string{"Authorization", "Accept", "Content-Type", "Require-Subscription"},
+	}).Handler(app)
+
 	// Start server
-	err = http.ListenAndServe(addr, app)
+	err = http.ListenAndServe(addr, handler)
 	if err != nil {
 		log.Fatal(err)
 	}
