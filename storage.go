@@ -5,7 +5,7 @@ import "errors"
 import "os"
 import "encoding/json"
 import "path/filepath"
-import "github.com/MaKleSoft/padlock-cloud/Godeps/_workspace/src/github.com/syndtr/goleveldb/leveldb"
+import "github.com/syndtr/goleveldb/leveldb"
 
 const defaultDbPath = "./db"
 
