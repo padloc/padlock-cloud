@@ -656,22 +656,28 @@ func (app *App) DeprecatedVersion(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "", http.StatusNotAcceptable)
 }
 
+func (app *App) HandlePanic(w http.ResponseWriter, r *http.Request) {
+	if e := recover(); e != nil {
+		log.Printf("Recovered from panic: %v", e)
+
+		app.HandleError(ErrPanic, w, r)
+
+		if app.NotifyEmail != "" {
+			go app.Send(app.NotifyEmail, "Padlock Cloud Error Notification",
+				fmt.Sprintf("Recovered from panic: %v\nRequest: %v", e, r))
+		}
+	}
+}
+
+func (app *App) CheckVersion(w http.ResponseWriter, r *http.Request) bool {
+	return versionFromRequest(r) != version
+}
+
 // Implements `http.Handler.ServeHTTP` interface method. Handles panic recovery and TLS checking, Delegates
 // requests to embedded `http.ServeMux`
 func (app *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
-	defer func() {
-		if e := recover(); e != nil {
-			log.Printf("Recovered from panic: %v", e)
-
-			app.HandleError(ErrPanic, w, r)
-
-			if app.NotifyEmail != "" {
-				go app.Send(app.NotifyEmail, "Padlock Cloud Error Notification",
-					fmt.Sprintf("Recovered from panic: %v\nRequest: %v", e, r))
-			}
-		}
-	}()
+	defer app.HandlePanic(w, r)
 
 	// Only accept connections via https if `RequireTLS` configuration is true
 	if app.RequireTLS && r.TLS == nil {
@@ -679,7 +685,7 @@ func (app *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if versionFromRequest(r) != version {
+	if app.CheckVersion(w, r) {
 		app.DeprecatedVersion(w, r)
 		return
 	}
