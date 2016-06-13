@@ -1,11 +1,19 @@
 {
-	"ImportPath": "github.com/MaKleSoft/padlock-cloud",
+	"ImportPath": "github.com/maklesoft/padlock-cloud",
 	"GoVersion": "go1.6",
 	"GodepVersion": "v60",
 	"Deps": [
 		{
 			"ImportPath": "github.com/golang/snappy",
 			"Rev": "723cc1e459b8eea2dea4583200fd60757d40097a"
+		},
+		{
+			"ImportPath": "github.com/hashicorp/golang-lru",
+			"Rev": "a0d98a5f288019575c6d1f4bb1573fef2d1fcdc4"
+		},
+		{
+			"ImportPath": "github.com/hashicorp/golang-lru/simplelru",
+			"Rev": "a0d98a5f288019575c6d1f4bb1573fef2d1fcdc4"
 		},
 		{
 			"ImportPath": "github.com/rs/cors",
@@ -66,6 +74,16 @@
 		{
 			"ImportPath": "golang.org/x/net/context",
 			"Rev": "0cb26f788dd4625d1956c6fd97ffc4c90669d129"
+		},
+		{
+			"ImportPath": "gopkg.in/throttled/throttled.v2",
+			"Comment": "v2.0.3",
+			"Rev": "b5675e93f9d999b22f92d859a5bf2138d3641af4"
+		},
+		{
+			"ImportPath": "gopkg.in/throttled/throttled.v2/store/memstore",
+			"Comment": "v2.0.3",
+			"Rev": "b5675e93f9d999b22f92d859a5bf2138d3641af4"
 		}
 	]
 }

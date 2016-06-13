@@ -15,7 +15,6 @@ import htmlTemplate "html/template"
 import "time"
 import "strconv"
 import "path/filepath"
-import "github.com/rs/cors"
 
 const (
 	version           = 1
@@ -703,35 +702,6 @@ func (app *App) Init(storage Storage, sender Sender, templates *Templates, confi
 	app.Templates = templates
 	app.Config = config
 	app.LoadEnv()
-}
-
-// Start server and listen at the given address
-func (app *App) Start(addr string) {
-	// Open storage
-	err := app.Storage.Open()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Close database connection when the method returns
-	defer app.Storage.Close()
-
-	handler := cors.New(cors.Options{
-		AllowedOrigins: []string{"*"},
-		AllowedMethods: []string{"HEAD", "GET", "POST", "PUT", "DELETE"},
-		AllowedHeaders: []string{"Authorization", "Accept", "Content-Type", "Require-Subscription"},
-	}).Handler(app)
-
-	// Start server
-	err = http.ListenAndServe(addr, handler)
-	if err != nil {
-		log.Fatal(err)
-	}
-}
-
-// Does any necessary cleanup work after `App.Start()` was called
-func (app *App) Stop() {
-	app.Storage.Close()
 }
 
 // Loads settings from environment variables
