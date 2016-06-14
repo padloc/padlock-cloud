@@ -40,12 +40,16 @@ var (
 const uuidPattern = "[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}"
 
 // RFC4122-compliant uuid generator
-func uuid() string {
+func uuid() (string, error) {
 	b := make([]byte, 16)
-	rand.Read(b)
+	_, err := rand.Read(b)
+	if err != nil {
+		return "", err
+	}
+
 	b[6] = (b[6] & 0x0f) | 0x40
 	b[8] = (b[8] & 0x3f) | 0x80
-	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:]), nil
 }
 
 // Extracts a uuid-formated token from a given url
@@ -345,16 +349,26 @@ func (app *App) RequestAuthToken(w http.ResponseWriter, r *http.Request, create 
 	}
 
 	// Generate key-token pair
-	actToken := uuid()
+	actToken, err := uuid()
+	if err != nil {
+		app.HandleError(err, w, r)
+		return
+	}
+	authT, err := uuid()
+	if err != nil {
+		app.HandleError(err, w, r)
+		return
+	}
+
 	authToken := AuthToken{
 		email,
-		uuid(),
+		authT,
 		time.Now(),
 		time.Now(),
 	}
 
 	// Save key-token pair to database for activating it later in a separate request
-	err := app.Put(&AuthRequest{actToken, authToken, time.Now()})
+	err = app.Put(&AuthRequest{actToken, authToken, time.Now()})
 	if err != nil {
 		app.HandleError(err, w, r)
 		return
@@ -504,7 +518,11 @@ func (app *App) RequestDeleteStore(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Generate a new delete token
-	token := uuid()
+	token, err := uuid()
+	if err != nil {
+		app.HandleError(err, w, r)
+		return
+	}
 
 	// Save token/email pair in database to we can verify it later
 	err = app.Put(&DeleteStoreRequest{token, acc.Email, time.Now()})
