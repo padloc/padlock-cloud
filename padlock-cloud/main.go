@@ -47,15 +47,15 @@ func main() {
 		os.Exit(0)
 	}()
 
-	// Add CORS middleware
-	handler := pc.Cors(app)
-
 	// Add rate limiting middleWare
-	handler = pc.RateLimit(handler, map[pc.Route]pc.RateQuota{
+	handler := pc.RateLimit(app, map[pc.Route]pc.RateQuota{
 		pc.Route{"POST", "/auth/"}:    pc.RateQuota{pc.PerMin(1), 0},
 		pc.Route{"PUT", "/auth/"}:     pc.RateQuota{pc.PerMin(1), 0},
 		pc.Route{"DELETE", "/store/"}: pc.RateQuota{pc.PerMin(1), 0},
 	})
+
+	// Add CORS middleware
+	handler = pc.Cors(handler)
 
 	// Start server
 	log.Printf("Starting server on port %v", *port)
