@@ -7,6 +7,7 @@ import "fmt"
 import "log"
 import "os"
 import "encoding/json"
+import "encoding/base64"
 import "regexp"
 import "errors"
 import "bytes"
@@ -50,6 +51,16 @@ func uuid() (string, error) {
 	b[6] = (b[6] & 0x0f) | 0x40
 	b[8] = (b[8] & 0x3f) | 0x80
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:]), nil
+}
+
+func randomBase64(nBytes int) (string, error) {
+	b := make([]byte, nBytes)
+	_, err := rand.Read(b)
+	if err != nil {
+		return "", err
+	}
+
+	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
 // Extracts a uuid-formated token from a given url
@@ -107,6 +118,7 @@ func credentialsFromRequest(r *http.Request) (string, string) {
 type AuthToken struct {
 	Email    string    `json:"email"`
 	Token    string    `json:"token"`
+	Id       string    `json:"id"`
 	Created  time.Time `json:"-"`
 	LastUsed time.Time `json:"-"`
 }
@@ -359,10 +371,16 @@ func (app *App) RequestAuthToken(w http.ResponseWriter, r *http.Request, create 
 		app.HandleError(err, w, r)
 		return
 	}
+	id, err := randomBase64(6)
+	if err != nil {
+		app.HandleError(err, w, r)
+		return
+	}
 
 	authToken := AuthToken{
 		email,
 		authT,
+		id,
 		time.Now(),
 		time.Now(),
 	}
@@ -379,6 +397,7 @@ func (app *App) RequestAuthToken(w http.ResponseWriter, r *http.Request, create 
 	err = app.Templates.ActivateAuthTokenEmail.Execute(&buff, map[string]string{
 		"email":           authToken.Email,
 		"activation_link": fmt.Sprintf("%s://%s/activate/?v=%d&t=%s", schemeFromRequest(r), r.Host, version, actToken),
+		"conn_id":         authToken.Id,
 	})
 	if err != nil {
 		app.HandleError(err, w, r)
