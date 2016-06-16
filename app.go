@@ -37,21 +37,7 @@ var (
 	ErrPanic = errors.New("padlock: panic")
 )
 
-// Regex pattern for checking for RFC4122-compliant uuids
-const uuidPattern = "[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}"
-
-// RFC4122-compliant uuid generator
-func uuid() (string, error) {
-	b := make([]byte, 16)
-	_, err := rand.Read(b)
-	if err != nil {
-		return "", err
-	}
-
-	b[6] = (b[6] & 0x0f) | 0x40
-	b[8] = (b[8] & 0x3f) | 0x80
-	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:]), nil
-}
+const tokenPattern = `[a-zA-Z0-9\-_]{22}`
 
 func randomBase64(nBytes int) (string, error) {
 	b := make([]byte, nBytes)
@@ -63,11 +49,15 @@ func randomBase64(nBytes int) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
+func token() (string, error) {
+	return randomBase64(16)
+}
+
 // Extracts a uuid-formated token from a given url
 func tokenFromRequest(r *http.Request) (string, error) {
 	token := r.URL.Query().Get("t")
 
-	if m, _ := regexp.MatchString(uuidPattern, token); !m {
+	if token == "" {
 		return "", ErrInvalidToken
 	}
 
@@ -361,12 +351,12 @@ func (app *App) RequestAuthToken(w http.ResponseWriter, r *http.Request, create 
 	}
 
 	// Generate key-token pair
-	actToken, err := uuid()
+	actToken, err := token()
 	if err != nil {
 		app.HandleError(err, w, r)
 		return
 	}
-	authT, err := uuid()
+	authT, err := token()
 	if err != nil {
 		app.HandleError(err, w, r)
 		return
@@ -537,7 +527,7 @@ func (app *App) RequestDeleteStore(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Generate a new delete token
-	token, err := uuid()
+	token, err := token()
 	if err != nil {
 		app.HandleError(err, w, r)
 		return

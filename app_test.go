@@ -123,7 +123,7 @@ func TestLifeCycle(t *testing.T) {
 	}
 
 	// Activation message should contain a valid activation link
-	linkPattern := fmt.Sprintf("%s/activate/\\?v=%d&t=%s", server.URL, version, uuidPattern)
+	linkPattern := fmt.Sprintf("%s/activate/\\?v=%d&t=%s", server.URL, version, tokenPattern)
 	msgPattern := fmt.Sprintf("%s, %s", testEmail, linkPattern)
 	match, _ := regexp.MatchString(msgPattern, sender.Message)
 	if !match {
@@ -159,7 +159,7 @@ func TestLifeCycle(t *testing.T) {
 	}
 
 	// Confirmation message should contain a valid confirmation link
-	linkPattern = fmt.Sprintf("%s/deletestore/\\?v=%d&t=%s", server.URL, version, uuidPattern)
+	linkPattern = fmt.Sprintf("%s/deletestore/\\?v=%d&t=%s", server.URL, version, tokenPattern)
 	msgPattern = fmt.Sprintf("%s, %s", testEmail, linkPattern)
 	match, _ = regexp.MatchString(msgPattern, sender.Message)
 	if !match {
@@ -208,7 +208,8 @@ func TestErrorConditions(t *testing.T) {
 
 func TestOutdatedVersion(t *testing.T) {
 	sender.Reset()
-	res, _ := request("GET", "/", "", false, &AuthToken{Email: testEmail, Token: uuid()}, 0)
+	token, _ := token()
+	res, _ := request("GET", "/", "", false, &AuthToken{Email: testEmail, Token: token}, 0)
 	checkResponse(t, res, http.StatusNotAcceptable, "")
 	if sender.Receiver != testEmail {
 		t.Errorf("Expected outdated message to be sent to %s, instead got %s", testEmail, sender.Receiver)
