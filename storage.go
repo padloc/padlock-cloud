@@ -43,6 +43,8 @@ type Storage interface {
 	Put(Storable) error
 	// Removes a given `Storable` object from the store
 	Delete(Storable) error
+	// Lists all keys for a given `Storable` type
+	List(Storable) ([]string, error)
 	// Load configuration from environment variables
 	LoadEnv()
 }
@@ -179,6 +181,23 @@ func (s *LevelDBStorage) Delete(t Storable) error {
 	return db.Delete(t.Key(), nil)
 }
 
+func (s *LevelDBStorage) List(t Storable) ([]string, error) {
+	var keys []string
+
+	db, err := s.getDB(t)
+	if err != nil {
+		return keys, err
+	}
+
+	iter := db.NewIterator(nil, nil)
+	for iter.Next() {
+		keys = append(keys, string(iter.Key()))
+	}
+	iter.Release()
+
+	return keys, nil
+}
+
 func (s *LevelDBStorage) LoadEnv() {
 	s.Path = os.Getenv("PADLOCK_DB_PATH")
 	if s.Path == "" {
@@ -256,6 +275,29 @@ func (s *MemoryStorage) Delete(t Storable) error {
 		delete(ts, string(t.Key()))
 	}
 	return nil
+}
+
+func (s *MemoryStorage) List(t Storable) ([]string, error) {
+	var l []string
+
+	if s.store == nil {
+		return l, ErrStorageClosed
+	}
+
+	if t == nil {
+		return l, ErrStorableTypeNotSupported
+	}
+
+	ts := s.store[reflect.TypeOf(t)]
+	if ts == nil {
+		return l, ErrStorableTypeNotSupported
+	}
+
+	for key, _ := range ts {
+		l = append(l, key)
+	}
+
+	return l, nil
 }
 
 func (s *MemoryStorage) LoadEnv() {}
