@@ -665,7 +665,7 @@ func (app *App) DeprecatedVersion(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Try to get email from request body if method is POST
-	if email == "" && r.Method == "POST" {
+	if email == "" && (r.Method == "PUT" || r.Method == "POST") {
 		email = r.PostFormValue("email")
 	}
 
