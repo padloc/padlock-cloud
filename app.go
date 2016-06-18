@@ -106,11 +106,11 @@ func credentialsFromRequest(r *http.Request) (string, string) {
 
 // A wrapper for an api key containing some meta info like the user and device name
 type AuthToken struct {
-	Email    string    `json:"email"`
-	Token    string    `json:"token"`
-	Id       string    `json:"id"`
-	Created  time.Time `json:"-"`
-	LastUsed time.Time `json:"-"`
+	Email    string
+	Token    string
+	Id       string
+	Created  time.Time
+	LastUsed time.Time
 }
 
 // A struct representing a user with a set of api keys
@@ -398,7 +398,11 @@ func (app *App) RequestAuthToken(w http.ResponseWriter, r *http.Request, create 
 	// Send email with activation link
 	go app.Send(email, "Connect to Padlock Cloud", body)
 
-	resp, err := json.Marshal(authToken)
+	resp, err := json.Marshal(map[string]string{
+		"id":    authToken.Id,
+		"token": authToken.Token,
+		"email": authToken.Email,
+	})
 	if err != nil {
 		app.HandleError(err, w, r)
 		return
