@@ -120,7 +120,7 @@ type Account struct {
 	Email string
 	// A set of api keys that can be used to access the data associated with this
 	// account
-	AuthTokens []AuthToken
+	AuthTokens []*AuthToken
 }
 
 // Implements the `Key` method of the `Storable` interface
@@ -140,7 +140,7 @@ func (acc *Account) Serialize() ([]byte, error) {
 
 // Adds an api key to this account. If an api key for the given device
 // is already registered, that one will be replaced
-func (a *Account) AddAuthToken(token AuthToken) {
+func (a *Account) AddAuthToken(token *AuthToken) {
 	a.AuthTokens = append(a.AuthTokens, token)
 }
 
@@ -173,12 +173,12 @@ func (ar *AuthRequest) Key() []byte {
 
 // Implementation of the `Storable.Deserialize` method
 func (ar *AuthRequest) Deserialize(data []byte) error {
-	return json.Unmarshal(data, &ar.AuthToken)
+	return json.Unmarshal(data, ar)
 }
 
 // Implementation of the `Storable.Serialize` method
 func (ar *AuthRequest) Serialize() ([]byte, error) {
-	return json.Marshal(&ar.AuthToken)
+	return json.Marshal(ar)
 }
 
 // Represents a request for reseting the data associated with a given account. `RequestReset.Token` is used
@@ -196,13 +196,12 @@ func (rr *DeleteStoreRequest) Key() []byte {
 
 // Implementation of the `Storable.Deserialize` interface method
 func (rr *DeleteStoreRequest) Deserialize(data []byte) error {
-	rr.Account = string(data)
-	return nil
+	return json.Unmarshal(data, rr)
 }
 
 // Implementation of the `Storable.Serialize` interface method
 func (rr *DeleteStoreRequest) Serialize() ([]byte, error) {
-	return []byte(rr.Account), nil
+	return json.Marshal(rr)
 }
 
 // Store represents the data associated to a given account
@@ -442,8 +441,8 @@ func (app *App) ActivateAuthToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Add the new key to the account (keys with the same device name will be replaced)
-	acc.AddAuthToken(authRequest.AuthToken)
+	// Add the new key to the account
+	acc.AddAuthToken(&authRequest.AuthToken)
 
 	// Save the changes
 	err = app.Put(acc)
