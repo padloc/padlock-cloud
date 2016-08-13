@@ -1,29 +1,31 @@
 package main
 
 import "os"
-import "flag"
 import "log"
 import "fmt"
 import "net/http"
 import "os/signal"
 import pc "github.com/maklesoft/padlock-cloud"
 
-const defaultPort = 3000
-
 func main() {
-	// Parse options from command line flags
-	port := flag.Int("p", defaultPort, "Port to listen on")
-	requireTLS := flag.Bool("https-only", false, "Set to true to only allow requests via https")
-	flag.Parse()
+	config := struct {
+		Port int `env:"PC_PORT" cli:"port" yaml:"port"`
+	}{
+		3000,
+	}
+	appConfig := pc.AppConfig{
+		RequireTLS: true,
+		AssetsPath: "assets",
+	}
+
+	pc.LoadConfig(&config, &appConfig)
 
 	// Initialize app instance
 	app := pc.NewApp(
 		&pc.LevelDBStorage{},
 		&pc.EmailSender{},
 		nil,
-		pc.Config{
-			RequireTLS: *requireTLS,
-		},
+		appConfig,
 	)
 
 	app.LoadTemplatesFromAssets()
@@ -58,8 +60,8 @@ func main() {
 	handler = pc.Cors(handler)
 
 	// Start server
-	log.Printf("Starting server on port %v", *port)
-	err = http.ListenAndServe(fmt.Sprintf(":%d", *port), handler)
+	log.Printf("Starting server on port %v", config.Port)
+	err = http.ListenAndServe(fmt.Sprintf(":%d", config.Port), handler)
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -5,7 +5,6 @@ import "io/ioutil"
 import "crypto/rand"
 import "fmt"
 import "log"
-import "os"
 import "encoding/json"
 import "encoding/base64"
 import "regexp"
@@ -240,14 +239,14 @@ type Templates struct {
 	DeprecatedVersionEmail *template.Template
 }
 
-// Config contains various configuration data
-type Config struct {
+// AppConfig contains various configuration data
+type AppConfig struct {
 	// If true, all requests via plain http will be rejected. Only https requests are allowed
-	RequireTLS bool
+	RequireTLS bool `env:"PC_REQUIRE_TLS" cli:"require-tls" yaml:"require_tls"`
 	// Email address for sending error reports; Leave empty for no notifications
-	NotifyEmail string
+	NotifyEmail string `env:"PC_NOTIFY_EMAIL" cli:"notify-email" yaml:"notify_email"`
 	// Path to assets directory
-	AssetsPath string
+	AssetsPath string `env:"PC_ASSETS_PATH" cli:"assets-path" yaml:"assets_path"`
 }
 
 // The App type holds all the contextual data and logic used for running a Padlock Cloud instances
@@ -257,7 +256,7 @@ type App struct {
 	Sender
 	Storage
 	*Templates
-	Config
+	AppConfig
 }
 
 // Retreives Account object from a http.Request object by evaluating the Authorization header and
@@ -724,13 +723,13 @@ func (app *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // Initialize App with dependencies and configuration
-func (app *App) Init(storage Storage, sender Sender, templates *Templates, config Config) {
+func (app *App) Init(storage Storage, sender Sender, templates *Templates, config AppConfig) {
 	app.ServeMux = http.NewServeMux()
 	app.SetupRoutes()
 	app.Storage = storage
 	app.Sender = sender
 	app.Templates = templates
-	app.Config = config
+	app.AppConfig = config
 	app.LoadEnv()
 }
 
@@ -738,15 +737,6 @@ func (app *App) Init(storage Storage, sender Sender, templates *Templates, confi
 func (app *App) LoadEnv() {
 	app.Sender.LoadEnv()
 	app.Storage.LoadEnv()
-	if app.AssetsPath == "" {
-		app.AssetsPath = os.Getenv("PADLOCK_ASSETS_PATH")
-	}
-	if app.AssetsPath == "" {
-		app.AssetsPath = defaultAssetsPath
-	}
-	if app.NotifyEmail == "" {
-		app.NotifyEmail = os.Getenv("PADLOCK_NOTIFY_EMAIL")
-	}
 }
 
 // Loads templates from given directory
@@ -762,7 +752,7 @@ func (app *App) LoadTemplatesFromAssets() {
 }
 
 // Instantiates and initializes a new App and returns a reference to it
-func NewApp(storage Storage, sender Sender, templates *Templates, config Config) *App {
+func NewApp(storage Storage, sender Sender, templates *Templates, config AppConfig) *App {
 	app := &App{}
 	app.Init(storage, sender, templates, config)
 	return app
