@@ -2,25 +2,27 @@ package padlockcloud
 
 import "fmt"
 import "net/smtp"
-import "os"
 
 // Sender is a interface that exposes the `Send` method for sending messages with a subject to a given
 // receiver.
 type Sender interface {
 	Send(receiver string, subject string, message string) error
-	LoadEnv()
+}
+
+type EmailConfig struct {
+	// User name used for authentication with the mail server
+	User string `env:"PC_EMAIL_USER" cli:"email-user" yaml:"email_user"`
+	// Mail server address
+	Server string `env:"PC_EMAIL_SERVER" cli:"email-server" yaml:"email_server"`
+	// Port on which to contact the mail server
+	Port string `env:"PC_EMAIL_PORT" cli:"email-port" yaml:"email_port"`
+	// Password used for authentication with the mail server
+	Password string `env:"PC_EMAIL_PASSWORD" cli:"email-password" yaml:"email_password"`
 }
 
 // EmailSender implements the `Sender` interface for emails
 type EmailSender struct {
-	// User name used for authentication with the mail server
-	User string
-	// Mail server address
-	Server string
-	// Port on which to contact the mail server
-	Port string
-	// Password used for authentication with the mail server
-	Password string
+	EmailConfig
 }
 
 // Attempts to send an email to a given receiver. Through `smpt.SendMail`
@@ -42,13 +44,6 @@ func (sender *EmailSender) Send(rec string, subject string, body string) error {
 	)
 }
 
-func (sender *EmailSender) LoadEnv() {
-	sender.User = os.Getenv("PADLOCK_EMAIL_USERNAME")
-	sender.Server = os.Getenv("PADLOCK_EMAIL_SERVER")
-	sender.Port = os.Getenv("PADLOCK_EMAIL_PORT")
-	sender.Password = os.Getenv("PADLOCK_EMAIL_PASSWORD")
-}
-
 // Mock implementation of the `Sender` interface. Simply records arguments passed to the `Send` method
 type RecordSender struct {
 	Receiver string
@@ -68,5 +63,3 @@ func (s *RecordSender) Reset() {
 	s.Subject = ""
 	s.Message = ""
 }
-
-func (s *RecordSender) LoadEnv() {}

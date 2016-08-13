@@ -2,7 +2,6 @@ package padlockcloud
 
 import "reflect"
 import "errors"
-import "os"
 import "encoding/json"
 import "path/filepath"
 import "github.com/syndtr/goleveldb/leveldb"
@@ -45,8 +44,6 @@ type Storage interface {
 	Delete(Storable) error
 	// Lists all keys for a given `Storable` type
 	List(Storable) ([]string, error)
-	// Load configuration from environment variables
-	LoadEnv()
 }
 
 // Map of supported `Storable` implementations along with identifier strings that can be used for
@@ -62,10 +59,14 @@ func AddStorable(t interface{}, loc string) {
 	StorableTypes[reflect.TypeOf(t).Elem()] = loc
 }
 
+type LevelDBConfig struct {
+	// Path to directory on disc where database files should be stored
+	Path string `env:"PC_DB_PATH" cli:"db-path" yaml:"db_path"`
+}
+
 // LevelDB implementation of the `Storage` interface
 type LevelDBStorage struct {
-	// Path to directory on disc where database files should be stored
-	Path string
+	LevelDBConfig
 	// Map of `leveldb.DB` instances associated with different `Storable` types
 	stores map[reflect.Type]*leveldb.DB
 }
@@ -198,13 +199,6 @@ func (s *LevelDBStorage) List(t Storable) ([]string, error) {
 	return keys, nil
 }
 
-func (s *LevelDBStorage) LoadEnv() {
-	s.Path = os.Getenv("PADLOCK_DB_PATH")
-	if s.Path == "" {
-		s.Path = defaultDbPath
-	}
-}
-
 // In-memory implemenation of the `Storage` interface Mainly used for testing
 type MemoryStorage struct {
 	store map[reflect.Type](map[string][]byte)
@@ -299,5 +293,3 @@ func (s *MemoryStorage) List(t Storable) ([]string, error) {
 
 	return l, nil
 }
-
-func (s *MemoryStorage) LoadEnv() {}

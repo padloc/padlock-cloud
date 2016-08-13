@@ -730,13 +730,6 @@ func (app *App) Init(storage Storage, sender Sender, templates *Templates, confi
 	app.Sender = sender
 	app.Templates = templates
 	app.AppConfig = config
-	app.LoadEnv()
-}
-
-// Loads settings from environment variables
-func (app *App) LoadEnv() {
-	app.Sender.LoadEnv()
-	app.Storage.LoadEnv()
 }
 
 // Loads templates from given directory

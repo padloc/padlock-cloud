@@ -17,13 +17,17 @@ func main() {
 		RequireTLS: true,
 		AssetsPath: "assets",
 	}
+	levelDBConfig := pc.LevelDBConfig{
+		Path: "db",
+	}
+	emailConfig := pc.EmailConfig{}
 
-	pc.LoadConfig(&config, &appConfig)
+	pc.LoadConfig(&config, &appConfig, &levelDBConfig, &emailConfig)
 
 	// Initialize app instance
 	app := pc.NewApp(
-		&pc.LevelDBStorage{},
-		&pc.EmailSender{},
+		&pc.LevelDBStorage{LevelDBConfig: levelDBConfig},
+		&pc.EmailSender{emailConfig},
 		nil,
 		appConfig,
 	)
