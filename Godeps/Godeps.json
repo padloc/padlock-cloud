@@ -2,10 +2,42 @@
 	"ImportPath": "github.com/maklesoft/padlock-cloud",
 	"GoVersion": "go1.6",
 	"GodepVersion": "v60",
+	"Packages": [
+		"./padlock-cloud"
+	],
 	"Deps": [
+		{
+			"ImportPath": "github.com/Sirupsen/logrus",
+			"Comment": "v0.10.0-28-ga283a10",
+			"Rev": "a283a10442df8dc09befd873fab202bf8a253d6a"
+		},
+		{
+			"ImportPath": "github.com/alecthomas/template",
+			"Rev": "a0175ee3bccc567396460bf5acd36800cb10c49c"
+		},
+		{
+			"ImportPath": "github.com/alecthomas/template/parse",
+			"Rev": "a0175ee3bccc567396460bf5acd36800cb10c49c"
+		},
+		{
+			"ImportPath": "github.com/alecthomas/units",
+			"Rev": "2efee857e7cfd4f3d0138cc3cbb1b4966962b93a"
+		},
 		{
 			"ImportPath": "github.com/golang/snappy",
 			"Rev": "723cc1e459b8eea2dea4583200fd60757d40097a"
+		},
+		{
+			"ImportPath": "github.com/gravitational/configure",
+			"Rev": "b4d67e3fd8c998457775c53e36e36e83ffc98dc1"
+		},
+		{
+			"ImportPath": "github.com/gravitational/configure/cstrings",
+			"Rev": "b4d67e3fd8c998457775c53e36e36e83ffc98dc1"
+		},
+		{
+			"ImportPath": "github.com/gravitational/trace",
+			"Rev": "3a57d2a585a6d721265df44bae173af5ff71628e"
 		},
 		{
 			"ImportPath": "github.com/hashicorp/golang-lru",
@@ -14,6 +46,11 @@
 		{
 			"ImportPath": "github.com/hashicorp/golang-lru/simplelru",
 			"Rev": "a0d98a5f288019575c6d1f4bb1573fef2d1fcdc4"
+		},
+		{
+			"ImportPath": "github.com/jonboulle/clockwork",
+			"Comment": "v0.1.0-2-ge3653ac",
+			"Rev": "e3653ace2d63753697e0e5b07b9393971c0bba9d"
 		},
 		{
 			"ImportPath": "github.com/rs/cors",
@@ -76,6 +113,15 @@
 			"Rev": "0cb26f788dd4625d1956c6fd97ffc4c90669d129"
 		},
 		{
+			"ImportPath": "golang.org/x/sys/unix",
+			"Rev": "a646d33e2ee3172a661fc09bca23bb4889a41bc8"
+		},
+		{
+			"ImportPath": "gopkg.in/alecthomas/kingpin.v2",
+			"Comment": "v2.2.2",
+			"Rev": "e5900212cbf65b181d3d8e08308ef06a01d117cf"
+		},
+		{
 			"ImportPath": "gopkg.in/throttled/throttled.v2",
 			"Comment": "v2.0.3",
 			"Rev": "b5675e93f9d999b22f92d859a5bf2138d3641af4"
@@ -84,6 +130,10 @@
 			"ImportPath": "gopkg.in/throttled/throttled.v2/store/memstore",
 			"Comment": "v2.0.3",
 			"Rev": "b5675e93f9d999b22f92d859a5bf2138d3641af4"
+		},
+		{
+			"ImportPath": "gopkg.in/yaml.v2",
+			"Rev": "e4d366fc3c7938e2958e662b4258c7a89e1f0e3e"
 		}
 	]
 }
