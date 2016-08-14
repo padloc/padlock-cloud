@@ -2,9 +2,6 @@
 	"ImportPath": "github.com/maklesoft/padlock-cloud",
 	"GoVersion": "go1.6",
 	"GodepVersion": "v60",
-	"Packages": [
-		"./padlock-cloud"
-	],
 	"Deps": [
 		{
 			"ImportPath": "github.com/Sirupsen/logrus",
