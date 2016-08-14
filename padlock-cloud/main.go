@@ -5,43 +5,39 @@ import "log"
 import "fmt"
 import "net/http"
 import "os/signal"
+import "path/filepath"
 import pc "github.com/maklesoft/padlock-cloud"
 
 func main() {
-	config := struct {
-		Port int `env:"PC_PORT" cli:"port" yaml:"port"`
-	}{
-		3000,
-	}
 	appConfig := pc.AppConfig{
 		RequireTLS: true,
 		AssetsPath: "assets",
+		Port:       3000,
 	}
 	levelDBConfig := pc.LevelDBConfig{
 		Path: "db",
 	}
 	emailConfig := pc.EmailConfig{}
 
-	pc.LoadConfig(&config, &appConfig, &levelDBConfig, &emailConfig)
+	pc.LoadConfig(&appConfig, &levelDBConfig, &emailConfig)
+
+	// Load templates from assets directory
+	templates := pc.LoadTemplates(filepath.Join(appConfig.AssetsPath, "templates"))
 
 	// Initialize app instance
-	app := pc.NewApp(
+	app, err := pc.NewApp(
 		&pc.LevelDBStorage{LevelDBConfig: levelDBConfig},
 		&pc.EmailSender{emailConfig},
-		nil,
+		templates,
 		appConfig,
 	)
 
-	app.LoadTemplatesFromAssets()
-
-	// Open storage
-	err := app.Storage.Open()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// Close database connection when the method returns
-	defer app.Storage.Close()
+	// Clean up after method returns (should never happen under normal circumstances but you never know)
+	defer app.CleanUp()
 
 	// Handle INTERRUPT and KILL signals
 	c := make(chan os.Signal, 1)
@@ -49,7 +45,7 @@ func main() {
 	go func() {
 		s := <-c
 		log.Printf("Received %v signal. Exiting...", s)
-		app.Storage.Close()
+		app.CleanUp()
 		os.Exit(0)
 	}()
 
@@ -64,8 +60,8 @@ func main() {
 	handler = pc.Cors(handler)
 
 	// Start server
-	log.Printf("Starting server on port %v", config.Port)
-	err = http.ListenAndServe(fmt.Sprintf(":%d", config.Port), handler)
+	log.Printf("Starting server on port %v", appConfig.Port)
+	err = http.ListenAndServe(fmt.Sprintf(":%d", appConfig.Port), handler)
 	if err != nil {
 		log.Fatal(err)
 	}

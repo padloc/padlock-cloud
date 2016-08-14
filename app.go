@@ -10,11 +10,8 @@ import "encoding/base64"
 import "regexp"
 import "errors"
 import "bytes"
-import "text/template"
-import htmlTemplate "html/template"
 import "time"
 import "strconv"
-import "path/filepath"
 
 const (
 	version           = 1
@@ -225,28 +222,16 @@ func (d *Store) Serialize() ([]byte, error) {
 	return d.Content, nil
 }
 
-// Wrapper for holding references to template instances used for rendering emails, webpages etc.
-type Templates struct {
-	// Email template for api key activation email
-	ActivateAuthTokenEmail *template.Template
-	// Email template for deletion confirmation email
-	DeleteStoreEmail *template.Template
-	// Template for success page for activating an auth token
-	ActivateAuthTokenSuccess *htmlTemplate.Template
-	// Template for success page for deleting account data
-	DeleteStoreSuccess *htmlTemplate.Template
-	// Email template for clients using an outdated api version
-	DeprecatedVersionEmail *template.Template
-}
-
-// AppConfig contains various configuration data
+// Miscellaneaous options
 type AppConfig struct {
 	// If true, all requests via plain http will be rejected. Only https requests are allowed
 	RequireTLS bool `env:"PC_REQUIRE_TLS" cli:"require-tls" yaml:"require_tls"`
 	// Email address for sending error reports; Leave empty for no notifications
 	NotifyEmail string `env:"PC_NOTIFY_EMAIL" cli:"notify-email" yaml:"notify_email"`
-	// Path to assets directory
+	// Path to assets directory; used for loading templates and such
 	AssetsPath string `env:"PC_ASSETS_PATH" cli:"assets-path" yaml:"assets_path"`
+	// Port to listen on
+	Port int `env:"PC_PORT" cli:"port" yaml:"port"`
 }
 
 // The App type holds all the contextual data and logic used for running a Padlock Cloud instances
@@ -255,7 +240,7 @@ type App struct {
 	*http.ServeMux
 	Sender
 	Storage
-	*Templates
+	Templates
 	AppConfig
 }
 
@@ -723,30 +708,26 @@ func (app *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // Initialize App with dependencies and configuration
-func (app *App) Init(storage Storage, sender Sender, templates *Templates, config AppConfig) {
-	app.ServeMux = http.NewServeMux()
+func (app *App) Init() error {
 	app.SetupRoutes()
-	app.Storage = storage
-	app.Sender = sender
-	app.Templates = templates
-	app.AppConfig = config
+
+	// Open storage
+	return app.Storage.Open()
 }
 
-// Loads templates from given directory
-func (app *App) LoadTemplatesFromAssets() {
-	path := filepath.Join(app.AssetsPath, "templates")
-	app.Templates = &Templates{
-		template.Must(template.ParseFiles(filepath.Join(path, "activate.txt"))),
-		template.Must(template.ParseFiles(filepath.Join(path, "delete.txt"))),
-		htmlTemplate.Must(htmlTemplate.ParseFiles(filepath.Join(path, "connected.html"))),
-		htmlTemplate.Must(htmlTemplate.ParseFiles(filepath.Join(path, "deleted.html"))),
-		template.Must(template.ParseFiles(filepath.Join(path, "deprecated.txt"))),
-	}
+func (app *App) CleanUp() error {
+	return app.Storage.Close()
 }
 
 // Instantiates and initializes a new App and returns a reference to it
-func NewApp(storage Storage, sender Sender, templates *Templates, config AppConfig) *App {
-	app := &App{}
-	app.Init(storage, sender, templates, config)
-	return app
+func NewApp(storage Storage, sender Sender, templates Templates, config AppConfig) (*App, error) {
+	app := &App{
+		http.NewServeMux(),
+		sender,
+		storage,
+		templates,
+		config,
+	}
+	err := app.Init()
+	return app, err
 }

@@ -1,9 +1,8 @@
 package padlockcloud
 
-import "log"
 import "flag"
 import "io/ioutil"
-import "encoding/json"
+import "log"
 import "github.com/gravitational/configure"
 
 func LoadConfig(configs ...interface{}) {
@@ -40,7 +39,7 @@ func LoadConfig(configs ...interface{}) {
 		// 	log.Fatal(err)
 		// }
 
-		jsonStr, _ := json.MarshalIndent(config, "", "  ")
-		log.Println(string(jsonStr))
+		// jsonStr, _ := json.MarshalIndent(config, "", "  ")
+		// log.Println(string(jsonStr))
 	}
 }
