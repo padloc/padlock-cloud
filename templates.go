@@ -19,12 +19,22 @@ type Templates struct {
 }
 
 // Loads templates from given directory
-func LoadTemplates(path string) Templates {
-	return Templates{
-		template.Must(template.ParseFiles(filepath.Join(path, "activate.txt"))),
-		template.Must(template.ParseFiles(filepath.Join(path, "delete.txt"))),
-		htmlTemplate.Must(htmlTemplate.ParseFiles(filepath.Join(path, "connected.html"))),
-		htmlTemplate.Must(htmlTemplate.ParseFiles(filepath.Join(path, "deleted.html"))),
-		template.Must(template.ParseFiles(filepath.Join(path, "deprecated.txt"))),
+func LoadTemplates(path string) (Templates, error) {
+	var err error
+
+	activateAuthTokenEmail, err := template.ParseFiles(filepath.Join(path, "activate-auth-token-email.txt"))
+	deleteStoreEmail, err := template.ParseFiles(filepath.Join(path, "delete-store-email.txt"))
+	activateAuthTokenSuccess, err := htmlTemplate.ParseFiles(filepath.Join(path, "activate-auth-token-success.html"))
+	deleteStoreSuccess, err := htmlTemplate.ParseFiles(filepath.Join(path, "delete-store-success.html"))
+	deprecatedVersionEmail, err := template.ParseFiles(filepath.Join(path, "deprecated-version-email.txt"))
+
+	templates := Templates{
+		activateAuthTokenEmail,
+		deleteStoreEmail,
+		activateAuthTokenSuccess,
+		deleteStoreSuccess,
+		deprecatedVersionEmail,
 	}
+
+	return templates, err
 }
