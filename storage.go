@@ -1,10 +1,12 @@
-package main
+package padlockcloud
 
 import "reflect"
 import "errors"
 import "encoding/json"
 import "path/filepath"
-import "github.com/MaKleSoft/padlock-cloud/Godeps/_workspace/src/github.com/syndtr/goleveldb/leveldb"
+import "github.com/syndtr/goleveldb/leveldb"
+
+const defaultDbPath = "./db"
 
 // Error singletons
 var (
@@ -40,21 +42,31 @@ type Storage interface {
 	Put(Storable) error
 	// Removes a given `Storable` object from the store
 	Delete(Storable) error
+	// Lists all keys for a given `Storable` type
+	List(Storable) ([]string, error)
 }
 
 // Map of supported `Storable` implementations along with identifier strings that can be used for
 // internal store or file names
 var StorableTypes = map[reflect.Type]string{
-	reflect.TypeOf((*Data)(nil)).Elem():         "data",
-	reflect.TypeOf((*Account)(nil)).Elem():      "auth",
-	reflect.TypeOf((*AuthRequest)(nil)).Elem():  "act",
-	reflect.TypeOf((*ResetRequest)(nil)).Elem(): "del",
+	reflect.TypeOf((*Store)(nil)).Elem():              "data",
+	reflect.TypeOf((*Account)(nil)).Elem():            "auth",
+	reflect.TypeOf((*AuthRequest)(nil)).Elem():        "act",
+	reflect.TypeOf((*DeleteStoreRequest)(nil)).Elem(): "del",
+}
+
+func AddStorable(t interface{}, loc string) {
+	StorableTypes[reflect.TypeOf(t).Elem()] = loc
+}
+
+type LevelDBConfig struct {
+	// Path to directory on disc where database files should be stored
+	Path string `env:"PC_DB_PATH" cli:"db-path" yaml:"db_path"`
 }
 
 // LevelDB implementation of the `Storage` interface
 type LevelDBStorage struct {
-	// Path to directory on disc where database files should be stored
-	Path string
+	LevelDBConfig
 	// Map of `leveldb.DB` instances associated with different `Storable` types
 	stores map[reflect.Type]*leveldb.DB
 }
@@ -170,6 +182,23 @@ func (s *LevelDBStorage) Delete(t Storable) error {
 	return db.Delete(t.Key(), nil)
 }
 
+func (s *LevelDBStorage) List(t Storable) ([]string, error) {
+	var keys []string
+
+	db, err := s.getDB(t)
+	if err != nil {
+		return keys, err
+	}
+
+	iter := db.NewIterator(nil, nil)
+	for iter.Next() {
+		keys = append(keys, string(iter.Key()))
+	}
+	iter.Release()
+
+	return keys, nil
+}
+
 // In-memory implemenation of the `Storage` interface Mainly used for testing
 type MemoryStorage struct {
 	store map[reflect.Type](map[string][]byte)
@@ -240,4 +269,27 @@ func (s *MemoryStorage) Delete(t Storable) error {
 		delete(ts, string(t.Key()))
 	}
 	return nil
+}
+
+func (s *MemoryStorage) List(t Storable) ([]string, error) {
+	var l []string
+
+	if s.store == nil {
+		return l, ErrStorageClosed
+	}
+
+	if t == nil {
+		return l, ErrStorableTypeNotSupported
+	}
+
+	ts := s.store[reflect.TypeOf(t)]
+	if ts == nil {
+		return l, ErrStorableTypeNotSupported
+	}
+
+	for key, _ := range ts {
+		l = append(l, key)
+	}
+
+	return l, nil
 }

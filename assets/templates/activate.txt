@@ -1,8 +1,0 @@
-Hi there!
-
-You are receiving this email because you requested to connect the device {{ .device_name }} with the Padlock Cloud account {{ .email }}. To complete the process, simply visit the link below:
-
-{{ .activation_link }}
-
-Best,
-The Padlock Team

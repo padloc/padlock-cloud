@@ -1,17 +1,23 @@
-package main
+package padlockcloud
 
 import "net/http"
 import "io/ioutil"
 import "crypto/rand"
 import "fmt"
 import "log"
-import "net/smtp"
 import "encoding/json"
+import "encoding/base64"
 import "regexp"
 import "errors"
 import "bytes"
-import "text/template"
-import htmlTemplate "html/template"
+import "time"
+import "strconv"
+
+const (
+	version           = 1
+	defaultAssetsPath = "./assets"
+	defaultPort       = 3000
+)
 
 // Error singletons
 var (
@@ -27,27 +33,31 @@ var (
 	ErrPanic = errors.New("padlock: panic")
 )
 
-// Regex pattern for checking for RFC4122-compliant uuids
-const uuidPattern = "[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}"
+const tokenPattern = `[a-zA-Z0-9\-_]{22}`
 
-// RFC4122-compliant uuid generator
-func uuid() string {
-	b := make([]byte, 16)
-	rand.Read(b)
-	b[6] = (b[6] & 0x0f) | 0x40
-	b[8] = (b[8] & 0x3f) | 0x80
-	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
+func randomBase64(nBytes int) (string, error) {
+	b := make([]byte, nBytes)
+	_, err := rand.Read(b)
+	if err != nil {
+		return "", err
+	}
+
+	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+func token() (string, error) {
+	return randomBase64(16)
 }
 
 // Extracts a uuid-formated token from a given url
-func tokenFromUrl(url string, baseUrl string) (string, error) {
-	re := regexp.MustCompile("^" + baseUrl + "(?P<token>" + uuidPattern + ")$")
+func tokenFromRequest(r *http.Request) (string, error) {
+	token := r.URL.Query().Get("t")
 
-	if !re.MatchString(url) {
+	if token == "" {
 		return "", ErrInvalidToken
 	}
 
-	return re.FindStringSubmatch(url)[1], nil
+	return token, nil
 }
 
 // Returns the appropriate protocol based on whether a request was made via https or not
@@ -59,48 +69,44 @@ func schemeFromRequest(r *http.Request) string {
 	}
 }
 
-// Sender is a interface that exposes the `Send` method for sending messages with a subject to a given
-// receiver.
-type Sender interface {
-	Send(receiver string, subject string, message string) error
+func versionFromRequest(r *http.Request) int {
+	var vString string
+	accept := r.Header.Get("Accept")
+
+	reg := regexp.MustCompile("^application/vnd.padlock;version=(\\d)$")
+	if reg.MatchString(accept) {
+		vString = reg.FindStringSubmatch(accept)[1]
+	} else {
+		vString = r.URL.Query().Get("v")
+	}
+
+	version, _ := strconv.Atoi(vString)
+	return version
 }
 
-// EmailSender implements the `Sender` interface for emails
-type EmailSender struct {
-	// User name used for authentication with the mail server
-	User string
-	// Mail server address
-	Server string
-	// Port on which to contact the mail server
-	Port string
-	// Password used for authentication with the mail server
-	Password string
-}
+func credentialsFromRequest(r *http.Request) (string, string) {
 
-// Attempts to send an email to a given receiver. Through `smpt.SendMail`
-func (sender *EmailSender) Send(rec string, subject string, body string) error {
-	auth := smtp.PlainAuth(
-		"",
-		sender.User,
-		sender.Password,
-		sender.Server,
-	)
+	// Extract email and authentication token from Authorization header
+	re := regexp.MustCompile("^AuthToken (.+):(.+)$")
+	authHeader := r.Header.Get("Authorization")
 
-	message := fmt.Sprintf("Subject: %s\r\nFrom: Padlock Cloud <%s>\r\n\r\n%s", subject, sender.User, body)
-	return smtp.SendMail(
-		sender.Server+":"+sender.Port,
-		auth,
-		sender.User,
-		[]string{rec},
-		[]byte(message),
-	)
+	// Check if the Authorization header exists and is well formed
+	if !re.MatchString(authHeader) {
+		return "", ""
+	}
+
+	// Extract email and auth token from Authorization header
+	matches := re.FindStringSubmatch(authHeader)
+	return matches[1], matches[2]
 }
 
 // A wrapper for an api key containing some meta info like the user and device name
-type ApiKey struct {
-	Email      string `json:"email"`
-	DeviceName string `json:"device_name"`
-	Key        string `json:"key"`
+type AuthToken struct {
+	Email    string
+	Token    string
+	Id       string
+	Created  time.Time
+	LastUsed time.Time
 }
 
 // A struct representing a user with a set of api keys
@@ -110,7 +116,7 @@ type Account struct {
 	Email string
 	// A set of api keys that can be used to access the data associated with this
 	// account
-	ApiKeys []ApiKey
+	AuthTokens []*AuthToken
 }
 
 // Implements the `Key` method of the `Storable` interface
@@ -128,29 +134,19 @@ func (acc *Account) Serialize() ([]byte, error) {
 	return json.Marshal(acc)
 }
 
-// Removes the api key for a given device name
-func (a *Account) RemoveKeyForDevice(deviceName string) {
-	for i, apiKey := range a.ApiKeys {
-		if apiKey.DeviceName == deviceName {
-			a.ApiKeys = append(a.ApiKeys[:i], a.ApiKeys[i+1:]...)
-			return
-		}
-	}
-}
-
 // Adds an api key to this account. If an api key for the given device
 // is already registered, that one will be replaced
-func (a *Account) SetKey(apiKey ApiKey) {
-	a.RemoveKeyForDevice(apiKey.DeviceName)
-	a.ApiKeys = append(a.ApiKeys, apiKey)
+func (a *Account) AddAuthToken(token *AuthToken) {
+	a.AuthTokens = append(a.AuthTokens, token)
 }
 
 // Checks if a given api key is valid for this account
-func (a *Account) Validate(key string) bool {
-	// Check if the account contains any ApiKey with that matches
+func (a *Account) ValidateAuthToken(token string) bool {
+	// Check if the account contains any AuthToken with that matches
 	// the given key
-	for _, apiKey := range a.ApiKeys {
-		if apiKey.Key == key {
+	for _, authToken := range a.AuthTokens {
+		if authToken.Token == token {
+			authToken.LastUsed = time.Now()
 			return true
 		}
 	}
@@ -159,10 +155,11 @@ func (a *Account) Validate(key string) bool {
 }
 
 // AuthRequest represents an api key - activation token pair used to activate a given api key
-// `AuthRequest.Token` is used to activate the ApiKey through a separate channel (e.g. email)
+// `AuthRequest.Token` is used to activate the AuthToken through a separate channel (e.g. email)
 type AuthRequest struct {
-	Token  string
-	ApiKey ApiKey
+	Token     string
+	AuthToken AuthToken
+	Created   time.Time
 }
 
 // Implementation of the `Storable.Key` interface method
@@ -172,77 +169,69 @@ func (ar *AuthRequest) Key() []byte {
 
 // Implementation of the `Storable.Deserialize` method
 func (ar *AuthRequest) Deserialize(data []byte) error {
-	return json.Unmarshal(data, &ar.ApiKey)
+	return json.Unmarshal(data, ar)
 }
 
 // Implementation of the `Storable.Serialize` method
 func (ar *AuthRequest) Serialize() ([]byte, error) {
-	return json.Marshal(&ar.ApiKey)
+	return json.Marshal(ar)
 }
 
 // Represents a request for reseting the data associated with a given account. `RequestReset.Token` is used
 // for validating the request through a separate channel (e.g. email)
-type ResetRequest struct {
+type DeleteStoreRequest struct {
 	Token   string
 	Account string
+	Created time.Time
 }
 
 // Implementation of the `Storable.Key` interface method
-func (rr *ResetRequest) Key() []byte {
+func (rr *DeleteStoreRequest) Key() []byte {
 	return []byte(rr.Token)
 }
 
 // Implementation of the `Storable.Deserialize` interface method
-func (rr *ResetRequest) Deserialize(data []byte) error {
-	rr.Account = string(data)
-	return nil
+func (rr *DeleteStoreRequest) Deserialize(data []byte) error {
+	return json.Unmarshal(data, rr)
 }
 
 // Implementation of the `Storable.Serialize` interface method
-func (rr *ResetRequest) Serialize() ([]byte, error) {
-	return []byte(rr.Account), nil
+func (rr *DeleteStoreRequest) Serialize() ([]byte, error) {
+	return json.Marshal(rr)
 }
 
-// Data represents the data associated to a given account
-type Data struct {
+// Store represents the data associated to a given account
+type Store struct {
 	Account *Account
 	Content []byte
 }
 
 // Implementation of the `Storable.Key` interface method
-func (d *Data) Key() []byte {
+func (d *Store) Key() []byte {
 	return []byte(d.Account.Email)
 }
 
 // Implementation of the `Storable.Deserialize` interface method
-func (d *Data) Deserialize(data []byte) error {
+func (d *Store) Deserialize(data []byte) error {
 	d.Content = data
 	return nil
 }
 
 // Implementation of the `Storable.Serialize` interface method
-func (d *Data) Serialize() ([]byte, error) {
+func (d *Store) Serialize() ([]byte, error) {
 	return d.Content, nil
 }
 
-// Wrapper for holding references to template instances used for rendering emails, webpages etc.
-type Templates struct {
-	// Email template for api key activation email
-	ActivationEmail *template.Template
-	// Email template for deletion confirmation email
-	DataResetEmail *template.Template
-	// Template for connected page
-	ConnectionSuccess *htmlTemplate.Template
-	// Template for connected page
-	DataResetSuccess *htmlTemplate.Template
-}
-
-// Config contains various configuration data
-type Config struct {
+// Miscellaneaous options
+type AppConfig struct {
 	// If true, all requests via plain http will be rejected. Only https requests are allowed
-	RequireTLS bool
+	RequireTLS bool `env:"PC_REQUIRE_TLS" cli:"require-tls" yaml:"require_tls"`
 	// Email address for sending error reports; Leave empty for no notifications
-	NotifyEmail string
+	NotifyEmail string `env:"PC_NOTIFY_EMAIL" cli:"notify-email" yaml:"notify_email"`
+	// Path to assets directory; used for loading templates and such
+	AssetsPath string `env:"PC_ASSETS_PATH" cli:"assets-path" yaml:"assets_path"`
+	// Port to listen on
+	Port int `env:"PC_PORT" cli:"port" yaml:"port"`
 }
 
 // The App type holds all the contextual data and logic used for running a Padlock Cloud instances
@@ -251,47 +240,41 @@ type App struct {
 	*http.ServeMux
 	Sender
 	Storage
-	*Templates
-	Config
+	Templates
+	AppConfig
 }
 
 // Retreives Account object from a http.Request object by evaluating the Authorization header and
 // cross-checking it with api keys of existing accounts. Returns an `ErrNotAuthenticated` error
 // if no valid Authorization header is provided or if the provided email:api_key pair does not match
 // any of the accounts in the database.
-func (app *App) accountFromRequest(r *http.Request) (*Account, error) {
-	// Extract email and authentication token from Authorization header
-	re := regexp.MustCompile("^ApiKey (?P<email>.+):(?P<key>.+)$")
-	authHeader := r.Header.Get("Authorization")
-
-	// Check if the Authorization header exists and is well formed
-	if !re.MatchString(authHeader) {
+func (app *App) AccountFromRequest(r *http.Request) (*Account, error) {
+	email, token := credentialsFromRequest(r)
+	if email == "" || token == "" {
 		return nil, ErrNotAuthenticated
 	}
-
-	// Extract email and api key from Authorization header
-	matches := re.FindStringSubmatch(authHeader)
-	email, key := matches[1], matches[2]
 	acc := &Account{Email: email}
 
 	// Fetch account for the given email address
 	err := app.Get(acc)
-
 	if err != nil {
 		return nil, ErrNotAuthenticated
 	}
 
-	// Check if the provide api key is valid
-	if !acc.Validate(key) {
+	// Check if the provide api token is valid
+	if !acc.ValidateAuthToken(token) {
 		return nil, ErrNotAuthenticated
 	}
+
+	// Save account info to persist last used data for auth tokens
+	app.Put(acc)
 
 	return acc, nil
 }
 
 // Global error handler. Writes a appropriate response to the provided `http.ResponseWriter` object and
 // logs / notifies of internal server errors
-func (app *App) handleError(e error, w http.ResponseWriter, r *http.Request) {
+func (app *App) HandleError(e error, w http.ResponseWriter, r *http.Request) {
 	switch e {
 	case ErrInvalidToken:
 		{
@@ -331,35 +314,66 @@ func (app *App) handleError(e error, w http.ResponseWriter, r *http.Request) {
 // The token can later be used to activate the api key. An email is sent to the corresponding
 // email address with an activation url. Expects `email` and `device_name` parameters through either
 // multipart/form-data or application/x-www-urlencoded parameters
-func (app *App) RequestApiKey(w http.ResponseWriter, r *http.Request) {
-	// TODO: Add validation
-	email, deviceName := r.PostFormValue("email"), r.PostFormValue("device_name")
+func (app *App) RequestAuthToken(w http.ResponseWriter, r *http.Request, create bool) {
+	email := r.PostFormValue("email")
+
+	// Make sure email field is set
+	if email == "" {
+		http.Error(w, "", http.StatusBadRequest)
+		return
+	}
+
+	// If the client does not explicitly state that the server should create a new account for this email
+	// address in case it does not exist, we have to check if an account exists first
+	if !create {
+		err := app.Get(&Account{Email: email})
+		if err != nil {
+			app.HandleError(err, w, r)
+			return
+		}
+	}
 
 	// Generate key-token pair
-	key := uuid()
-	token := uuid()
-	apiKey := ApiKey{
+	actToken, err := token()
+	if err != nil {
+		app.HandleError(err, w, r)
+		return
+	}
+	authT, err := token()
+	if err != nil {
+		app.HandleError(err, w, r)
+		return
+	}
+	id, err := randomBase64(6)
+	if err != nil {
+		app.HandleError(err, w, r)
+		return
+	}
+
+	authToken := AuthToken{
 		email,
-		deviceName,
-		key,
+		authT,
+		id,
+		time.Now(),
+		time.Now(),
 	}
 
 	// Save key-token pair to database for activating it later in a separate request
-	err := app.Put(&AuthRequest{token, apiKey})
+	err = app.Put(&AuthRequest{actToken, authToken, time.Now()})
 	if err != nil {
-		app.handleError(err, w, r)
+		app.HandleError(err, w, r)
 		return
 	}
 
 	// Render activation email
 	var buff bytes.Buffer
-	err = app.Templates.ActivationEmail.Execute(&buff, map[string]string{
-		"email":           apiKey.Email,
-		"device_name":     apiKey.DeviceName,
-		"activation_link": fmt.Sprintf("%s://%s/activate/%s", schemeFromRequest(r), r.Host, token),
+	err = app.Templates.ActivateAuthTokenEmail.Execute(&buff, map[string]string{
+		"email":           authToken.Email,
+		"activation_link": fmt.Sprintf("%s://%s/activate/?v=%d&t=%s", schemeFromRequest(r), r.Host, version, actToken),
+		"conn_id":         authToken.Id,
 	})
 	if err != nil {
-		app.handleError(err, w, r)
+		app.HandleError(err, w, r)
 		return
 	}
 	body := buff.String()
@@ -367,25 +381,27 @@ func (app *App) RequestApiKey(w http.ResponseWriter, r *http.Request) {
 	// Send email with activation link
 	go app.Send(email, "Connect to Padlock Cloud", body)
 
-	// Serialize api key
-	data, err := json.Marshal(apiKey)
+	resp, err := json.Marshal(map[string]string{
+		"id":    authToken.Id,
+		"token": authToken.Token,
+		"email": authToken.Email,
+	})
 	if err != nil {
-		app.handleError(err, w, r)
+		app.HandleError(err, w, r)
 		return
 	}
 
-	// Send JSON representation of api key along with CREATED status code
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	w.Write(data)
+	// Return auth token
+	w.WriteHeader(http.StatusAccepted)
+	w.Write(resp)
 }
 
 // Hander function for activating a given api key
-func (app *App) ActivateApiKey(w http.ResponseWriter, r *http.Request) {
+func (app *App) ActivateAuthToken(w http.ResponseWriter, r *http.Request) {
 	// Extract activation token from url
-	token, err := tokenFromUrl(r.URL.Path, "/activate/")
+	token, err := tokenFromRequest(r)
 	if err != nil {
-		app.handleError(err, w, r)
+		app.HandleError(err, w, r)
 		return
 	}
 
@@ -394,28 +410,28 @@ func (app *App) ActivateApiKey(w http.ResponseWriter, r *http.Request) {
 	authRequest := &AuthRequest{Token: token}
 	err = app.Get(authRequest)
 	if err != nil {
-		app.handleError(err, w, r)
+		app.HandleError(err, w, r)
 		return
 	}
 
 	// Create account instance with the given email address.
-	acc := &Account{Email: authRequest.ApiKey.Email}
+	acc := &Account{Email: authRequest.AuthToken.Email}
 
 	// Fetch existing account data. It's fine if no existing data is found. In that case we'll create
 	// a new entry in the database
 	err = app.Get(acc)
 	if err != nil && err != ErrNotFound {
-		app.handleError(err, w, r)
+		app.HandleError(err, w, r)
 		return
 	}
 
-	// Add the new key to the account (keys with the same device name will be replaced)
-	acc.SetKey(authRequest.ApiKey)
+	// Add the new key to the account
+	acc.AddAuthToken(&authRequest.AuthToken)
 
 	// Save the changes
 	err = app.Put(acc)
 	if err != nil {
-		app.handleError(err, w, r)
+		app.HandleError(err, w, r)
 	}
 
 	// Delete the authentication request from the database
@@ -423,31 +439,31 @@ func (app *App) ActivateApiKey(w http.ResponseWriter, r *http.Request) {
 
 	// Render success page
 	var buff bytes.Buffer
-	err = app.Templates.ConnectionSuccess.Execute(&buff, map[string]string{
-		"device_name": authRequest.ApiKey.DeviceName,
+	err = app.Templates.ActivateAuthTokenSuccess.Execute(&buff, map[string]string{
+		"email": authRequest.AuthToken.Email,
 	})
 	if err != nil {
-		app.handleError(err, w, r)
+		app.HandleError(err, w, r)
 	}
 	buff.WriteTo(w)
 }
 
 // Handler function for retrieving the data associated with a given account
-func (app *App) GetData(w http.ResponseWriter, r *http.Request) {
+func (app *App) ReadStore(w http.ResponseWriter, r *http.Request) {
 	// Fetch account based on provided credentials
-	acc, err := app.accountFromRequest(r)
+	acc, err := app.AccountFromRequest(r)
 	if err != nil {
-		app.handleError(err, w, r)
+		app.HandleError(err, w, r)
 		return
 	}
 
 	// Retrieve data from database. If not database entry is found, the `Content` field simply stays empty.
 	// This is not considered an error. Instead we simply return an empty response body. Clients should
 	// know how to deal with this.
-	data := &Data{Account: acc}
+	data := &Store{Account: acc}
 	err = app.Get(data)
 	if err != nil && err != ErrNotFound {
-		app.handleError(err, w, r)
+		app.HandleError(err, w, r)
 		return
 	}
 
@@ -457,22 +473,22 @@ func (app *App) GetData(w http.ResponseWriter, r *http.Request) {
 
 // Handler function for updating the data associated with a given account. This does NOT implement a
 // diffing algorith of any kind since Padlock Cloud is completely ignorant of the data structures involved.
-// Instead, clients should retrieve existing data through the `GetData` endpoint first, perform any necessary
+// Instead, clients should retrieve existing data through the `ReadStore` endpoint first, perform any necessary
 // decryption/parsing, consolidate the data with any existing local data and then reupload the full,
 // encrypted data set
-func (app *App) PutData(w http.ResponseWriter, r *http.Request) {
+func (app *App) WriteStore(w http.ResponseWriter, r *http.Request) {
 	// Fetch account based on provided credentials
-	acc, err := app.accountFromRequest(r)
+	acc, err := app.AccountFromRequest(r)
 	if err != nil {
-		app.handleError(err, w, r)
+		app.HandleError(err, w, r)
 		return
 	}
 
-	// Read data from request body into `Data` instance
-	data := &Data{Account: acc}
+	// Read data from request body into `Store` instance
+	data := &Store{Account: acc}
 	content, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		app.handleError(err, w, r)
+		app.HandleError(err, w, r)
 		return
 	}
 	data.Content = content
@@ -480,7 +496,7 @@ func (app *App) PutData(w http.ResponseWriter, r *http.Request) {
 	// Update database entry
 	err = app.Put(data)
 	if err != nil {
-		app.handleError(err, w, r)
+		app.HandleError(err, w, r)
 		return
 	}
 
@@ -489,78 +505,79 @@ func (app *App) PutData(w http.ResponseWriter, r *http.Request) {
 }
 
 // Handler function for requesting a data reset for a given account
-func (app *App) RequestDataReset(w http.ResponseWriter, r *http.Request) {
-	// Extract email from URL
-	email := r.URL.Path[1:]
-
-	// Fetch the account for the given email address if there is one.
-	err := app.Get(&Account{Email: email})
+func (app *App) RequestDeleteStore(w http.ResponseWriter, r *http.Request) {
+	// Fetch account based on provided credentials
+	acc, err := app.AccountFromRequest(r)
 	if err != nil {
-		app.handleError(err, w, r)
+		app.HandleError(err, w, r)
 		return
 	}
 
 	// Generate a new delete token
-	token := uuid()
+	token, err := token()
+	if err != nil {
+		app.HandleError(err, w, r)
+		return
+	}
 
 	// Save token/email pair in database to we can verify it later
-	err = app.Put(&ResetRequest{token, email})
+	err = app.Put(&DeleteStoreRequest{token, acc.Email, time.Now()})
 	if err != nil {
-		app.handleError(err, w, r)
+		app.HandleError(err, w, r)
 		return
 	}
 
 	// Render confirmation email
 	var buff bytes.Buffer
-	err = app.Templates.DataResetEmail.Execute(&buff, map[string]string{
-		"email":       email,
-		"delete_link": fmt.Sprintf("%s://%s/reset/%s", schemeFromRequest(r), r.Host, token),
+	err = app.Templates.DeleteStoreEmail.Execute(&buff, map[string]string{
+		"email":       acc.Email,
+		"delete_link": fmt.Sprintf("%s://%s/deletestore/?v=%d&t=%s", schemeFromRequest(r), r.Host, version, token),
 	})
 	if err != nil {
-		app.handleError(err, w, r)
+		app.HandleError(err, w, r)
 		return
 	}
 
 	// Send email with confirmation link
 	body := buff.String()
-	go app.Send(email, "Padlock Cloud Delete Request", body)
+	go app.Send(acc.Email, "Padlock Cloud Delete Request", body)
 
 	// Send ACCEPTED status code
 	w.WriteHeader(http.StatusAccepted)
 }
 
 // Handler function for updating the data associated with a given account
-func (app *App) ResetData(w http.ResponseWriter, r *http.Request) {
+func (app *App) CompleteDeleteStore(w http.ResponseWriter, r *http.Request) {
 	// Extract confirmation token from url
-	token, err := tokenFromUrl(r.URL.Path, "/reset/")
+	token, err := tokenFromRequest(r)
 	if err != nil {
-		app.handleError(err, w, r)
+		app.HandleError(err, w, r)
 		return
 	}
 
 	// Fetch reset request from database
-	resetRequest := &ResetRequest{Token: token}
+	resetRequest := &DeleteStoreRequest{Token: token}
 	err = app.Get(resetRequest)
 	if err != nil {
-		app.handleError(err, w, r)
+		app.HandleError(err, w, r)
 		return
 	}
 
 	// If the corresponding delete request was found in the database, we consider the data reset request
 	// as verified so we can proceed with deleting the data for the corresponding account
-	err = app.Delete(&Data{Account: &Account{Email: resetRequest.Account}})
+	err = app.Delete(&Store{Account: &Account{Email: resetRequest.Account}})
 	if err != nil {
-		app.handleError(err, w, r)
+		app.HandleError(err, w, r)
 		return
 	}
 
 	// Render success page
 	var buff bytes.Buffer
-	err = app.Templates.DataResetSuccess.Execute(&buff, map[string]string{
+	err = app.Templates.DeleteStoreSuccess.Execute(&buff, map[string]string{
 		"email": string(resetRequest.Account),
 	})
 	if err != nil {
-		app.handleError(err, w, r)
+		app.HandleError(err, w, r)
 		return
 	}
 	buff.WriteTo(w)
@@ -570,74 +587,119 @@ func (app *App) ResetData(w http.ResponseWriter, r *http.Request) {
 }
 
 // Registeres http handlers for various routes
-func (app *App) setupRoutes() {
+func (app *App) SetupRoutes() {
 	// Endpoint for requesting api keys, only POST method is supported
-	app.HandleFunc("/auth", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "POST" {
-			app.RequestApiKey(w, r)
+	app.HandleFunc("/auth/", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "PUT":
+			app.RequestAuthToken(w, r, false)
+		case "POST":
+			app.RequestAuthToken(w, r, true)
+		default:
+			http.Error(w, "", http.StatusMethodNotAllowed)
+		}
+	})
+
+	// Endpoint for requesting api keys, only POST method is supported
+	app.HandleFunc("/activate/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" {
+			app.ActivateAuthToken(w, r)
 		} else {
 			http.Error(w, "", http.StatusMethodNotAllowed)
 		}
 	})
 
-	// Endpoint for activating api keys. Only GET method is supported
-	app.HandleFunc("/activate/", func(w http.ResponseWriter, r *http.Request) {
+	// Endpoint for reading, writing and deleting store data
+	app.HandleFunc("/store/", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "GET", "HEAD":
+			app.ReadStore(w, r)
+		case "PUT":
+			app.WriteStore(w, r)
+		case "DELETE":
+			app.RequestDeleteStore(w, r)
+		default:
+			http.Error(w, "", http.StatusMethodNotAllowed)
+		}
+	})
+
+	// Endpoint for requesting a data reset. Only GET supported
+	app.HandleFunc("/deletestore/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "GET" {
-			app.ActivateApiKey(w, r)
+			app.CompleteDeleteStore(w, r)
 		} else {
 			http.Error(w, "", http.StatusMethodNotAllowed)
 		}
 	})
 
 	// Endpoint for requesting a data reset. Only GET supported
-	app.HandleFunc("/reset/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "GET" {
-			app.ResetData(w, r)
-		} else {
-			http.Error(w, "", http.StatusMethodNotAllowed)
-		}
-	})
-
-	// Endpoint for getting/putting data. Supported methods are GET and PUT
-	// DELETE method is supported if email address is provided as part of the url
-	// TODO: Use POST for requesting data reset, deprecate DELETE method
 	app.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/" {
-			switch r.Method {
-			case "GET":
-				app.GetData(w, r)
-			case "PUT":
-				app.PutData(w, r)
-			default:
-				http.Error(w, "", http.StatusMethodNotAllowed)
-			}
-		} else if r.Method == "DELETE" {
-			app.RequestDataReset(w, r)
-		} else {
-			http.Error(w, "", http.StatusNotFound)
-		}
+		http.Error(w, "", http.StatusNotFound)
 	})
+}
+
+func (app *App) DeprecatedVersion(w http.ResponseWriter, r *http.Request) {
+	// Try getting email from Authorization header first
+	email, _ := credentialsFromRequest(r)
+
+	// Try to extract email from url if method is DELETE
+	if email == "" && r.Method == "DELETE" {
+		email = r.URL.Path[1:]
+	}
+
+	// Try to get email from request body if method is POST
+	if email == "" && (r.Method == "PUT" || r.Method == "POST") {
+		email = r.PostFormValue("email")
+	}
+
+	if email != "" {
+		// Render activation email
+		var buff bytes.Buffer
+		err := app.Templates.DeprecatedVersionEmail.Execute(&buff, nil)
+		if err != nil {
+			app.HandleError(err, w, r)
+			return
+		}
+		body := buff.String()
+
+		// Send email with activation link
+		go app.Send(email, "Please update your version of Padlock", body)
+	}
+
+	http.Error(w, "", http.StatusNotAcceptable)
+}
+
+func (app *App) HandlePanic(w http.ResponseWriter, r *http.Request) {
+	if e := recover(); e != nil {
+		log.Printf("Recovered from panic: %v", e)
+
+		app.HandleError(ErrPanic, w, r)
+
+		if app.NotifyEmail != "" {
+			go app.Send(app.NotifyEmail, "Padlock Cloud Error Notification",
+				fmt.Sprintf("Recovered from panic: %v\nRequest: %v", e, r))
+		}
+	}
+}
+
+func (app *App) CheckVersion(w http.ResponseWriter, r *http.Request) bool {
+	return versionFromRequest(r) != version
 }
 
 // Implements `http.Handler.ServeHTTP` interface method. Handles panic recovery and TLS checking, Delegates
 // requests to embedded `http.ServeMux`
 func (app *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	defer func() {
-		if e := recover(); e != nil {
-			log.Printf("Recovered from panic: %v", e)
 
-			app.handleError(ErrPanic, w, r)
-
-			if app.NotifyEmail != "" {
-				go app.Send(app.NotifyEmail, "Padlock Cloud Error Notification",
-					fmt.Sprintf("Recovered from panic: %v\nRequest: %v", e, r))
-			}
-		}
-	}()
+	defer app.HandlePanic(w, r)
 
 	// Only accept connections via https if `RequireTLS` configuration is true
 	if app.RequireTLS && r.TLS == nil {
-		app.handleError(ErrInsecureConnection, w, r)
+		app.HandleError(ErrInsecureConnection, w, r)
+		return
+	}
+
+	if app.CheckVersion(w, r) {
+		app.DeprecatedVersion(w, r)
 		return
 	}
 
@@ -646,41 +708,26 @@ func (app *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // Initialize App with dependencies and configuration
-func (app *App) Init(storage Storage, sender Sender, templates *Templates, config Config) {
-	app.ServeMux = http.NewServeMux()
-	app.setupRoutes()
-	app.Storage = storage
-	app.Sender = sender
-	app.Templates = templates
-	app.Config = config
-}
+func (app *App) Init() error {
+	app.SetupRoutes()
 
-// Start server and listen at the given address
-func (app *App) Start(addr string) {
 	// Open storage
-	err := app.Storage.Open()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Close database connection when the method returns
-	defer app.Storage.Close()
-
-	// Start server
-	err = http.ListenAndServe(addr, app)
-	if err != nil {
-		log.Fatal(err)
-	}
+	return app.Storage.Open()
 }
 
-// Does any necessary cleanup work after `App.Start()` was called
-func (app *App) Stop() {
-	app.Storage.Close()
+func (app *App) CleanUp() error {
+	return app.Storage.Close()
 }
 
 // Instantiates and initializes a new App and returns a reference to it
-func NewApp(storage Storage, sender Sender, templates *Templates, config Config) *App {
-	app := &App{}
-	app.Init(storage, sender, templates, config)
-	return app
+func NewApp(storage Storage, sender Sender, templates Templates, config AppConfig) (*App, error) {
+	app := &App{
+		http.NewServeMux(),
+		sender,
+		storage,
+		templates,
+		config,
+	}
+	err := app.Init()
+	return app, err
 }
