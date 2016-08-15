@@ -1,4 +1,4 @@
-package padlockcloud
+package main
 
 import "net/http"
 import "io/ioutil"

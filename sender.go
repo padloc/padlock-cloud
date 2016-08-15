@@ -1,4 +1,4 @@
-package padlockcloud
+package main
 
 import "fmt"
 import "net/smtp"
