@@ -11,13 +11,13 @@ type Sender interface {
 
 type EmailConfig struct {
 	// User name used for authentication with the mail server
-	User string `env:"PC_EMAIL_USER" cli:"email-user" yaml:"email_user"`
+	User string
 	// Mail server address
-	Server string `env:"PC_EMAIL_SERVER" cli:"email-server" yaml:"email_server"`
+	Server string
 	// Port on which to contact the mail server
-	Port string `env:"PC_EMAIL_PORT" cli:"email-port" yaml:"email_port"`
+	Port string
 	// Password used for authentication with the mail server
-	Password string `env:"PC_EMAIL_PASSWORD" cli:"email-password" yaml:"email_password"`
+	Password string
 }
 
 // EmailSender implements the `Sender` interface for emails
