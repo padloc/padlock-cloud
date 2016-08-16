@@ -53,8 +53,9 @@ func (cliApp *CliApp) RunServer(context *cli.Context) error {
 	templates, err := LoadTemplates(filepath.Join(cliApp.Config.Server.AssetsPath, "templates"))
 
 	if err != nil {
-		log.Fatalf("%s\nFailed to load Template! Did you specify the correct assets path? (Currently \"%s\")",
-			err, cliApp.Config.Server.AssetsPath)
+		log.Printf("Failed to load Template! Did you specify the correct assets path? (Currently \"%s\")",
+			cliApp.Config.Server.AssetsPath)
+		return err
 	}
 
 	// Initialize app instance
@@ -66,7 +67,7 @@ func (cliApp *CliApp) RunServer(context *cli.Context) error {
 	)
 
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	// Add rate limiting middleWare
@@ -96,7 +97,7 @@ func (cliApp *CliApp) RunServer(context *cli.Context) error {
 	log.Printf("Starting server on port %v", cliApp.Config.Server.Port)
 	err = http.ListenAndServe(fmt.Sprintf(":%d", cliApp.Config.Server.Port), handler)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	return nil
