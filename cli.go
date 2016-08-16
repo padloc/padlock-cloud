@@ -19,7 +19,7 @@ func loadConfigFromFile(cliApp *CliApp) error {
 		return err
 	}
 
-	err = yaml.Unmarshal(yamlData, &cliApp.Config)
+	err = yaml.Unmarshal(yamlData, cliApp.Config)
 	if err != nil {
 		return err
 	}
@@ -35,19 +35,12 @@ type CliConfig struct {
 
 type CliApp struct {
 	*cli.App
-	Config     CliConfig
+	Config     *CliConfig
 	ConfigPath string
 }
 
 func (cliApp *CliApp) RunServer(context *cli.Context) error {
 	var err error
-
-	if cliApp.ConfigPath != "" {
-		err = loadConfigFromFile(cliApp)
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
 
 	// Load templates from assets directory
 	templates, err := LoadTemplates(filepath.Join(cliApp.Config.Server.AssetsPath, "templates"))
@@ -104,8 +97,10 @@ func (cliApp *CliApp) RunServer(context *cli.Context) error {
 }
 
 func NewCliApp() *CliApp {
+	config := CliConfig{}
 	cliApp := &CliApp{
-		App: cli.NewApp(),
+		App:    cli.NewApp(),
+		Config: &config,
 	}
 	cliApp.Name = "padlock-cloud"
 	cliApp.Usage = "A command line interface for Padlock Cloud"
@@ -123,35 +118,35 @@ func NewCliApp() *CliApp {
 			Value:       "",
 			Usage:       "Path to LevelDB database",
 			EnvVar:      "PC_LEVELDB_PATH",
-			Destination: &(cliApp.Config.LevelDB.Path),
+			Destination: &config.LevelDB.Path,
 		},
 		cli.StringFlag{
 			Name:        "email-server",
 			Value:       "",
 			Usage:       "Mail server for sending emails",
 			EnvVar:      "PC_EMAIL_SERVER",
-			Destination: &(cliApp.Config.Email.Server),
+			Destination: &config.Email.Server,
 		},
 		cli.StringFlag{
 			Name:        "email-port",
 			Value:       "",
 			Usage:       "Port to use with mail server",
 			EnvVar:      "PC_EMAIL_PORT",
-			Destination: &(cliApp.Config.Email.Port),
+			Destination: &config.Email.Port,
 		},
 		cli.StringFlag{
 			Name:        "email-user",
 			Value:       "",
 			Usage:       "Username for authentication with mail server",
 			EnvVar:      "PC_EMAIL_USER",
-			Destination: &(cliApp.Config.Email.User),
+			Destination: &config.Email.User,
 		},
 		cli.StringFlag{
 			Name:        "email-password",
 			Value:       "",
 			Usage:       "Password for authentication with mail server",
 			EnvVar:      "PC_EMAIL_PASSWORD",
-			Destination: &(cliApp.Config.Email.Password),
+			Destination: &config.Email.Password,
 		},
 	}
 
@@ -165,31 +160,42 @@ func NewCliApp() *CliApp {
 					Usage:       "Port to listen on",
 					Value:       3000,
 					EnvVar:      "PC_PORT",
-					Destination: &(cliApp.Config.Server.Port),
+					Destination: &config.Server.Port,
 				},
 				cli.StringFlag{
 					Name:        "assets-path",
 					Usage:       "Path to assets directory",
 					Value:       filepath.Join(gopath, "src/github.com/maklesoft/padlock-cloud/assets"),
 					EnvVar:      "PC_ASSETS_PATH",
-					Destination: &(cliApp.Config.Server.AssetsPath),
+					Destination: &config.Server.AssetsPath,
 				},
 				cli.BoolFlag{
 					Name:        "require-tls",
 					Usage:       "Reject insecure connections",
 					EnvVar:      "PC_REQUIRE_TLS",
-					Destination: &(cliApp.Config.Server.RequireTLS),
+					Destination: &config.Server.RequireTLS,
 				},
 				cli.StringFlag{
 					Name:        "notify-email",
 					Usage:       "Email address to send error reports to",
 					Value:       "",
 					EnvVar:      "PC_NOTIFY_EMAIL",
-					Destination: &(cliApp.Config.Server.NotifyEmail),
+					Destination: &config.Server.NotifyEmail,
 				},
 			},
 			Action: cliApp.RunServer,
 		},
+	}
+
+	cliApp.Before = func(context *cli.Context) error {
+		if cliApp.ConfigPath != "" {
+			absPath, _ := filepath.Abs(cliApp.ConfigPath)
+			log.Printf("Loading config from %s - all other flags and environment variables will be ignored!", absPath)
+			// Replace original config object to prevent other flags from being applied
+			cliApp.Config = &CliConfig{}
+			return loadConfigFromFile(cliApp)
+		}
+		return nil
 	}
 
 	return cliApp
