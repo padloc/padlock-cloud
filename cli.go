@@ -46,6 +46,7 @@ func NewCliApp() *cli.App {
 
 	cliApp := cli.NewApp()
 	cliApp.Name = "padlock-cloud"
+	cliApp.Usage = "A command line interface for Padlock Cloud"
 
 	cliApp.Flags = []cli.Flag{
 		cli.StringFlag{
@@ -94,7 +95,8 @@ func NewCliApp() *cli.App {
 
 	cliApp.Commands = []cli.Command{
 		{
-			Name: "runserver",
+			Name:  "runserver",
+			Usage: "Starts a Padlock Cloud server instance",
 			Flags: []cli.Flag{
 				cli.IntFlag{
 					Name:        "port, p",
