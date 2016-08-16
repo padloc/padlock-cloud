@@ -12,24 +12,14 @@ import "gopkg.in/urfave/cli.v1"
 
 var gopath = os.Getenv("GOPATH")
 
-func loadConfigFromFile(path string, appConfig *AppConfig, levelDBConfig *LevelDBConfig, emailConfig *EmailConfig) error {
+func loadConfigFromFile(cliApp *CliApp) error {
 	// load config file
-	yamlData, err := ioutil.ReadFile(path)
+	yamlData, err := ioutil.ReadFile(cliApp.ConfigPath)
 	if err != nil {
 		return err
 	}
 
-	cfg := struct {
-		*AppConfig     `yaml:"app"`
-		*LevelDBConfig `yaml:"leveldb"`
-		*EmailConfig   `yaml:"email"`
-	}{
-		appConfig,
-		levelDBConfig,
-		emailConfig,
-	}
-
-	err = yaml.Unmarshal(yamlData, &cfg)
+	err = yaml.Unmarshal(yamlData, &cliApp.Config)
 	if err != nil {
 		return err
 	}
@@ -37,14 +27,85 @@ func loadConfigFromFile(path string, appConfig *AppConfig, levelDBConfig *LevelD
 	return nil
 }
 
-func NewCliApp() *cli.App {
-	var configPath string
+type CliConfig struct {
+	Server  AppConfig     `yaml:"server"`
+	LevelDB LevelDBConfig `yaml:"leveldb"`
+	Email   EmailConfig   `yaml:"email"`
+}
 
-	appConfig := AppConfig{}
-	levelDBConfig := LevelDBConfig{}
-	emailConfig := EmailConfig{}
+type CliApp struct {
+	*cli.App
+	Config     CliConfig
+	ConfigPath string
+}
 
-	cliApp := cli.NewApp()
+func (cliApp *CliApp) RunServer(context *cli.Context) error {
+	var err error
+
+	if cliApp.ConfigPath != "" {
+		err = loadConfigFromFile(cliApp)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	// Load templates from assets directory
+	templates, err := LoadTemplates(filepath.Join(cliApp.Config.Server.AssetsPath, "templates"))
+
+	if err != nil {
+		log.Fatalf("%s\nFailed to load Template! Did you specify the correct assets path? (Currently \"%s\")",
+			err, cliApp.Config.Server.AssetsPath)
+	}
+
+	// Initialize app instance
+	app, err := NewApp(
+		&LevelDBStorage{LevelDBConfig: cliApp.Config.LevelDB},
+		&EmailSender{cliApp.Config.Email},
+		templates,
+		cliApp.Config.Server,
+	)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Add rate limiting middleWare
+	handler := RateLimit(app, map[Route]RateQuota{
+		Route{"POST", "/auth/"}:    RateQuota{PerMin(1), 0},
+		Route{"PUT", "/auth/"}:     RateQuota{PerMin(1), 0},
+		Route{"DELETE", "/store/"}: RateQuota{PerMin(1), 0},
+	})
+
+	// Add CORS middleware
+	handler = Cors(handler)
+
+	// Clean up after method returns (should never happen under normal circumstances but you never know)
+	defer app.CleanUp()
+
+	// Handle INTERRUPT and KILL signals
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, os.Kill)
+	go func() {
+		s := <-c
+		log.Printf("Received %v signal. Exiting...", s)
+		app.CleanUp()
+		os.Exit(0)
+	}()
+
+	// Start server
+	log.Printf("Starting server on port %v", cliApp.Config.Server.Port)
+	err = http.ListenAndServe(fmt.Sprintf(":%d", cliApp.Config.Server.Port), handler)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return nil
+}
+
+func NewCliApp() *CliApp {
+	cliApp := &CliApp{
+		App: cli.NewApp(),
+	}
 	cliApp.Name = "padlock-cloud"
 	cliApp.Usage = "A command line interface for Padlock Cloud"
 
@@ -54,42 +115,42 @@ func NewCliApp() *cli.App {
 			Value:       "",
 			Usage:       "Path to configuration file",
 			EnvVar:      "PC_CONFIG_PATH",
-			Destination: &configPath,
+			Destination: &cliApp.ConfigPath,
 		},
 		cli.StringFlag{
 			Name:        "db-path",
 			Value:       "",
 			Usage:       "Path to LevelDB database",
 			EnvVar:      "PC_LEVELDB_PATH",
-			Destination: &(levelDBConfig.Path),
+			Destination: &(cliApp.Config.LevelDB.Path),
 		},
 		cli.StringFlag{
 			Name:        "email-server",
 			Value:       "",
 			Usage:       "Mail server for sending emails",
 			EnvVar:      "PC_EMAIL_SERVER",
-			Destination: &(emailConfig.Server),
+			Destination: &(cliApp.Config.Email.Server),
 		},
 		cli.StringFlag{
 			Name:        "email-port",
 			Value:       "",
 			Usage:       "Port to use with mail server",
 			EnvVar:      "PC_EMAIL_PORT",
-			Destination: &(emailConfig.Port),
+			Destination: &(cliApp.Config.Email.Port),
 		},
 		cli.StringFlag{
 			Name:        "email-user",
 			Value:       "",
 			Usage:       "Username for authentication with mail server",
 			EnvVar:      "PC_EMAIL_USER",
-			Destination: &(emailConfig.User),
+			Destination: &(cliApp.Config.Email.User),
 		},
 		cli.StringFlag{
 			Name:        "email-password",
 			Value:       "",
 			Usage:       "Password for authentication with mail server",
 			EnvVar:      "PC_EMAIL_PASSWORD",
-			Destination: &(emailConfig.Password),
+			Destination: &(cliApp.Config.Email.Password),
 		},
 	}
 
@@ -103,91 +164,30 @@ func NewCliApp() *cli.App {
 					Usage:       "Port to listen on",
 					Value:       3000,
 					EnvVar:      "PC_PORT",
-					Destination: &(appConfig.Port),
+					Destination: &(cliApp.Config.Server.Port),
 				},
 				cli.StringFlag{
 					Name:        "assets-path",
 					Usage:       "Path to assets directory",
 					Value:       filepath.Join(gopath, "src/github.com/maklesoft/padlock-cloud/assets"),
 					EnvVar:      "PC_ASSETS_PATH",
-					Destination: &(appConfig.AssetsPath),
+					Destination: &(cliApp.Config.Server.AssetsPath),
 				},
 				cli.BoolFlag{
 					Name:        "require-tls",
 					Usage:       "Reject insecure connections",
 					EnvVar:      "PC_REQUIRE_TLS",
-					Destination: &(appConfig.RequireTLS),
+					Destination: &(cliApp.Config.Server.RequireTLS),
 				},
 				cli.StringFlag{
 					Name:        "notify-email",
 					Usage:       "Email address to send error reports to",
 					Value:       "",
 					EnvVar:      "PC_NOTIFY_EMAIL",
-					Destination: &(appConfig.NotifyEmail),
+					Destination: &(cliApp.Config.Server.NotifyEmail),
 				},
 			},
-			Action: func(context *cli.Context) error {
-				var err error
-
-				if configPath != "" {
-					err = loadConfigFromFile(configPath, &appConfig, &levelDBConfig, &emailConfig)
-					if err != nil {
-						log.Fatal(err)
-					}
-				}
-
-				// Load templates from assets directory
-				templates, err := LoadTemplates(filepath.Join(appConfig.AssetsPath, "templates"))
-
-				if err != nil {
-					log.Fatalf("%s\nFailed to load Template! Did you specify the correct assets path? (Currently \"%s\")",
-						err, appConfig.AssetsPath)
-				}
-
-				// Initialize app instance
-				app, err := NewApp(
-					&LevelDBStorage{LevelDBConfig: levelDBConfig},
-					&EmailSender{emailConfig},
-					templates,
-					appConfig,
-				)
-
-				if err != nil {
-					log.Fatal(err)
-				}
-
-				// Add rate limiting middleWare
-				handler := RateLimit(app, map[Route]RateQuota{
-					Route{"POST", "/auth/"}:    RateQuota{PerMin(1), 0},
-					Route{"PUT", "/auth/"}:     RateQuota{PerMin(1), 0},
-					Route{"DELETE", "/store/"}: RateQuota{PerMin(1), 0},
-				})
-
-				// Add CORS middleware
-				handler = Cors(handler)
-
-				// Clean up after method returns (should never happen under normal circumstances but you never know)
-				defer app.CleanUp()
-
-				// Handle INTERRUPT and KILL signals
-				c := make(chan os.Signal, 1)
-				signal.Notify(c, os.Interrupt, os.Kill)
-				go func() {
-					s := <-c
-					log.Printf("Received %v signal. Exiting...", s)
-					app.CleanUp()
-					os.Exit(0)
-				}()
-
-				// Start server
-				log.Printf("Starting server on port %v", appConfig.Port)
-				err = http.ListenAndServe(fmt.Sprintf(":%d", appConfig.Port), handler)
-				if err != nil {
-					log.Fatal(err)
-				}
-
-				return nil
-			},
+			Action: cliApp.RunServer,
 		},
 	}
 
