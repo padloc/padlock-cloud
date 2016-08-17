@@ -7,6 +7,7 @@ import "net/http"
 import "os/signal"
 import "path/filepath"
 import "io/ioutil"
+import "errors"
 import "gopkg.in/yaml.v2"
 import "gopkg.in/urfave/cli.v1"
 
@@ -94,6 +95,90 @@ func (cliApp *CliApp) RunServer(context *cli.Context) error {
 	}
 
 	return nil
+}
+
+func (cliApp *CliApp) ListAccounts(context *cli.Context) error {
+	storage := &LevelDBStorage{LevelDBConfig: cliApp.Config.LevelDB}
+	if err := storage.Open(); err != nil {
+		return err
+	}
+	defer storage.Close()
+	var acc *Account
+	accs, err := storage.List(acc)
+	if err != nil {
+		return err
+	}
+	if len(accs) == 0 {
+		log.Println("No existing accounts!")
+	} else {
+		output := ""
+		for _, email := range accs {
+			output = output + email + "\n"
+		}
+		fmt.Print(output)
+	}
+	return nil
+}
+
+func (cliApp *CliApp) CreateAccount(context *cli.Context) error {
+	email := context.Args().Get(0)
+	if email == "" {
+		return errors.New("Please provide an email address!")
+	}
+	storage := &LevelDBStorage{LevelDBConfig: cliApp.Config.LevelDB}
+	if err := storage.Open(); err != nil {
+		return err
+	}
+	defer storage.Close()
+	acc := &Account{
+		Email: email,
+	}
+	if err := storage.Put(acc); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (cliApp *CliApp) DisplayAccount(context *cli.Context) error {
+	email := context.Args().Get(0)
+	if email == "" {
+		return errors.New("Please provide an email address!")
+	}
+	storage := &LevelDBStorage{LevelDBConfig: cliApp.Config.LevelDB}
+	if err := storage.Open(); err != nil {
+		return err
+	}
+	defer storage.Close()
+	acc := &Account{
+		Email: email,
+	}
+	if err := storage.Get(acc); err != nil {
+		return err
+	}
+
+	yamlData, err := yaml.Marshal(acc)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(string(yamlData))
+
+	return nil
+}
+
+func (cliApp *CliApp) DeleteAccount(context *cli.Context) error {
+	email := context.Args().Get(0)
+	if email == "" {
+		return errors.New("Please provide an email address!")
+	}
+	storage := LevelDBStorage{LevelDBConfig: cliApp.Config.LevelDB}
+	if err := storage.Open(); err != nil {
+		log.Fatal(err)
+	}
+	defer storage.Close()
+	acc := &Account{Email: email}
+
+	return storage.Delete(acc)
 }
 
 func NewCliApp() *CliApp {
@@ -184,6 +269,32 @@ func NewCliApp() *CliApp {
 				},
 			},
 			Action: cliApp.RunServer,
+		},
+		{
+			Name:  "accounts",
+			Usage: "Commands for managing accounts",
+			Subcommands: []cli.Command{
+				{
+					Name:   "list",
+					Usage:  "List existing accounts",
+					Action: cliApp.ListAccounts,
+				},
+				{
+					Name:   "create",
+					Usage:  "Create new account",
+					Action: cliApp.CreateAccount,
+				},
+				{
+					Name:   "display",
+					Usage:  "Display account",
+					Action: cliApp.DisplayAccount,
+				},
+				{
+					Name:   "delete",
+					Usage:  "Delete account",
+					Action: cliApp.DeleteAccount,
+				},
+			},
 		},
 	}
 
