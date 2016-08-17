@@ -46,12 +46,7 @@ type Storage interface {
 
 // Map of supported `Storable` implementations along with identifier strings that can be used for
 // internal store or file names
-var StorableTypes = map[reflect.Type]string{
-	reflect.TypeOf((*Store)(nil)).Elem():              "data",
-	reflect.TypeOf((*Account)(nil)).Elem():            "auth",
-	reflect.TypeOf((*AuthRequest)(nil)).Elem():        "act",
-	reflect.TypeOf((*DeleteStoreRequest)(nil)).Elem(): "del",
-}
+var StorableTypes = map[reflect.Type]string
 
 func AddStorable(t interface{}, loc string) {
 	StorableTypes[reflect.TypeOf(t).Elem()] = loc

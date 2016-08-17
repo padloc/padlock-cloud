@@ -626,3 +626,8 @@ func NewServer(storage Storage, sender Sender, templates Templates, config Serve
 	err := server.Init()
 	return server, err
 }
+
+func init() {
+	AddStorable(&Store{}, "data-stores")
+	AddStorable(&DeleteRequest{}, "delete-requests")
+}

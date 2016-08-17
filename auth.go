@@ -116,3 +116,8 @@ func NewAuthRequest(email string) (*AuthRequest, error) {
 
 	return &AuthRequest{actToken, *authToken, time.Now()}, nil
 }
+
+func init() {
+	AddStorable(&Account{}, "auth-accounts")
+	AddStorable(&AuthRequest{}, "auth-requests")
+}
