@@ -12,7 +12,7 @@ import "time"
 import "strconv"
 
 const (
-	version = 1
+	ApiVersion = 1
 )
 
 // Error singletons
@@ -261,7 +261,7 @@ func (app *Server) RequestAuthToken(w http.ResponseWriter, r *http.Request, crea
 	var buff bytes.Buffer
 	err = app.Templates.ActivateAuthTokenEmail.Execute(&buff, map[string]string{
 		"email":           authRequest.AuthToken.Email,
-		"activation_link": fmt.Sprintf("%s://%s/activate/?v=%d&t=%s", schemeFromRequest(r), r.Host, version, authRequest.Token),
+		"activation_link": fmt.Sprintf("%s://%s/activate/?v=%d&t=%s", schemeFromRequest(r), r.Host, ApiVersion, authRequest.Token),
 		"conn_id":         authRequest.AuthToken.Id,
 	})
 	if err != nil {
@@ -422,7 +422,7 @@ func (app *Server) RequestDeleteStore(w http.ResponseWriter, r *http.Request) {
 	var buff bytes.Buffer
 	err = app.Templates.DeleteStoreEmail.Execute(&buff, map[string]string{
 		"email":       acc.Email,
-		"delete_link": fmt.Sprintf("%s://%s/deletestore/?v=%d&t=%s", schemeFromRequest(r), r.Host, version, deleteRequest.Token),
+		"delete_link": fmt.Sprintf("%s://%s/deletestore/?v=%d&t=%s", schemeFromRequest(r), r.Host, ApiVersion, deleteRequest.Token),
 	})
 	if err != nil {
 		app.HandleError(err, w, r)
@@ -574,7 +574,7 @@ func (app *Server) HandlePanic(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *Server) CheckVersion(w http.ResponseWriter, r *http.Request) bool {
-	return versionFromRequest(r) != version
+	return versionFromRequest(r) != ApiVersion
 }
 
 // Implements `http.Handler.ServeHTTP` interface method. Handles panic recovery and TLS checking, Delegates

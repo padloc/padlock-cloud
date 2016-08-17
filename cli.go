@@ -188,6 +188,7 @@ func NewCliApp() *CliApp {
 		Config: &config,
 	}
 	cliApp.Name = "padlock-cloud"
+	cliApp.Version = Version
 	cliApp.Usage = "A command line interface for Padlock Cloud"
 
 	cliApp.Flags = []cli.Flag{
