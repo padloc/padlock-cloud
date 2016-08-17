@@ -46,7 +46,7 @@ type Storage interface {
 
 // Map of supported `Storable` implementations along with identifier strings that can be used for
 // internal store or file names
-var StorableTypes = map[reflect.Type]string
+var StorableTypes = map[reflect.Type]string{}
 
 func AddStorable(t interface{}, loc string) {
 	StorableTypes[reflect.TypeOf(t).Elem()] = loc

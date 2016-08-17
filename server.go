@@ -112,25 +112,25 @@ func NewDeleteStoreRequest(email string) (*DeleteStoreRequest, error) {
 	return &DeleteStoreRequest{token, email, time.Now()}, nil
 }
 
-// Store represents the data associated to a given account
-type Store struct {
+// DataStore represents the data associated to a given account
+type DataStore struct {
 	Account *Account
 	Content []byte
 }
 
 // Implementation of the `Storable.Key` interface method
-func (d *Store) Key() []byte {
+func (d *DataStore) Key() []byte {
 	return []byte(d.Account.Email)
 }
 
 // Implementation of the `Storable.Deserialize` interface method
-func (d *Store) Deserialize(data []byte) error {
+func (d *DataStore) Deserialize(data []byte) error {
 	d.Content = data
 	return nil
 }
 
 // Implementation of the `Storable.Serialize` interface method
-func (d *Store) Serialize() ([]byte, error) {
+func (d *DataStore) Serialize() ([]byte, error) {
 	return d.Content, nil
 }
 
@@ -356,7 +356,7 @@ func (server *Server) ReadStore(w http.ResponseWriter, r *http.Request) {
 	// Retrieve data from database. If not database entry is found, the `Content` field simply stays empty.
 	// This is not considered an error. Instead we simply return an empty response body. Clients should
 	// know how to deal with this.
-	data := &Store{Account: acc}
+	data := &DataStore{Account: acc}
 	err = server.Get(data)
 	if err != nil && err != ErrNotFound {
 		server.HandleError(err, w, r)
@@ -380,8 +380,8 @@ func (server *Server) WriteStore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Read data from request body into `Store` instance
-	data := &Store{Account: acc}
+	// Read data from request body into `DataStore` instance
+	data := &DataStore{Account: acc}
 	content, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		server.HandleError(err, w, r)
@@ -460,7 +460,7 @@ func (server *Server) CompleteDeleteStore(w http.ResponseWriter, r *http.Request
 
 	// If the corresponding delete request was found in the database, we consider the data reset request
 	// as verified so we can proceed with deleting the data for the corresponding account
-	err = server.Delete(&Store{Account: &Account{Email: resetRequest.Account}})
+	err = server.Delete(&DataStore{Account: &Account{Email: resetRequest.Account}})
 	if err != nil {
 		server.HandleError(err, w, r)
 		return
@@ -628,6 +628,6 @@ func NewServer(storage Storage, sender Sender, templates Templates, config Serve
 }
 
 func init() {
-	AddStorable(&Store{}, "data-stores")
-	AddStorable(&DeleteRequest{}, "delete-requests")
+	AddStorable(&DataStore{}, "data-stores")
+	AddStorable(&DeleteStoreRequest{}, "delete-requests")
 }
