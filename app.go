@@ -196,6 +196,7 @@ func (ar *AuthRequest) Serialize() ([]byte, error) {
 	return json.Marshal(ar)
 }
 
+// Creates a new `AuthRequest` with a given `email`
 func NewAuthRequest(email string) (*AuthRequest, error) {
 	// Create new auth token
 	authToken, err := NewAuthToken(email)
@@ -233,6 +234,16 @@ func (rr *DeleteStoreRequest) Deserialize(data []byte) error {
 // Implementation of the `Storable.Serialize` interface method
 func (rr *DeleteStoreRequest) Serialize() ([]byte, error) {
 	return json.Marshal(rr)
+}
+
+// Creates a new `DeleteStoreRequest` with a given `email`
+func NewDeleteStoreRequest(email string) (*DeleteStoreRequest, error) {
+	// Generate a new delete token
+	token, err := token()
+	if err != nil {
+		return nil, err
+	}
+	return &DeleteStoreRequest{token, email, time.Now()}, nil
 }
 
 // Store represents the data associated to a given account
@@ -528,16 +539,15 @@ func (app *App) RequestDeleteStore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate a new delete token
-	token, err := token()
+	// Create DeleteStoreRequest
+	deleteRequest, err := NewDeleteStoreRequest(acc.Email)
 	if err != nil {
 		app.HandleError(err, w, r)
 		return
 	}
 
 	// Save token/email pair in database to we can verify it later
-	err = app.Put(&DeleteStoreRequest{token, acc.Email, time.Now()})
-	if err != nil {
+	if err := app.Put(deleteRequest); err != nil {
 		app.HandleError(err, w, r)
 		return
 	}
@@ -546,7 +556,7 @@ func (app *App) RequestDeleteStore(w http.ResponseWriter, r *http.Request) {
 	var buff bytes.Buffer
 	err = app.Templates.DeleteStoreEmail.Execute(&buff, map[string]string{
 		"email":       acc.Email,
-		"delete_link": fmt.Sprintf("%s://%s/deletestore/?v=%d&t=%s", schemeFromRequest(r), r.Host, version, token),
+		"delete_link": fmt.Sprintf("%s://%s/deletestore/?v=%d&t=%s", schemeFromRequest(r), r.Host, version, deleteRequest.Token),
 	})
 	if err != nil {
 		app.HandleError(err, w, r)
