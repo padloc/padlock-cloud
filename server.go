@@ -144,6 +144,10 @@ type ServerConfig struct {
 	AssetsPath string `yaml:"assets_path"`
 	// Port to listen on
 	Port int
+	// Path to TLS certificate
+	TLSCert string
+	// Path to TLS key file
+	TLSKey string
 }
 
 // The Server type holds all the contextual data and logic used for running a Padlock Cloud instances

@@ -87,9 +87,16 @@ func (cliApp *CliApp) RunServer(context *cli.Context) error {
 		os.Exit(0)
 	}()
 
+	port := cliApp.Config.Server.Port
+	tlsCert := cliApp.Config.Server.TLSCert
+	tlsKey := cliApp.Config.Server.TLSKey
 	// Start server
-	log.Printf("Starting server on port %v", cliApp.Config.Server.Port)
-	err = http.ListenAndServe(fmt.Sprintf(":%d", cliApp.Config.Server.Port), handler)
+	log.Printf("Starting server on port %v", port)
+	if tlsCert != "" && tlsKey != "" {
+		err = http.ListenAndServeTLS(fmt.Sprintf(":%d", port), tlsCert, tlsKey, handler)
+	} else {
+		err = http.ListenAndServe(fmt.Sprintf(":%d", port), handler)
+	}
 	if err != nil {
 		return err
 	}
@@ -267,6 +274,20 @@ func NewCliApp() *CliApp {
 					Value:       "",
 					EnvVar:      "PC_NOTIFY_EMAIL",
 					Destination: &config.Server.NotifyEmail,
+				},
+				cli.StringFlag{
+					Name:        "tls-cert",
+					Usage:       "Path to TLS certification file",
+					Value:       "",
+					EnvVar:      "PC_TLS_CERT",
+					Destination: &config.Server.TLSCert,
+				},
+				cli.StringFlag{
+					Name:        "tls-key",
+					Usage:       "Path to TLS key file",
+					Value:       "",
+					EnvVar:      "PC_TLS_KEY",
+					Destination: &config.Server.TLSKey,
 				},
 			},
 			Action: cliApp.RunServer,
