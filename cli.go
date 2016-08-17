@@ -29,7 +29,7 @@ func loadConfigFromFile(cliApp *CliApp) error {
 }
 
 type CliConfig struct {
-	Server  AppConfig     `yaml:"server"`
+	Server  ServerConfig  `yaml:"server"`
 	LevelDB LevelDBConfig `yaml:"leveldb"`
 	Email   EmailConfig   `yaml:"email"`
 }
