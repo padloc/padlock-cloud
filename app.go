@@ -269,7 +269,7 @@ func (d *Store) Serialize() ([]byte, error) {
 }
 
 // Miscellaneaous options
-type AppConfig struct {
+type ServerConfig struct {
 	// If true, all requests via plain http will be rejected. Only https requests are allowed
 	RequireTLS bool `yaml:"require_tls"`
 	// Email address for sending error reports; Leave empty for no notifications
@@ -280,21 +280,21 @@ type AppConfig struct {
 	Port int
 }
 
-// The App type holds all the contextual data and logic used for running a Padlock Cloud instances
-// Users should use the `NewApp` function to instantiate an `App` instance
-type App struct {
+// The Server type holds all the contextual data and logic used for running a Padlock Cloud instances
+// Users should use the `NewServer` function to instantiate an `Server` instance
+type Server struct {
 	*http.ServeMux
 	Sender
 	Storage
 	Templates
-	AppConfig
+	ServerConfig
 }
 
 // Retreives Account object from a http.Request object by evaluating the Authorization header and
 // cross-checking it with api keys of existing accounts. Returns an `ErrNotAuthenticated` error
 // if no valid Authorization header is provided or if the provided email:api_key pair does not match
 // any of the accounts in the database.
-func (app *App) AccountFromRequest(r *http.Request) (*Account, error) {
+func (app *Server) AccountFromRequest(r *http.Request) (*Account, error) {
 	email, token := credentialsFromRequest(r)
 	if email == "" || token == "" {
 		return nil, ErrNotAuthenticated
@@ -320,7 +320,7 @@ func (app *App) AccountFromRequest(r *http.Request) (*Account, error) {
 
 // Global error handler. Writes a appropriate response to the provided `http.ResponseWriter` object and
 // logs / notifies of internal server errors
-func (app *App) HandleError(e error, w http.ResponseWriter, r *http.Request) {
+func (app *Server) HandleError(e error, w http.ResponseWriter, r *http.Request) {
 	switch e {
 	case ErrInvalidToken:
 		{
@@ -360,7 +360,7 @@ func (app *App) HandleError(e error, w http.ResponseWriter, r *http.Request) {
 // The token can later be used to activate the api key. An email is sent to the corresponding
 // email address with an activation url. Expects `email` and `device_name` parameters through either
 // multipart/form-data or application/x-www-urlencoded parameters
-func (app *App) RequestAuthToken(w http.ResponseWriter, r *http.Request, create bool) {
+func (app *Server) RequestAuthToken(w http.ResponseWriter, r *http.Request, create bool) {
 	email := r.PostFormValue("email")
 
 	// Make sure email field is set
@@ -423,7 +423,7 @@ func (app *App) RequestAuthToken(w http.ResponseWriter, r *http.Request, create 
 }
 
 // Hander function for activating a given api key
-func (app *App) ActivateAuthToken(w http.ResponseWriter, r *http.Request) {
+func (app *Server) ActivateAuthToken(w http.ResponseWriter, r *http.Request) {
 	// Extract activation token from url
 	token, err := tokenFromRequest(r)
 	if err != nil {
@@ -475,7 +475,7 @@ func (app *App) ActivateAuthToken(w http.ResponseWriter, r *http.Request) {
 }
 
 // Handler function for retrieving the data associated with a given account
-func (app *App) ReadStore(w http.ResponseWriter, r *http.Request) {
+func (app *Server) ReadStore(w http.ResponseWriter, r *http.Request) {
 	// Fetch account based on provided credentials
 	acc, err := app.AccountFromRequest(r)
 	if err != nil {
@@ -502,7 +502,7 @@ func (app *App) ReadStore(w http.ResponseWriter, r *http.Request) {
 // Instead, clients should retrieve existing data through the `ReadStore` endpoint first, perform any necessary
 // decryption/parsing, consolidate the data with any existing local data and then reupload the full,
 // encrypted data set
-func (app *App) WriteStore(w http.ResponseWriter, r *http.Request) {
+func (app *Server) WriteStore(w http.ResponseWriter, r *http.Request) {
 	// Fetch account based on provided credentials
 	acc, err := app.AccountFromRequest(r)
 	if err != nil {
@@ -531,7 +531,7 @@ func (app *App) WriteStore(w http.ResponseWriter, r *http.Request) {
 }
 
 // Handler function for requesting a data reset for a given account
-func (app *App) RequestDeleteStore(w http.ResponseWriter, r *http.Request) {
+func (app *Server) RequestDeleteStore(w http.ResponseWriter, r *http.Request) {
 	// Fetch account based on provided credentials
 	acc, err := app.AccountFromRequest(r)
 	if err != nil {
@@ -572,7 +572,7 @@ func (app *App) RequestDeleteStore(w http.ResponseWriter, r *http.Request) {
 }
 
 // Handler function for updating the data associated with a given account
-func (app *App) CompleteDeleteStore(w http.ResponseWriter, r *http.Request) {
+func (app *Server) CompleteDeleteStore(w http.ResponseWriter, r *http.Request) {
 	// Extract confirmation token from url
 	token, err := tokenFromRequest(r)
 	if err != nil {
@@ -612,7 +612,7 @@ func (app *App) CompleteDeleteStore(w http.ResponseWriter, r *http.Request) {
 }
 
 // Registeres http handlers for various routes
-func (app *App) SetupRoutes() {
+func (app *Server) SetupRoutes() {
 	// Endpoint for requesting api keys, only POST method is supported
 	app.HandleFunc("/auth/", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -663,7 +663,7 @@ func (app *App) SetupRoutes() {
 	})
 }
 
-func (app *App) DeprecatedVersion(w http.ResponseWriter, r *http.Request) {
+func (app *Server) DeprecatedVersion(w http.ResponseWriter, r *http.Request) {
 	// Try getting email from Authorization header first
 	email, _ := credentialsFromRequest(r)
 
@@ -694,7 +694,7 @@ func (app *App) DeprecatedVersion(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "", http.StatusNotAcceptable)
 }
 
-func (app *App) HandlePanic(w http.ResponseWriter, r *http.Request) {
+func (app *Server) HandlePanic(w http.ResponseWriter, r *http.Request) {
 	if e := recover(); e != nil {
 		log.Printf("Recovered from panic: %v", e)
 
@@ -707,13 +707,13 @@ func (app *App) HandlePanic(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (app *App) CheckVersion(w http.ResponseWriter, r *http.Request) bool {
+func (app *Server) CheckVersion(w http.ResponseWriter, r *http.Request) bool {
 	return versionFromRequest(r) != version
 }
 
 // Implements `http.Handler.ServeHTTP` interface method. Handles panic recovery and TLS checking, Delegates
 // requests to embedded `http.ServeMux`
-func (app *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (app *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	defer app.HandlePanic(w, r)
 
@@ -732,21 +732,21 @@ func (app *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	app.ServeMux.ServeHTTP(w, r)
 }
 
-// Initialize App with dependencies and configuration
-func (app *App) Init() error {
+// Initialize Server with dependencies and configuration
+func (app *Server) Init() error {
 	app.SetupRoutes()
 
 	// Open storage
 	return app.Storage.Open()
 }
 
-func (app *App) CleanUp() error {
+func (app *Server) CleanUp() error {
 	return app.Storage.Close()
 }
 
-// Instantiates and initializes a new App and returns a reference to it
-func NewApp(storage Storage, sender Sender, templates Templates, config AppConfig) (*App, error) {
-	app := &App{
+// Instantiates and initializes a new Server and returns a reference to it
+func NewServer(storage Storage, sender Sender, templates Templates, config ServerConfig) (*Server, error) {
+	app := &Server{
 		http.NewServeMux(),
 		sender,
 		storage,

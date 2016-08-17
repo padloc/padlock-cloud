@@ -53,7 +53,7 @@ func (cliApp *CliApp) RunServer(context *cli.Context) error {
 	}
 
 	// Initialize app instance
-	app, err := NewApp(
+	app, err := NewServer(
 		&LevelDBStorage{LevelDBConfig: cliApp.Config.LevelDB},
 		&EmailSender{cliApp.Config.Email},
 		templates,

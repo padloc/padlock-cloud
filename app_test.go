@@ -15,7 +15,7 @@ import "bytes"
 import "encoding/json"
 
 var (
-	app       *App
+	app       *Server
 	server    *httptest.Server
 	storage   *MemoryStorage
 	sender    *RecordSender
@@ -34,7 +34,7 @@ func TestMain(m *testing.M) {
 		template.Must(template.New("").Parse("")),
 	}
 
-	app = NewApp(storage, sender, templates, Config{RequireTLS: false})
+	app = NewServer(storage, sender, templates, Config{RequireTLS: false})
 
 	app.Storage.Open()
 	defer app.Storage.Close()
