@@ -109,6 +109,25 @@ type AuthToken struct {
 	LastUsed time.Time
 }
 
+func NewAuthToken(email string) (*AuthToken, error) {
+	authT, err := token()
+	if err != nil {
+		return nil, err
+	}
+	id, err := randomBase64(6)
+	if err != nil {
+		return nil, err
+	}
+
+	return &AuthToken{
+		email,
+		authT,
+		id,
+		time.Now(),
+		time.Now(),
+	}, nil
+}
+
 // A struct representing a user with a set of api keys
 type Account struct {
 	// The email servers as a unique identifier and as a means for
@@ -175,6 +194,22 @@ func (ar *AuthRequest) Deserialize(data []byte) error {
 // Implementation of the `Storable.Serialize` method
 func (ar *AuthRequest) Serialize() ([]byte, error) {
 	return json.Marshal(ar)
+}
+
+func NewAuthRequest(email string) (*AuthRequest, error) {
+	// Create new auth token
+	authToken, err := NewAuthToken(email)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create activation token
+	actToken, err := token()
+	if err != nil {
+		return nil, err
+	}
+
+	return &AuthRequest{actToken, *authToken, time.Now()}, nil
 }
 
 // Represents a request for reseting the data associated with a given account. `RequestReset.Token` is used
@@ -333,33 +368,13 @@ func (app *App) RequestAuthToken(w http.ResponseWriter, r *http.Request, create 
 		}
 	}
 
-	// Generate key-token pair
-	actToken, err := token()
+	authRequest, err := NewAuthRequest(email)
 	if err != nil {
 		app.HandleError(err, w, r)
-		return
-	}
-	authT, err := token()
-	if err != nil {
-		app.HandleError(err, w, r)
-		return
-	}
-	id, err := randomBase64(6)
-	if err != nil {
-		app.HandleError(err, w, r)
-		return
-	}
-
-	authToken := AuthToken{
-		email,
-		authT,
-		id,
-		time.Now(),
-		time.Now(),
 	}
 
 	// Save key-token pair to database for activating it later in a separate request
-	err = app.Put(&AuthRequest{actToken, authToken, time.Now()})
+	err = app.Put(authRequest)
 	if err != nil {
 		app.HandleError(err, w, r)
 		return
@@ -368,9 +383,9 @@ func (app *App) RequestAuthToken(w http.ResponseWriter, r *http.Request, create 
 	// Render activation email
 	var buff bytes.Buffer
 	err = app.Templates.ActivateAuthTokenEmail.Execute(&buff, map[string]string{
-		"email":           authToken.Email,
-		"activation_link": fmt.Sprintf("%s://%s/activate/?v=%d&t=%s", schemeFromRequest(r), r.Host, version, actToken),
-		"conn_id":         authToken.Id,
+		"email":           authRequest.AuthToken.Email,
+		"activation_link": fmt.Sprintf("%s://%s/activate/?v=%d&t=%s", schemeFromRequest(r), r.Host, version, authRequest.Token),
+		"conn_id":         authRequest.AuthToken.Id,
 	})
 	if err != nil {
 		app.HandleError(err, w, r)
@@ -382,9 +397,9 @@ func (app *App) RequestAuthToken(w http.ResponseWriter, r *http.Request, create 
 	go app.Send(email, "Connect to Padlock Cloud", body)
 
 	resp, err := json.Marshal(map[string]string{
-		"id":    authToken.Id,
-		"token": authToken.Token,
-		"email": authToken.Email,
+		"id":    authRequest.AuthToken.Id,
+		"token": authRequest.AuthToken.Token,
+		"email": authRequest.AuthToken.Email,
 	})
 	if err != nil {
 		app.HandleError(err, w, r)
