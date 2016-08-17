@@ -1,4 +1,4 @@
-package padlockcloud
+package main
 
 import "net/http"
 import "io/ioutil"
@@ -225,13 +225,13 @@ func (d *Store) Serialize() ([]byte, error) {
 // Miscellaneaous options
 type AppConfig struct {
 	// If true, all requests via plain http will be rejected. Only https requests are allowed
-	RequireTLS bool `env:"PC_REQUIRE_TLS" cli:"require-tls" yaml:"require_tls"`
+	RequireTLS bool `yaml:"require_tls"`
 	// Email address for sending error reports; Leave empty for no notifications
-	NotifyEmail string `env:"PC_NOTIFY_EMAIL" cli:"notify-email" yaml:"notify_email"`
+	NotifyEmail string `yaml:"notify_email"`
 	// Path to assets directory; used for loading templates and such
-	AssetsPath string `env:"PC_ASSETS_PATH" cli:"assets-path" yaml:"assets_path"`
+	AssetsPath string `yaml:"assets_path"`
 	// Port to listen on
-	Port int `env:"PC_PORT" cli:"port" yaml:"port"`
+	Port int
 }
 
 // The App type holds all the contextual data and logic used for running a Padlock Cloud instances

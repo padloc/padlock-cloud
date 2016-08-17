@@ -1,4 +1,4 @@
-package padlockcloud
+package main
 
 import "path/filepath"
 import "text/template"

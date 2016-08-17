@@ -1,12 +1,10 @@
-package padlockcloud
+package main
 
 import "reflect"
 import "errors"
 import "encoding/json"
 import "path/filepath"
 import "github.com/syndtr/goleveldb/leveldb"
-
-const defaultDbPath = "./db"
 
 // Error singletons
 var (
@@ -61,7 +59,7 @@ func AddStorable(t interface{}, loc string) {
 
 type LevelDBConfig struct {
 	// Path to directory on disc where database files should be stored
-	Path string `env:"PC_DB_PATH" cli:"db-path" yaml:"db_path"`
+	Path string
 }
 
 // LevelDB implementation of the `Storage` interface
