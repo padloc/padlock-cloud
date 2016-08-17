@@ -56,7 +56,7 @@ func (cliApp *CliApp) RunServer(context *cli.Context) error {
 	app, err := NewServer(
 		&LevelDBStorage{LevelDBConfig: cliApp.Config.LevelDB},
 		&EmailSender{cliApp.Config.Email},
-		templates,
+		*templates,
 		cliApp.Config.Server,
 	)
 
