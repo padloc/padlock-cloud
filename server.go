@@ -164,7 +164,7 @@ type Server struct {
 // cross-checking it with api keys of existing accounts. Returns an `ErrNotAuthenticated` error
 // if no valid Authorization header is provided or if the provided email:api_key pair does not match
 // any of the accounts in the database.
-func (app *Server) AccountFromRequest(r *http.Request) (*Account, error) {
+func (server *Server) AccountFromRequest(r *http.Request) (*Account, error) {
 	email, token := credentialsFromRequest(r)
 	if email == "" || token == "" {
 		return nil, ErrNotAuthenticated
@@ -172,7 +172,7 @@ func (app *Server) AccountFromRequest(r *http.Request) (*Account, error) {
 	acc := &Account{Email: email}
 
 	// Fetch account for the given email address
-	err := app.Get(acc)
+	err := server.Get(acc)
 	if err != nil {
 		return nil, ErrNotAuthenticated
 	}
@@ -183,14 +183,14 @@ func (app *Server) AccountFromRequest(r *http.Request) (*Account, error) {
 	}
 
 	// Save account info to persist last used data for auth tokens
-	app.Put(acc)
+	server.Put(acc)
 
 	return acc, nil
 }
 
 // Global error handler. Writes a appropriate response to the provided `http.ResponseWriter` object and
 // logs / notifies of internal server errors
-func (app *Server) HandleError(e error, w http.ResponseWriter, r *http.Request) {
+func (server *Server) HandleError(e error, w http.ResponseWriter, r *http.Request) {
 	switch e {
 	case ErrInvalidToken:
 		{
@@ -218,8 +218,8 @@ func (app *Server) HandleError(e error, w http.ResponseWriter, r *http.Request) 
 
 			log.Printf("Internal Server Error: %v", e)
 
-			if app.NotifyEmail != "" {
-				go app.Send(app.NotifyEmail, "Padlock Cloud Error Notification",
+			if server.NotifyEmail != "" {
+				go server.Send(server.NotifyEmail, "Padlock Cloud Error Notification",
 					fmt.Sprintf("Internal server error: %v\nRequest: %v", e, r))
 			}
 		}
@@ -230,7 +230,7 @@ func (app *Server) HandleError(e error, w http.ResponseWriter, r *http.Request) 
 // The token can later be used to activate the api key. An email is sent to the corresponding
 // email address with an activation url. Expects `email` and `device_name` parameters through either
 // multipart/form-data or application/x-www-urlencoded parameters
-func (app *Server) RequestAuthToken(w http.ResponseWriter, r *http.Request, create bool) {
+func (server *Server) RequestAuthToken(w http.ResponseWriter, r *http.Request, create bool) {
 	email := r.PostFormValue("email")
 
 	// Make sure email field is set
@@ -242,40 +242,40 @@ func (app *Server) RequestAuthToken(w http.ResponseWriter, r *http.Request, crea
 	// If the client does not explicitly state that the server should create a new account for this email
 	// address in case it does not exist, we have to check if an account exists first
 	if !create {
-		err := app.Get(&Account{Email: email})
+		err := server.Get(&Account{Email: email})
 		if err != nil {
-			app.HandleError(err, w, r)
+			server.HandleError(err, w, r)
 			return
 		}
 	}
 
 	authRequest, err := NewAuthRequest(email)
 	if err != nil {
-		app.HandleError(err, w, r)
+		server.HandleError(err, w, r)
 	}
 
 	// Save key-token pair to database for activating it later in a separate request
-	err = app.Put(authRequest)
+	err = server.Put(authRequest)
 	if err != nil {
-		app.HandleError(err, w, r)
+		server.HandleError(err, w, r)
 		return
 	}
 
 	// Render activation email
 	var buff bytes.Buffer
-	err = app.Templates.ActivateAuthTokenEmail.Execute(&buff, map[string]string{
+	err = server.Templates.ActivateAuthTokenEmail.Execute(&buff, map[string]string{
 		"email":           authRequest.AuthToken.Email,
 		"activation_link": fmt.Sprintf("%s://%s/activate/?v=%d&t=%s", schemeFromRequest(r), r.Host, ApiVersion, authRequest.Token),
 		"conn_id":         authRequest.AuthToken.Id,
 	})
 	if err != nil {
-		app.HandleError(err, w, r)
+		server.HandleError(err, w, r)
 		return
 	}
 	body := buff.String()
 
 	// Send email with activation link
-	go app.Send(email, "Connect to Padlock Cloud", body)
+	go server.Send(email, "Connect to Padlock Cloud", body)
 
 	resp, err := json.Marshal(map[string]string{
 		"id":    authRequest.AuthToken.Id,
@@ -283,7 +283,7 @@ func (app *Server) RequestAuthToken(w http.ResponseWriter, r *http.Request, crea
 		"email": authRequest.AuthToken.Email,
 	})
 	if err != nil {
-		app.HandleError(err, w, r)
+		server.HandleError(err, w, r)
 		return
 	}
 
@@ -293,20 +293,20 @@ func (app *Server) RequestAuthToken(w http.ResponseWriter, r *http.Request, crea
 }
 
 // Hander function for activating a given api key
-func (app *Server) ActivateAuthToken(w http.ResponseWriter, r *http.Request) {
+func (server *Server) ActivateAuthToken(w http.ResponseWriter, r *http.Request) {
 	// Extract activation token from url
 	token, err := tokenFromRequest(r)
 	if err != nil {
-		app.HandleError(err, w, r)
+		server.HandleError(err, w, r)
 		return
 	}
 
 	// Let's check if an unactivate api key exists for this token. If not,
 	// the token is not valid
 	authRequest := &AuthRequest{Token: token}
-	err = app.Get(authRequest)
+	err = server.Get(authRequest)
 	if err != nil {
-		app.HandleError(err, w, r)
+		server.HandleError(err, w, r)
 		return
 	}
 
@@ -315,9 +315,9 @@ func (app *Server) ActivateAuthToken(w http.ResponseWriter, r *http.Request) {
 
 	// Fetch existing account data. It's fine if no existing data is found. In that case we'll create
 	// a new entry in the database
-	err = app.Get(acc)
+	err = server.Get(acc)
 	if err != nil && err != ErrNotFound {
-		app.HandleError(err, w, r)
+		server.HandleError(err, w, r)
 		return
 	}
 
@@ -325,31 +325,31 @@ func (app *Server) ActivateAuthToken(w http.ResponseWriter, r *http.Request) {
 	acc.AddAuthToken(&authRequest.AuthToken)
 
 	// Save the changes
-	err = app.Put(acc)
+	err = server.Put(acc)
 	if err != nil {
-		app.HandleError(err, w, r)
+		server.HandleError(err, w, r)
 	}
 
 	// Delete the authentication request from the database
-	app.Delete(authRequest)
+	server.Delete(authRequest)
 
 	// Render success page
 	var buff bytes.Buffer
-	err = app.Templates.ActivateAuthTokenSuccess.Execute(&buff, map[string]string{
+	err = server.Templates.ActivateAuthTokenSuccess.Execute(&buff, map[string]string{
 		"email": authRequest.AuthToken.Email,
 	})
 	if err != nil {
-		app.HandleError(err, w, r)
+		server.HandleError(err, w, r)
 	}
 	buff.WriteTo(w)
 }
 
 // Handler function for retrieving the data associated with a given account
-func (app *Server) ReadStore(w http.ResponseWriter, r *http.Request) {
+func (server *Server) ReadStore(w http.ResponseWriter, r *http.Request) {
 	// Fetch account based on provided credentials
-	acc, err := app.AccountFromRequest(r)
+	acc, err := server.AccountFromRequest(r)
 	if err != nil {
-		app.HandleError(err, w, r)
+		server.HandleError(err, w, r)
 		return
 	}
 
@@ -357,9 +357,9 @@ func (app *Server) ReadStore(w http.ResponseWriter, r *http.Request) {
 	// This is not considered an error. Instead we simply return an empty response body. Clients should
 	// know how to deal with this.
 	data := &Store{Account: acc}
-	err = app.Get(data)
+	err = server.Get(data)
 	if err != nil && err != ErrNotFound {
-		app.HandleError(err, w, r)
+		server.HandleError(err, w, r)
 		return
 	}
 
@@ -372,11 +372,11 @@ func (app *Server) ReadStore(w http.ResponseWriter, r *http.Request) {
 // Instead, clients should retrieve existing data through the `ReadStore` endpoint first, perform any necessary
 // decryption/parsing, consolidate the data with any existing local data and then reupload the full,
 // encrypted data set
-func (app *Server) WriteStore(w http.ResponseWriter, r *http.Request) {
+func (server *Server) WriteStore(w http.ResponseWriter, r *http.Request) {
 	// Fetch account based on provided credentials
-	acc, err := app.AccountFromRequest(r)
+	acc, err := server.AccountFromRequest(r)
 	if err != nil {
-		app.HandleError(err, w, r)
+		server.HandleError(err, w, r)
 		return
 	}
 
@@ -384,15 +384,15 @@ func (app *Server) WriteStore(w http.ResponseWriter, r *http.Request) {
 	data := &Store{Account: acc}
 	content, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		app.HandleError(err, w, r)
+		server.HandleError(err, w, r)
 		return
 	}
 	data.Content = content
 
 	// Update database entry
-	err = app.Put(data)
+	err = server.Put(data)
 	if err != nil {
-		app.HandleError(err, w, r)
+		server.HandleError(err, w, r)
 		return
 	}
 
@@ -401,139 +401,139 @@ func (app *Server) WriteStore(w http.ResponseWriter, r *http.Request) {
 }
 
 // Handler function for requesting a data reset for a given account
-func (app *Server) RequestDeleteStore(w http.ResponseWriter, r *http.Request) {
+func (server *Server) RequestDeleteStore(w http.ResponseWriter, r *http.Request) {
 	// Fetch account based on provided credentials
-	acc, err := app.AccountFromRequest(r)
+	acc, err := server.AccountFromRequest(r)
 	if err != nil {
-		app.HandleError(err, w, r)
+		server.HandleError(err, w, r)
 		return
 	}
 
 	// Create DeleteStoreRequest
 	deleteRequest, err := NewDeleteStoreRequest(acc.Email)
 	if err != nil {
-		app.HandleError(err, w, r)
+		server.HandleError(err, w, r)
 		return
 	}
 
 	// Save token/email pair in database to we can verify it later
-	if err := app.Put(deleteRequest); err != nil {
-		app.HandleError(err, w, r)
+	if err := server.Put(deleteRequest); err != nil {
+		server.HandleError(err, w, r)
 		return
 	}
 
 	// Render confirmation email
 	var buff bytes.Buffer
-	err = app.Templates.DeleteStoreEmail.Execute(&buff, map[string]string{
+	err = server.Templates.DeleteStoreEmail.Execute(&buff, map[string]string{
 		"email":       acc.Email,
 		"delete_link": fmt.Sprintf("%s://%s/deletestore/?v=%d&t=%s", schemeFromRequest(r), r.Host, ApiVersion, deleteRequest.Token),
 	})
 	if err != nil {
-		app.HandleError(err, w, r)
+		server.HandleError(err, w, r)
 		return
 	}
 
 	// Send email with confirmation link
 	body := buff.String()
-	go app.Send(acc.Email, "Padlock Cloud Delete Request", body)
+	go server.Send(acc.Email, "Padlock Cloud Delete Request", body)
 
 	// Send ACCEPTED status code
 	w.WriteHeader(http.StatusAccepted)
 }
 
 // Handler function for updating the data associated with a given account
-func (app *Server) CompleteDeleteStore(w http.ResponseWriter, r *http.Request) {
+func (server *Server) CompleteDeleteStore(w http.ResponseWriter, r *http.Request) {
 	// Extract confirmation token from url
 	token, err := tokenFromRequest(r)
 	if err != nil {
-		app.HandleError(err, w, r)
+		server.HandleError(err, w, r)
 		return
 	}
 
 	// Fetch reset request from database
 	resetRequest := &DeleteStoreRequest{Token: token}
-	err = app.Get(resetRequest)
+	err = server.Get(resetRequest)
 	if err != nil {
-		app.HandleError(err, w, r)
+		server.HandleError(err, w, r)
 		return
 	}
 
 	// If the corresponding delete request was found in the database, we consider the data reset request
 	// as verified so we can proceed with deleting the data for the corresponding account
-	err = app.Delete(&Store{Account: &Account{Email: resetRequest.Account}})
+	err = server.Delete(&Store{Account: &Account{Email: resetRequest.Account}})
 	if err != nil {
-		app.HandleError(err, w, r)
+		server.HandleError(err, w, r)
 		return
 	}
 
 	// Render success page
 	var buff bytes.Buffer
-	err = app.Templates.DeleteStoreSuccess.Execute(&buff, map[string]string{
+	err = server.Templates.DeleteStoreSuccess.Execute(&buff, map[string]string{
 		"email": string(resetRequest.Account),
 	})
 	if err != nil {
-		app.HandleError(err, w, r)
+		server.HandleError(err, w, r)
 		return
 	}
 	buff.WriteTo(w)
 
 	// Delete the request token
-	app.Delete(resetRequest)
+	server.Delete(resetRequest)
 }
 
 // Registeres http handlers for various routes
-func (app *Server) SetupRoutes() {
+func (server *Server) SetupRoutes() {
 	// Endpoint for requesting api keys, only POST method is supported
-	app.HandleFunc("/auth/", func(w http.ResponseWriter, r *http.Request) {
+	server.HandleFunc("/auth/", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case "PUT":
-			app.RequestAuthToken(w, r, false)
+			server.RequestAuthToken(w, r, false)
 		case "POST":
-			app.RequestAuthToken(w, r, true)
+			server.RequestAuthToken(w, r, true)
 		default:
 			http.Error(w, "", http.StatusMethodNotAllowed)
 		}
 	})
 
 	// Endpoint for requesting api keys, only POST method is supported
-	app.HandleFunc("/activate/", func(w http.ResponseWriter, r *http.Request) {
+	server.HandleFunc("/activate/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "GET" {
-			app.ActivateAuthToken(w, r)
+			server.ActivateAuthToken(w, r)
 		} else {
 			http.Error(w, "", http.StatusMethodNotAllowed)
 		}
 	})
 
 	// Endpoint for reading, writing and deleting store data
-	app.HandleFunc("/store/", func(w http.ResponseWriter, r *http.Request) {
+	server.HandleFunc("/store/", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case "GET", "HEAD":
-			app.ReadStore(w, r)
+			server.ReadStore(w, r)
 		case "PUT":
-			app.WriteStore(w, r)
+			server.WriteStore(w, r)
 		case "DELETE":
-			app.RequestDeleteStore(w, r)
+			server.RequestDeleteStore(w, r)
 		default:
 			http.Error(w, "", http.StatusMethodNotAllowed)
 		}
 	})
 
 	// Endpoint for requesting a data reset. Only GET supported
-	app.HandleFunc("/deletestore/", func(w http.ResponseWriter, r *http.Request) {
+	server.HandleFunc("/deletestore/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "GET" {
-			app.CompleteDeleteStore(w, r)
+			server.CompleteDeleteStore(w, r)
 		} else {
 			http.Error(w, "", http.StatusMethodNotAllowed)
 		}
 	})
 
 	// Endpoint for requesting a data reset. Only GET supported
-	app.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	server.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "", http.StatusNotFound)
 	})
 }
 
-func (app *Server) DeprecatedVersion(w http.ResponseWriter, r *http.Request) {
+func (server *Server) DeprecatedVersion(w http.ResponseWriter, r *http.Request) {
 	// Try getting email from Authorization header first
 	email, _ := credentialsFromRequest(r)
 
@@ -550,79 +550,79 @@ func (app *Server) DeprecatedVersion(w http.ResponseWriter, r *http.Request) {
 	if email != "" {
 		// Render activation email
 		var buff bytes.Buffer
-		err := app.Templates.DeprecatedVersionEmail.Execute(&buff, nil)
+		err := server.Templates.DeprecatedVersionEmail.Execute(&buff, nil)
 		if err != nil {
-			app.HandleError(err, w, r)
+			server.HandleError(err, w, r)
 			return
 		}
 		body := buff.String()
 
 		// Send email with activation link
-		go app.Send(email, "Please update your version of Padlock", body)
+		go server.Send(email, "Please update your version of Padlock", body)
 	}
 
 	http.Error(w, "", http.StatusNotAcceptable)
 }
 
-func (app *Server) HandlePanic(w http.ResponseWriter, r *http.Request) {
+func (server *Server) HandlePanic(w http.ResponseWriter, r *http.Request) {
 	if e := recover(); e != nil {
 		log.Printf("Recovered from panic: %v", e)
 
-		app.HandleError(ErrPanic, w, r)
+		server.HandleError(ErrPanic, w, r)
 
-		if app.NotifyEmail != "" {
-			go app.Send(app.NotifyEmail, "Padlock Cloud Error Notification",
+		if server.NotifyEmail != "" {
+			go server.Send(server.NotifyEmail, "Padlock Cloud Error Notification",
 				fmt.Sprintf("Recovered from panic: %v\nRequest: %v", e, r))
 		}
 	}
 }
 
-func (app *Server) CheckVersion(w http.ResponseWriter, r *http.Request) bool {
+func (server *Server) CheckVersion(w http.ResponseWriter, r *http.Request) bool {
 	return versionFromRequest(r) != ApiVersion
 }
 
 // Implements `http.Handler.ServeHTTP` interface method. Handles panic recovery and TLS checking, Delegates
 // requests to embedded `http.ServeMux`
-func (app *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (server *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
-	defer app.HandlePanic(w, r)
+	defer server.HandlePanic(w, r)
 
 	// Only accept connections via https if `RequireTLS` configuration is true
-	if app.RequireTLS && r.TLS == nil {
-		app.HandleError(ErrInsecureConnection, w, r)
+	if server.RequireTLS && r.TLS == nil {
+		server.HandleError(ErrInsecureConnection, w, r)
 		return
 	}
 
-	if app.CheckVersion(w, r) {
-		app.DeprecatedVersion(w, r)
+	if server.CheckVersion(w, r) {
+		server.DeprecatedVersion(w, r)
 		return
 	}
 
 	// Delegate requests to embedded `http.ServeMux`
-	app.ServeMux.ServeHTTP(w, r)
+	server.ServeMux.ServeHTTP(w, r)
 }
 
 // Initialize Server with dependencies and configuration
-func (app *Server) Init() error {
-	app.SetupRoutes()
+func (server *Server) Init() error {
+	server.SetupRoutes()
 
 	// Open storage
-	return app.Storage.Open()
+	return server.Storage.Open()
 }
 
-func (app *Server) CleanUp() error {
-	return app.Storage.Close()
+func (server *Server) CleanUp() error {
+	return server.Storage.Close()
 }
 
 // Instantiates and initializes a new Server and returns a reference to it
 func NewServer(storage Storage, sender Sender, templates Templates, config ServerConfig) (*Server, error) {
-	app := &Server{
+	server := &Server{
 		http.NewServeMux(),
 		sender,
 		storage,
 		templates,
 		config,
 	}
-	err := app.Init()
-	return app, err
+	err := server.Init()
+	return server, err
 }
