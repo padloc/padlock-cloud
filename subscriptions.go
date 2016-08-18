@@ -43,13 +43,21 @@ func (subscr *IOSSubscription) ValidateReceipt(config SubscriptionServerConfig) 
 
 	body, err := json.Marshal(map[string]string{
 		"receipt-data": subscr.Receipt,
-		"password":     config.IOSSharedSecret,
+		"password":     config.ItunesSharedSecret,
 	})
 	if err != nil {
 		return err
 	}
 
-	resp, err := http.Post("https://sandbox.itunes.apple.com/verifyReceipt", "application/json", bytes.NewBuffer(body))
+	var itunesUrl string
+
+	if config.ItunesEnvironment == "production" {
+		itunesUrl = "https://buy.itunes.apple.com/verifyReceipt"
+	} else {
+		itunesUrl = "https://sandbox.itunes.apple.com/verifyReceipt"
+	}
+
+	resp, err := http.Post(itunesUrl, "application/json", bytes.NewBuffer(body))
 	if err != nil {
 		return err
 	}
@@ -133,7 +141,8 @@ func (acc *SubscriptionAccount) HasActiveSubscription() bool {
 }
 
 type SubscriptionServerConfig struct {
-	IOSSharedSecret string
+	ItunesSharedSecret string `yaml:"itunes_shared_secret"`
+	ItunesEnvironment  string `yaml:"itunes_environment"`
 }
 
 type SubscriptionServer struct {
