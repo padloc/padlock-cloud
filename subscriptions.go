@@ -11,35 +11,32 @@ import "strconv"
 import "errors"
 
 const (
-	ReceiptTypeIOS     = "ios-appstore"
+	ReceiptTypeItunes  = "ios-appstore"
 	ReceiptTypeAndroid = "android-playstore"
 )
 
-type SubscriptionStatus int
-
 const (
-	IOSStatusOK                   = 0
-	IOSStatusInvalidJSON          = 21000
-	IOSStatusInvalidReceipt       = 21002
-	IOSStatusNotAuthenticated     = 21003
-	IOSStatusWrongSecret          = 21004
-	IOSStatusServerUnavailable    = 21005
-	IOSStatusExpired              = 21006
-	IOSStatusWrongEnvironmentProd = 21007
-	IOSStatusWrongEnvironmentTest = 21008
+	ItunesStatusOK                   = 0
+	ItunesStatusInvalidJSON          = 21000
+	ItunesStatusInvalidReceipt       = 21002
+	ItunesStatusNotAuthenticated     = 21003
+	ItunesStatusWrongSecret          = 21004
+	ItunesStatusServerUnavailable    = 21005
+	ItunesStatusExpired              = 21006
+	ItunesStatusWrongEnvironmentProd = 21007
+	ItunesStatusWrongEnvironmentTest = 21008
 )
 
 var ErrInvalidReceipt = errors.New("padlock: invalid receipt")
 
-type IOSSubscription struct {
+type ItunesSubscription struct {
 	Receipt string
 	Expires time.Time
 	Status  int
 }
 
-func (subscr *IOSSubscription) ValidateReceipt(config SubscriptionServerConfig) error {
+func (subscr *ItunesSubscription) ValidateReceipt(config SubscriptionServerConfig) error {
 	jsonStr, _ := json.MarshalIndent(subscr, "", "  ")
-	log.Printf("validating receipt for subscription: \n %s", jsonStr)
 
 	body, err := json.Marshal(map[string]string{
 		"receipt-data": subscr.Receipt,
@@ -82,9 +79,9 @@ func (subscr *IOSSubscription) ValidateReceipt(config SubscriptionServerConfig) 
 	jsonStr, _ = json.MarshalIndent(result, "", "  ")
 	log.Printf("validation result:\n%s", jsonStr)
 
-	if result.Status != IOSStatusOK {
+	if result.Status != ItunesStatusOK {
 		switch result.Status {
-		case IOSStatusInvalidReceipt, IOSStatusNotAuthenticated, IOSStatusExpired:
+		case ItunesStatusInvalidReceipt, ItunesStatusNotAuthenticated, ItunesStatusExpired:
 			return ErrInvalidReceipt
 		default:
 			return errors.New(fmt.Sprintf("Failed to validate receipt, status: %d", result.Status))
@@ -104,8 +101,8 @@ func (subscr *IOSSubscription) ValidateReceipt(config SubscriptionServerConfig) 
 }
 
 type SubscriptionAccount struct {
-	Email           string
-	IOSSubscription *IOSSubscription
+	Email              string
+	ItunesSubscription *ItunesSubscription
 }
 
 // Implements the `Key` method of the `Storable` interface
@@ -124,20 +121,20 @@ func (acc *SubscriptionAccount) Serialize() ([]byte, error) {
 }
 
 func (acc *SubscriptionAccount) UpdateSubscriptions(config SubscriptionServerConfig) {
-	if acc.IOSSubscription != nil && acc.IOSSubscription.Expires.Before(time.Now()) {
+	if acc.ItunesSubscription != nil && acc.ItunesSubscription.Expires.Before(time.Now()) {
 		log.Printf("Subscription expired. Checking for automated renewal.")
-		acc.IOSSubscription.ValidateReceipt(config)
-		jsonStr, _ := json.MarshalIndent(acc.IOSSubscription, "", "  ")
+		acc.ItunesSubscription.ValidateReceipt(config)
+		jsonStr, _ := json.MarshalIndent(acc.ItunesSubscription, "", "  ")
 		log.Printf("Subscription (after update):\n%s", jsonStr)
 	}
 }
 
 func (acc *SubscriptionAccount) HasActiveSubscription() bool {
-	if acc.IOSSubscription == nil {
+	if acc.ItunesSubscription == nil {
 		return false
 	}
 
-	return acc.IOSSubscription != nil && acc.IOSSubscription.Expires.After(time.Now())
+	return acc.ItunesSubscription != nil && acc.ItunesSubscription.Expires.After(time.Now())
 }
 
 type SubscriptionServerConfig struct {
@@ -169,8 +166,8 @@ func (server *SubscriptionServer) ValidateReceipt(w http.ResponseWriter, r *http
 	}
 
 	switch receiptType {
-	case ReceiptTypeIOS:
-		subscr := &IOSSubscription{Receipt: receiptData}
+	case ReceiptTypeItunes:
+		subscr := &ItunesSubscription{Receipt: receiptData}
 		err = subscr.ValidateReceipt(server.SubscriptionServerConfig)
 
 		if err == ErrInvalidReceipt {
@@ -183,7 +180,7 @@ func (server *SubscriptionServer) ValidateReceipt(w http.ResponseWriter, r *http
 			return
 		}
 
-		acc.IOSSubscription = subscr
+		acc.ItunesSubscription = subscr
 	default:
 		http.Error(w, "", http.StatusBadRequest)
 		return
@@ -225,6 +222,9 @@ func (server *SubscriptionServer) CheckSubscription(email string, w http.Respons
 
 func (server *SubscriptionServer) SetupRoutes() {
 	server.HandleFunc("/auth/", func(w http.ResponseWriter, r *http.Request) {
+		// A subscription is required only for creating new accounts (POST method)
+		// Retrieving authentication tokens for existing accounts (PUT) does not
+		// require an active subscription
 		if r.Method == "POST" {
 			email := r.PostFormValue("email")
 			server.CheckSubscription(email, w, r)
