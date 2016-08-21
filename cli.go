@@ -289,6 +289,13 @@ func NewCliApp() *CliApp {
 					EnvVar:      "PC_TLS_KEY",
 					Destination: &config.Server.TLSKey,
 				},
+				cli.StringFlag{
+					Name:        "host-name",
+					Usage:       "Flag for manually setting the host name",
+					Value:       "",
+					EnvVar:      "PC_HOST_NAME",
+					Destination: &config.Server.HostName,
+				},
 			},
 			Action: cliApp.RunServer,
 		},

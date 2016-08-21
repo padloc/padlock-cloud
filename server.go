@@ -143,11 +143,13 @@ type ServerConfig struct {
 	// Path to assets directory; used for loading templates and such
 	AssetsPath string `yaml:"assets_path"`
 	// Port to listen on
-	Port int
+	Port int `yaml:"port"`
 	// Path to TLS certificate
-	TLSCert string
+	TLSCert string `yaml:"tls_cert"`
 	// Path to TLS key file
-	TLSKey string
+	TLSKey string `yaml:"tls_key"`
+	// Host name
+	HostName string `yaml:"host_name"`
 }
 
 // The Server type holds all the contextual data and logic used for running a Padlock Cloud instances
@@ -158,6 +160,14 @@ type Server struct {
 	Storage
 	Templates
 	ServerConfig
+}
+
+func (server *Server) GetHostName(r *http.Request) string {
+	if server.HostName != "" {
+		return fmt.Sprintf("%s:%d", server.HostName, server.Port)
+	} else {
+		return r.Host
+	}
 }
 
 // Retreives Account object from a http.Request object by evaluating the Authorization header and
@@ -264,9 +274,10 @@ func (server *Server) RequestAuthToken(w http.ResponseWriter, r *http.Request, c
 	// Render activation email
 	var buff bytes.Buffer
 	err = server.Templates.ActivateAuthTokenEmail.Execute(&buff, map[string]string{
-		"email":           authRequest.AuthToken.Email,
-		"activation_link": fmt.Sprintf("%s://%s/activate/?v=%d&t=%s", schemeFromRequest(r), r.Host, ApiVersion, authRequest.Token),
-		"conn_id":         authRequest.AuthToken.Id,
+		"email": authRequest.AuthToken.Email,
+		"activation_link": fmt.Sprintf("%s://%s/activate/?v=%d&t=%s", schemeFromRequest(r),
+			server.GetHostName(r), ApiVersion, authRequest.Token),
+		"conn_id": authRequest.AuthToken.Id,
 	})
 	if err != nil {
 		server.HandleError(err, w, r)
@@ -425,8 +436,9 @@ func (server *Server) RequestDeleteStore(w http.ResponseWriter, r *http.Request)
 	// Render confirmation email
 	var buff bytes.Buffer
 	err = server.Templates.DeleteStoreEmail.Execute(&buff, map[string]string{
-		"email":       acc.Email,
-		"delete_link": fmt.Sprintf("%s://%s/deletestore/?v=%d&t=%s", schemeFromRequest(r), r.Host, ApiVersion, deleteRequest.Token),
+		"email": acc.Email,
+		"delete_link": fmt.Sprintf("%s://%s/deletestore/?v=%d&t=%s", schemeFromRequest(r),
+			server.GetHostName(r), ApiVersion, deleteRequest.Token),
 	})
 	if err != nil {
 		server.HandleError(err, w, r)
