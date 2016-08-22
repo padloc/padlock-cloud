@@ -1,4 +1,4 @@
-package main
+package padlockcloud
 
 import "encoding/base64"
 import "crypto/rand"

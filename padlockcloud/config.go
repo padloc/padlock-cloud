@@ -1,4 +1,4 @@
-package main
+package padlockcloud
 
 import "flag"
 import "io/ioutil"

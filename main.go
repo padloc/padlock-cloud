@@ -3,8 +3,10 @@ package main
 import "os"
 import "log"
 
+import "github.com/maklesoft/padlock-cloud/padlockcloud"
+
 func main() {
-	err := NewCliApp().Run(os.Args)
+	err := padlockcloud.NewCliApp().Run(os.Args)
 	if err != nil {
 		log.Fatal(err)
 	}

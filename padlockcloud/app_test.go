@@ -1,4 +1,4 @@
-package main
+package padlockcloud
 
 import "testing"
 import "os"

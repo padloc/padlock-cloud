@@ -1,4 +1,4 @@
-package main
+package padlockcloud
 
 import "net/http"
 import "github.com/rs/cors"
