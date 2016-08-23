@@ -9,7 +9,7 @@ import "time"
 import "strconv"
 import "errors"
 
-import pc "github.com/maklesoft/padlock-cloud"
+import pc "github.com/maklesoft/padlock-cloud/padlockcloud"
 
 const (
 	ReceiptTypeItunes  = "ios-appstore"
@@ -82,13 +82,13 @@ type SubscriptionServerConfig struct {
 type SubscriptionServer struct {
 	*http.ServeMux
 	*pc.Server
-	SubscriptionServerConfig
+	Config *SubscriptionServerConfig
 }
 
 func (server *SubscriptionServer) ValidateItunesReceipt(acc *SubscriptionAccount) error {
 	body, err := json.Marshal(map[string]string{
 		"receipt-data": acc.ItunesSubscription.Receipt,
-		"password":     server.ItunesSharedSecret,
+		"password":     server.Config.ItunesSharedSecret,
 	})
 	if err != nil {
 		return err
@@ -96,7 +96,7 @@ func (server *SubscriptionServer) ValidateItunesReceipt(acc *SubscriptionAccount
 
 	var itunesUrl string
 
-	if server.ItunesEnvironment == "production" {
+	if server.Config.ItunesEnvironment == "production" {
 		itunesUrl = "https://buy.itunes.apple.com/verifyReceipt"
 	} else {
 		itunesUrl = "https://sandbox.itunes.apple.com/verifyReceipt"
@@ -182,7 +182,7 @@ func (server *SubscriptionServer) CheckSubscription(email string, w http.Respons
 	acc := &SubscriptionAccount{Email: email}
 
 	// Load existing data for this subscription account
-	if err := server.Get(acc); err == ErrNotFound {
+	if err := server.Get(acc); err == pc.ErrNotFound {
 		// No subscription account found. Rejecting request
 		http.Error(w, "", http.StatusPaymentRequired)
 	} else if err != nil {
@@ -220,7 +220,7 @@ func (server *SubscriptionServer) ValidateReceipt(w http.ResponseWriter, r *http
 
 	// Load existing account data if there is any. If not, that's fine, one will be created later
 	// if the receipt turns out fine
-	if err := server.Get(acc); err != nil && err != ErrNotFound {
+	if err := server.Get(acc); err != nil && err != pc.ErrNotFound {
 		server.HandleError(err, w, r)
 	}
 
@@ -322,7 +322,7 @@ func (server *SubscriptionServer) ServeHTTP(w http.ResponseWriter, r *http.Reque
 	server.ServeMux.ServeHTTP(w, r)
 }
 
-func NewSubscriptionServer(server *pc.Server, config SubscriptionServerConfig) *SubscriptionServer {
+func NewSubscriptionServer(server *pc.Server, config *SubscriptionServerConfig) *SubscriptionServer {
 	// Initialize server instance
 	subServer := &SubscriptionServer{
 		http.NewServeMux(),
@@ -334,5 +334,5 @@ func NewSubscriptionServer(server *pc.Server, config SubscriptionServerConfig) *
 }
 
 func init() {
-	AddStorable(&SubscriptionAccount{}, "subscription-accounts")
+	pc.AddStorable(&SubscriptionAccount{}, "subscription-accounts")
 }

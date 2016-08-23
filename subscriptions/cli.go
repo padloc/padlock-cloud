@@ -1,17 +1,18 @@
 package main
 
+import "io/ioutil"
+import "errors"
+import "time"
+import "fmt"
+
 import "gopkg.in/yaml.v2"
 import "gopkg.in/urfave/cli.v1"
 
 import pc "github.com/maklesoft/padlock-cloud/padlockcloud"
 
-type CliConfig struct {
-	*SubscriptionsServerConfig `yaml:"subscriptions"`
-}
-
 type CliApp struct {
 	*pc.CliApp
-	*SubscriptionsServerConfig
+	SubscriptionServer *SubscriptionServer
 }
 
 func (cliApp *CliApp) LoadConfigFromFile() error {
@@ -21,16 +22,30 @@ func (cliApp *CliApp) LoadConfigFromFile() error {
 		return err
 	}
 
-	err = yaml.Unmarshal(yamlData, struct{
-		Subscriptions *SubscriptionsServerConfig `yaml:"subscriptions"`
+	err = yaml.Unmarshal(yamlData, struct {
+		Subscriptions *SubscriptionServerConfig `yaml:"subscriptions"`
 	}{
-		cliApp.SubscriptionsServerConfig
+		cliApp.SubscriptionServer.Config,
 	})
 	if err != nil {
 		return err
 	}
 
 	return nil
+}
+
+func (cliApp *CliApp) RunServer(context *cli.Context) error {
+	var err error
+
+	if err = cliApp.Server.Init(); err != nil {
+		return err
+	}
+	// Clean up after method returns (should never happen under normal circumstances but you never know)
+	defer cliApp.Server.CleanUp()
+
+	pc.HandleInterrupt(cliApp.Server.CleanUp)
+
+	return cliApp.ServeHandler(cliApp.SubscriptionServer)
 }
 
 func (cliApp *CliApp) CreateSubscription(context *cli.Context) error {
@@ -68,13 +83,12 @@ func (cliApp *CliApp) CreateSubscription(context *cli.Context) error {
 		return errors.New("Invalid subscription type")
 	}
 
-	storage := &pc.LevelDBStorage{LevelDBConfig: cliApp.Config.LevelDB}
-	if err := storage.Open(); err != nil {
+	if err := cliApp.Storage.Open(); err != nil {
 		return err
 	}
-	defer storage.Close()
+	defer cliApp.Storage.Close()
 
-	if err := storage.Put(acc); err != nil {
+	if err := cliApp.Storage.Put(acc); err != nil {
 		return err
 	}
 
@@ -87,17 +101,16 @@ func (cliApp *CliApp) DisplaySubscriptionAccount(context *cli.Context) error {
 		return errors.New("Please provide an email address!")
 	}
 
-	storage := &pc.LevelDBStorage{LevelDBConfig: cliApp.Config.LevelDB}
-	if err := storage.Open(); err != nil {
+	if err := cliApp.Storage.Open(); err != nil {
 		return err
 	}
-	defer storage.Close()
+	defer cliApp.Storage.Close()
 
 	acc := &SubscriptionAccount{
 		Email: email,
 	}
 
-	if err := storage.Get(acc); err != nil {
+	if err := cliApp.Storage.Get(acc); err != nil {
 		return err
 	}
 
@@ -112,15 +125,17 @@ func (cliApp *CliApp) DisplaySubscriptionAccount(context *cli.Context) error {
 }
 
 func NewCliApp() *CliApp {
-	config := &SubscriptionsServerConfig{}
+	pcCli := pc.NewCliApp()
+	config := &SubscriptionServerConfig{}
+	server := NewSubscriptionServer(pcCli.Server, config)
 	app := &CliApp{
-		pc.NewCliApp(),
-		config,
+		pcCli,
+		server,
 	}
 
-	runserverCmd := app.Commands[0]
+	runserverCmd := &app.Commands[0]
 
-	append(runserverCmd.Flags, []cli.Flag {
+	runserverCmd.Flags = append(runserverCmd.Flags, []cli.Flag{
 		cli.StringFlag{
 			Name:        "itunes-shared-secret",
 			Usage:       "'Shared Secret' used for authenticating with itunes",
@@ -135,9 +150,11 @@ func NewCliApp() *CliApp {
 			EnvVar:      "PC_ITUNES_ENVIRONMENT",
 			Destination: &config.ItunesEnvironment,
 		},
-	}
+	}...)
 
-	append(app.Commands, []cli.Command {
+	runserverCmd.Action = app.RunServer
+
+	app.Commands = append(app.Commands, []cli.Command{
 		{
 			Name:  "subscriptions",
 			Usage: "Commands for managing subscriptions",
@@ -145,7 +162,7 @@ func NewCliApp() *CliApp {
 				{
 					Name:   "update",
 					Usage:  "Create subscription for a given account",
-					Action: cliApp.CreateSubscription,
+					Action: app.CreateSubscription,
 					Flags: []cli.Flag{
 						cli.StringFlag{
 							Name:  "account",
@@ -167,21 +184,23 @@ func NewCliApp() *CliApp {
 				{
 					Name:   "displayaccount",
 					Usage:  "Display a given subscription account",
-					Action: cliApp.DisplaySubscriptionAccount,
+					Action: app.DisplaySubscriptionAccount,
 				},
 			},
 		},
-	}
+	}...)
 
 	before := app.Before
 	app.Before = func(context *cli.Context) error {
 		before(context)
 
-		if cliApp.ConfigPath != "" {
+		if app.ConfigPath != "" {
 			// Replace original config object to prevent other flags from being applied
-			cliApp.SubscriptionServerConfig = &SubscriptionServerConfig{}
+			app.SubscriptionServer.Config = &SubscriptionServerConfig{}
 			return app.LoadConfigFromFile()
 		}
 		return nil
 	}
+
+	return app
 }
