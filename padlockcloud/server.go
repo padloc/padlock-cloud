@@ -10,6 +10,7 @@ import "errors"
 import "bytes"
 import "time"
 import "strconv"
+import "path/filepath"
 
 const (
 	ApiVersion = 1
@@ -158,8 +159,8 @@ type Server struct {
 	*http.ServeMux
 	Sender
 	Storage
-	Templates
-	ServerConfig
+	*Templates
+	*ServerConfig
 }
 
 func (server *Server) GetHostName(r *http.Request) string {
@@ -616,10 +617,24 @@ func (server *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // Initialize Server with dependencies and configuration
 func (server *Server) Init() error {
+	var err error
+
 	server.SetupRoutes()
 
+	if server.Templates == nil {
+		// Load templates from assets directory
+		server.Templates, err = LoadTemplates(filepath.Join(server.AssetsPath, "templates"))
+		if err != nil {
+			return err
+		}
+	}
+
 	// Open storage
-	return server.Storage.Open()
+	if err = server.Storage.Open(); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (server *Server) CleanUp() error {
@@ -627,16 +642,15 @@ func (server *Server) CleanUp() error {
 }
 
 // Instantiates and initializes a new Server and returns a reference to it
-func NewServer(storage Storage, sender Sender, templates Templates, config ServerConfig) (*Server, error) {
+func NewServer(storage Storage, sender Sender, config *ServerConfig) *Server {
 	server := &Server{
 		http.NewServeMux(),
 		sender,
 		storage,
-		templates,
+		nil,
 		config,
 	}
-	err := server.Init()
-	return server, err
+	return server
 }
 
 func init() {

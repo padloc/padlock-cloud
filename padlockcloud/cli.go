@@ -28,6 +28,22 @@ func loadConfigFromFile(cliApp *CliApp) error {
 	return nil
 }
 
+func HandleInterrupt(cb func() error) {
+	// Handle INTERRUPT and KILL signals
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, os.Kill)
+	go func() {
+		s := <-c
+		log.Printf("Received %v signal. Exiting...", s)
+		err := cb()
+		if err != nil {
+			os.Exit(1)
+		} else {
+			os.Exit(0)
+		}
+	}()
+}
+
 type CliConfig struct {
 	Server  ServerConfig  `yaml:"server"`
 	LevelDB LevelDBConfig `yaml:"leveldb"`
@@ -36,36 +52,17 @@ type CliConfig struct {
 
 type CliApp struct {
 	*cli.App
+	Storage
+	*Server
 	Config     *CliConfig
 	ConfigPath string
 }
 
-func (cliApp *CliApp) RunServer(context *cli.Context) error {
+func (cliApp *CliApp) ServeHandler(handler http.Handler) error {
 	var err error
 
-	// Load templates from assets directory
-	templates, err := LoadTemplates(filepath.Join(cliApp.Config.Server.AssetsPath, "templates"))
-
-	if err != nil {
-		log.Printf("Failed to load Template! Did you specify the correct assets path? (Currently \"%s\")",
-			cliApp.Config.Server.AssetsPath)
-		return err
-	}
-
-	// Initialize app instance
-	app, err := NewServer(
-		&LevelDBStorage{LevelDBConfig: cliApp.Config.LevelDB},
-		&EmailSender{cliApp.Config.Email},
-		*templates,
-		cliApp.Config.Server,
-	)
-
-	if err != nil {
-		return err
-	}
-
 	// Add rate limiting middleWare
-	handler := RateLimit(app, map[Route]RateQuota{
+	handler = RateLimit(handler, map[Route]RateQuota{
 		Route{"POST", "/auth/"}:    RateQuota{PerMin(1), 0},
 		Route{"PUT", "/auth/"}:     RateQuota{PerMin(1), 0},
 		Route{"DELETE", "/store/"}: RateQuota{PerMin(1), 0},
@@ -73,19 +70,6 @@ func (cliApp *CliApp) RunServer(context *cli.Context) error {
 
 	// Add CORS middleware
 	handler = Cors(handler)
-
-	// Clean up after method returns (should never happen under normal circumstances but you never know)
-	defer app.CleanUp()
-
-	// Handle INTERRUPT and KILL signals
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, os.Kill)
-	go func() {
-		s := <-c
-		log.Printf("Received %v signal. Exiting...", s)
-		app.CleanUp()
-		os.Exit(0)
-	}()
 
 	port := cliApp.Config.Server.Port
 	tlsCert := cliApp.Config.Server.TLSCert
@@ -104,17 +88,33 @@ func (cliApp *CliApp) RunServer(context *cli.Context) error {
 	return nil
 }
 
-func (cliApp *CliApp) ListAccounts(context *cli.Context) error {
-	storage := &LevelDBStorage{LevelDBConfig: cliApp.Config.LevelDB}
-	if err := storage.Open(); err != nil {
+func (cliApp *CliApp) RunServer(context *cli.Context) error {
+	var err error
+
+	if err = cliApp.Server.Init(); err != nil {
 		return err
 	}
-	defer storage.Close()
+
+	// Clean up after method returns (should never happen under normal circumstances but you never know)
+	defer cliApp.Server.CleanUp()
+
+	HandleInterrupt(cliApp.Server.CleanUp)
+
+	return cliApp.ServeHandler(cliApp.Server)
+}
+
+func (cliApp *CliApp) ListAccounts(context *cli.Context) error {
+	if err := cliApp.Storage.Open(); err != nil {
+		return err
+	}
+	defer cliApp.Storage.Close()
+
 	var acc *Account
-	accs, err := storage.List(acc)
+	accs, err := cliApp.Storage.List(acc)
 	if err != nil {
 		return err
 	}
+
 	if len(accs) == 0 {
 		log.Println("No existing accounts!")
 	} else {
@@ -132,15 +132,16 @@ func (cliApp *CliApp) CreateAccount(context *cli.Context) error {
 	if email == "" {
 		return errors.New("Please provide an email address!")
 	}
-	storage := &LevelDBStorage{LevelDBConfig: cliApp.Config.LevelDB}
-	if err := storage.Open(); err != nil {
-		return err
-	}
-	defer storage.Close()
 	acc := &Account{
 		Email: email,
 	}
-	if err := storage.Put(acc); err != nil {
+
+	if err := cliApp.Storage.Open(); err != nil {
+		return err
+	}
+	defer cliApp.Storage.Close()
+
+	if err := cliApp.Storage.Put(acc); err != nil {
 		return err
 	}
 	return nil
@@ -151,15 +152,16 @@ func (cliApp *CliApp) DisplayAccount(context *cli.Context) error {
 	if email == "" {
 		return errors.New("Please provide an email address!")
 	}
-	storage := &LevelDBStorage{LevelDBConfig: cliApp.Config.LevelDB}
-	if err := storage.Open(); err != nil {
-		return err
-	}
-	defer storage.Close()
 	acc := &Account{
 		Email: email,
 	}
-	if err := storage.Get(acc); err != nil {
+
+	if err := cliApp.Storage.Open(); err != nil {
+		return err
+	}
+	defer cliApp.Storage.Close()
+
+	if err := cliApp.Storage.Get(acc); err != nil {
 		return err
 	}
 
@@ -178,21 +180,29 @@ func (cliApp *CliApp) DeleteAccount(context *cli.Context) error {
 	if email == "" {
 		return errors.New("Please provide an email address!")
 	}
-	storage := LevelDBStorage{LevelDBConfig: cliApp.Config.LevelDB}
-	if err := storage.Open(); err != nil {
-		log.Fatal(err)
-	}
-	defer storage.Close()
 	acc := &Account{Email: email}
 
-	return storage.Delete(acc)
+	if err := cliApp.Storage.Open(); err != nil {
+		return err
+	}
+	defer cliApp.Storage.Close()
+
+	return cliApp.Storage.Delete(acc)
 }
 
 func NewCliApp() *CliApp {
 	config := CliConfig{}
+	storage := &LevelDBStorage{LevelDBConfig: &config.LevelDB}
+	server := NewServer(
+		storage,
+		&EmailSender{&config.Email},
+		&config.Server,
+	)
 	cliApp := &CliApp{
-		App:    cli.NewApp(),
-		Config: &config,
+		App:     cli.NewApp(),
+		Storage: storage,
+		Server:  server,
+		Config:  &config,
 	}
 	cliApp.Name = "padlock-cloud"
 	cliApp.Version = Version
@@ -208,7 +218,7 @@ func NewCliApp() *CliApp {
 		},
 		cli.StringFlag{
 			Name:        "db-path",
-			Value:       "",
+			Value:       "db",
 			Usage:       "Path to LevelDB database",
 			EnvVar:      "PC_LEVELDB_PATH",
 			Destination: &config.LevelDB.Path,

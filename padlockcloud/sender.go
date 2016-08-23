@@ -22,7 +22,7 @@ type EmailConfig struct {
 
 // EmailSender implements the `Sender` interface for emails
 type EmailSender struct {
-	EmailConfig
+	*EmailConfig
 }
 
 // Attempts to send an email to a given receiver. Through `smpt.SendMail`

@@ -59,7 +59,7 @@ type LevelDBConfig struct {
 
 // LevelDB implementation of the `Storage` interface
 type LevelDBStorage struct {
-	LevelDBConfig
+	*LevelDBConfig
 	// Map of `leveldb.DB` instances associated with different `Storable` types
 	stores map[reflect.Type]*leveldb.DB
 }
