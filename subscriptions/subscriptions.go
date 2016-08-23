@@ -9,6 +9,8 @@ import "time"
 import "strconv"
 import "errors"
 
+import pc "github.com/maklesoft/padlock-cloud"
+
 const (
 	ReceiptTypeItunes  = "ios-appstore"
 	ReceiptTypeAndroid = "android-playstore"
@@ -79,7 +81,7 @@ type SubscriptionServerConfig struct {
 
 type SubscriptionServer struct {
 	*http.ServeMux
-	*Server
+	*pc.Server
 	SubscriptionServerConfig
 }
 
@@ -320,7 +322,7 @@ func (server *SubscriptionServer) ServeHTTP(w http.ResponseWriter, r *http.Reque
 	server.ServeMux.ServeHTTP(w, r)
 }
 
-func NewSubscriptionServer(server *Server, config SubscriptionServerConfig) *SubscriptionServer {
+func NewSubscriptionServer(server *pc.Server, config SubscriptionServerConfig) *SubscriptionServer {
 	// Initialize server instance
 	subServer := &SubscriptionServer{
 		http.NewServeMux(),
