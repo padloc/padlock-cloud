@@ -1,8 +1,8 @@
 package padlockcloud
 
 import "os"
-import "log"
 import "fmt"
+import "log"
 import "net/http"
 import "os/signal"
 import "path/filepath"
@@ -13,23 +13,8 @@ import "gopkg.in/urfave/cli.v1"
 
 var gopath = os.Getenv("GOPATH")
 
-func HandleInterrupt(cb func() error) {
-	// Handle INTERRUPT and KILL signals
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, os.Kill)
-	go func() {
-		s := <-c
-		log.Printf("Received %v signal. Exiting...", s)
-		err := cb()
-		if err != nil {
-			os.Exit(1)
-		} else {
-			os.Exit(0)
-		}
-	}()
-}
-
 type CliConfig struct {
+	Log     LogConfig     `yaml:"log"`
 	Server  ServerConfig  `yaml:"server"`
 	LevelDB LevelDBConfig `yaml:"leveldb"`
 	Email   EmailConfig   `yaml:"email"`
@@ -52,6 +37,7 @@ func (c *CliConfig) LoadFromFile(path string) error {
 
 type CliApp struct {
 	*cli.App
+	*Log
 	Storage    *LevelDBStorage
 	Email      *EmailSender
 	Server     *Server
@@ -61,9 +47,26 @@ type CliApp struct {
 
 func (cliApp *CliApp) InitConfig() {
 	cliApp.Config = &CliConfig{}
+	cliApp.Log.Config = &cliApp.Config.Log
 	cliApp.Storage.Config = &cliApp.Config.LevelDB
 	cliApp.Email.Config = &cliApp.Config.Email
 	cliApp.Server.Config = &cliApp.Config.Server
+}
+
+func (cliApp *CliApp) HandleInterrupt(cb func() error) {
+	// Handle INTERRUPT and KILL signals
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, os.Kill)
+	go func() {
+		s := <-c
+		cliApp.Info.Printf("Received %v signal. Exiting...", s)
+		err := cb()
+		if err != nil {
+			os.Exit(1)
+		} else {
+			os.Exit(0)
+		}
+	}()
 }
 
 func (cliApp *CliApp) ServeHandler(handler http.Handler) error {
@@ -83,7 +86,7 @@ func (cliApp *CliApp) ServeHandler(handler http.Handler) error {
 	tlsCert := cliApp.Config.Server.TLSCert
 	tlsKey := cliApp.Config.Server.TLSKey
 	// Start server
-	log.Printf("Starting server on port %v", port)
+	cliApp.Info.Printf("Starting server on port %v", port)
 	if tlsCert != "" && tlsKey != "" {
 		err = http.ListenAndServeTLS(fmt.Sprintf(":%d", port), tlsCert, tlsKey, handler)
 	} else {
@@ -106,7 +109,7 @@ func (cliApp *CliApp) RunServer(context *cli.Context) error {
 	// Clean up after method returns (should never happen under normal circumstances but you never know)
 	defer cliApp.Server.CleanUp()
 
-	HandleInterrupt(cliApp.Server.CleanUp)
+	cliApp.HandleInterrupt(cliApp.Server.CleanUp)
 
 	return cliApp.ServeHandler(cliApp.Server)
 }
@@ -124,7 +127,7 @@ func (cliApp *CliApp) ListAccounts(context *cli.Context) error {
 	}
 
 	if len(accs) == 0 {
-		log.Println("No existing accounts!")
+		fmt.Println("No existing accounts!")
 	} else {
 		output := ""
 		for _, email := range accs {
@@ -199,15 +202,18 @@ func (cliApp *CliApp) DeleteAccount(context *cli.Context) error {
 }
 
 func NewCliApp() *CliApp {
+	logger := &Log{}
 	storage := &LevelDBStorage{}
 	email := &EmailSender{}
 	server := NewServer(
+		logger,
 		storage,
 		email,
 		nil,
 	)
 	cliApp := &CliApp{
 		App:     cli.NewApp(),
+		Log:     logger,
 		Storage: storage,
 		Email:   email,
 		Server:  server,
@@ -226,6 +232,20 @@ func NewCliApp() *CliApp {
 			Usage:       "Path to configuration file",
 			EnvVar:      "PC_CONFIG_PATH",
 			Destination: &cliApp.ConfigPath,
+		},
+		cli.StringFlag{
+			Name:        "log-file",
+			Value:       "",
+			Usage:       "Path to log file",
+			EnvVar:      "PC_LOG_FILE",
+			Destination: &config.Log.LogFile,
+		},
+		cli.StringFlag{
+			Name:        "err-file",
+			Value:       "",
+			Usage:       "Path to error log file",
+			EnvVar:      "PC_ERR_FILE",
+			Destination: &config.Log.ErrFile,
 		},
 		cli.StringFlag{
 			Name:        "db-path",
@@ -351,11 +371,21 @@ func NewCliApp() *CliApp {
 	cliApp.Before = func(context *cli.Context) error {
 		if cliApp.ConfigPath != "" {
 			absPath, _ := filepath.Abs(cliApp.ConfigPath)
+
 			log.Printf("Loading config from %s - all other flags and environment variables will be ignored!", absPath)
 			// Replace original config object to prevent flags from being applied
 			cliApp.InitConfig()
-			return cliApp.Config.LoadFromFile(cliApp.ConfigPath)
+			err := cliApp.Config.LoadFromFile(cliApp.ConfigPath)
+			if err != nil {
+				return err
+			}
 		}
+
+		// Reinitializing log since log config may have changed
+		if err := cliApp.Log.Init(); err != nil {
+			return err
+		}
+
 		return nil
 	}
 

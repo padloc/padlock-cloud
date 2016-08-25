@@ -3,7 +3,6 @@ package padlockcloud
 import "net/http"
 import "io/ioutil"
 import "fmt"
-import "log"
 import "encoding/json"
 import "regexp"
 import "errors"
@@ -157,6 +156,7 @@ type ServerConfig struct {
 // Users should use the `NewServer` function to instantiate an `Server` instance
 type Server struct {
 	*http.ServeMux
+	*Log
 	Storage   Storage
 	Sender    Sender
 	Templates *Templates
@@ -227,7 +227,7 @@ func (server *Server) HandleError(e error, w http.ResponseWriter, r *http.Reques
 		{
 			http.Error(w, "", http.StatusInternalServerError)
 
-			log.Printf("Internal Server Error: %v", e)
+			server.Error.Printf("Internal Server Error: %v", e)
 
 			if server.Config.NotifyEmail != "" {
 				go server.Sender.Send(server.Config.NotifyEmail, "Padlock Cloud Error Notification",
@@ -579,7 +579,7 @@ func (server *Server) DeprecatedVersion(w http.ResponseWriter, r *http.Request) 
 
 func (server *Server) HandlePanic(w http.ResponseWriter, r *http.Request) {
 	if e := recover(); e != nil {
-		log.Printf("Recovered from panic: %v", e)
+		server.Error.Printf("Recovered from panic: %v", e)
 
 		server.HandleError(ErrPanic, w, r)
 
@@ -642,9 +642,10 @@ func (server *Server) CleanUp() error {
 }
 
 // Instantiates and initializes a new Server and returns a reference to it
-func NewServer(storage Storage, sender Sender, config *ServerConfig) *Server {
+func NewServer(log *Log, storage Storage, sender Sender, config *ServerConfig) *Server {
 	server := &Server{
 		http.NewServeMux(),
+		log,
 		storage,
 		sender,
 		nil,
