@@ -10,28 +10,35 @@ import "gopkg.in/urfave/cli.v1"
 
 import pc "github.com/maklesoft/padlock-cloud/padlockcloud"
 
-type CliApp struct {
-	*pc.CliApp
-	SubscriptionServer *SubscriptionServer
+type CliConfig struct {
+	Itunes ItunesConfig `yaml:"itunes"`
 }
 
-func (cliApp *CliApp) LoadConfigFromFile() error {
+func (c *CliConfig) LoadFromFile(path string) error {
 	// load config file
-	yamlData, err := ioutil.ReadFile(cliApp.ConfigPath)
+	yamlData, err := ioutil.ReadFile(path)
 	if err != nil {
 		return err
 	}
 
-	err = yaml.Unmarshal(yamlData, struct {
-		Subscriptions *SubscriptionServerConfig `yaml:"subscriptions"`
-	}{
-		cliApp.SubscriptionServer.Config,
-	})
+	err = yaml.Unmarshal(yamlData, c)
 	if err != nil {
 		return err
 	}
 
 	return nil
+}
+
+type CliApp struct {
+	*pc.CliApp
+	SubscriptionServer *Server
+	Itunes             *ItunesServer
+	Config             *CliConfig
+}
+
+func (cliApp *CliApp) InitConfig() {
+	cliApp.Config = &CliConfig{}
+	cliApp.Itunes.Config = &cliApp.Config.Itunes
 }
 
 func (cliApp *CliApp) RunServer(context *cli.Context) error {
@@ -126,32 +133,35 @@ func (cliApp *CliApp) DisplaySubscriptionAccount(context *cli.Context) error {
 
 func NewCliApp() *CliApp {
 	pcCli := pc.NewCliApp()
-	config := &SubscriptionServerConfig{}
-	server := NewSubscriptionServer(pcCli.Server, config)
+	itunes := &ItunesServer{}
+	server := NewServer(pcCli.Server, itunes)
 	app := &CliApp{
 		pcCli,
 		server,
+		itunes,
+		nil,
 	}
+	app.InitConfig()
+	config := app.Config
 
-	runserverCmd := &app.Commands[0]
-
-	runserverCmd.Flags = append(runserverCmd.Flags, []cli.Flag{
+	app.Flags = append(app.Flags, []cli.Flag{
 		cli.StringFlag{
 			Name:        "itunes-shared-secret",
 			Usage:       "'Shared Secret' used for authenticating with itunes",
 			Value:       "",
 			EnvVar:      "PC_ITUNES_SHARED_SECRET",
-			Destination: &config.ItunesSharedSecret,
+			Destination: &config.Itunes.SharedSecret,
 		},
 		cli.StringFlag{
 			Name:        "itunes-environment",
 			Usage:       "Determines which itunes server to send requests to. Can be 'sandbox' (default) or 'production'.",
 			Value:       "sandbox",
 			EnvVar:      "PC_ITUNES_ENVIRONMENT",
-			Destination: &config.ItunesEnvironment,
+			Destination: &config.Itunes.Environment,
 		},
 	}...)
 
+	runserverCmd := &app.Commands[0]
 	runserverCmd.Action = app.RunServer
 
 	app.Commands = append(app.Commands, []cli.Command{
@@ -195,9 +205,9 @@ func NewCliApp() *CliApp {
 		before(context)
 
 		if app.ConfigPath != "" {
-			// Replace original config object to prevent other flags from being applied
-			app.SubscriptionServer.Config = &SubscriptionServerConfig{}
-			return app.LoadConfigFromFile()
+			// Replace original config object to prevent flags from being applied
+			app.InitConfig()
+			return app.Config.LoadFromFile(app.ConfigPath)
 		}
 		return nil
 	}

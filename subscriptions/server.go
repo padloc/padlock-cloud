@@ -1,158 +1,28 @@
 package main
 
 import "net/http"
-import "fmt"
-import "encoding/json"
-import "bytes"
-import "io/ioutil"
-import "time"
-import "strconv"
 import "errors"
 
 import pc "github.com/maklesoft/padlock-cloud/padlockcloud"
 
-const (
-	ReceiptTypeItunes  = "ios-appstore"
-	ReceiptTypeAndroid = "android-playstore"
-)
-
-const (
-	ItunesStatusOK                   = 0
-	ItunesStatusInvalidJSON          = 21000
-	ItunesStatusInvalidReceipt       = 21002
-	ItunesStatusNotAuthenticated     = 21003
-	ItunesStatusWrongSecret          = 21004
-	ItunesStatusServerUnavailable    = 21005
-	ItunesStatusExpired              = 21006
-	ItunesStatusWrongEnvironmentProd = 21007
-	ItunesStatusWrongEnvironmentTest = 21008
-)
-
 var ErrInvalidReceipt = errors.New("padlock: invalid receipt")
 
-type ItunesSubscription struct {
-	Receipt string
-	Expires time.Time
-	Status  int
-}
-
-func (s *ItunesSubscription) Active() bool {
-	return s.Expires.After(time.Now())
-}
-
-type FreeSubscription struct {
-	Expires time.Time
-}
-
-func (s *FreeSubscription) Active() bool {
-	return s.Expires.After(time.Now())
-}
-
-type SubscriptionAccount struct {
-	Email              string
-	ItunesSubscription *ItunesSubscription
-	FreeSubscription   *FreeSubscription
-}
-
-// Implements the `Key` method of the `Storable` interface
-func (acc *SubscriptionAccount) Key() []byte {
-	return []byte(acc.Email)
-}
-
-// Implementation of the `Storable.Deserialize` method
-func (acc *SubscriptionAccount) Deserialize(data []byte) error {
-	return json.Unmarshal(data, acc)
-}
-
-// Implementation of the `Storable.Serialize` method
-func (acc *SubscriptionAccount) Serialize() ([]byte, error) {
-	return json.Marshal(acc)
-}
-
-func (acc *SubscriptionAccount) HasActiveSubscription() bool {
-	return (acc.FreeSubscription != nil && acc.FreeSubscription.Active()) ||
-		(acc.ItunesSubscription != nil && acc.ItunesSubscription.Active())
-}
-
-type SubscriptionServerConfig struct {
-	ItunesSharedSecret string `yaml:"itunes_shared_secret"`
-	ItunesEnvironment  string `yaml:"itunes_environment"`
-}
-
-type SubscriptionServer struct {
+type Server struct {
 	*http.ServeMux
 	*pc.Server
-	Config *SubscriptionServerConfig
+	Itunes ItunesInterface
 }
 
-func (server *SubscriptionServer) ValidateItunesReceipt(acc *SubscriptionAccount) error {
-	body, err := json.Marshal(map[string]string{
-		"receipt-data": acc.ItunesSubscription.Receipt,
-		"password":     server.Config.ItunesSharedSecret,
-	})
-	if err != nil {
-		return err
-	}
-
-	var itunesUrl string
-
-	if server.Config.ItunesEnvironment == "production" {
-		itunesUrl = "https://buy.itunes.apple.com/verifyReceipt"
-	} else {
-		itunesUrl = "https://sandbox.itunes.apple.com/verifyReceipt"
-	}
-
-	resp, err := http.Post(itunesUrl, "application/json", bytes.NewBuffer(body))
-	if err != nil {
-		return err
-	}
-
-	raw, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return err
-	}
-
-	result := &struct {
-		Status            int `json:"status"`
-		LatestReceiptInfo struct {
-			Expires string `json:"expires_date"`
-		} `json:"latest_receipt_info"`
-		LatestReceipt string `json:"latest_receipt"`
-	}{}
-	err = json.Unmarshal(raw, result)
-	if err != nil {
-		return err
-	}
-
-	if result.Status != ItunesStatusOK {
-		switch result.Status {
-		case ItunesStatusInvalidReceipt, ItunesStatusNotAuthenticated, ItunesStatusExpired:
-			return ErrInvalidReceipt
-		default:
-			return errors.New(fmt.Sprintf("Failed to validate receipt, status: %d", result.Status))
-		}
-	}
-
-	ts, err := strconv.Atoi(result.LatestReceiptInfo.Expires)
-	if err != nil {
-		return err
-	}
-
-	acc.ItunesSubscription.Status = result.Status
-	acc.ItunesSubscription.Expires = time.Unix(0, int64(ts)*1000000)
-	acc.ItunesSubscription.Receipt = result.LatestReceipt
-
-	if err := server.Put(acc); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (server *SubscriptionServer) UpdateSubscriptionsForAccount(acc *SubscriptionAccount) error {
+func (server *Server) UpdateSubscriptionsForAccount(acc *SubscriptionAccount) error {
 	if acc.ItunesSubscription != nil {
 		// Revalidate itunes receipt to see if the subscription has been renewed
-		if err := server.ValidateItunesReceipt(acc); err != nil {
+		subscription, err := server.Itunes.ValidateReceipt(acc.ItunesSubscription.Receipt)
+		if err != nil {
+			return err
+		}
+
+		acc.ItunesSubscription = subscription
+		if err := server.Put(acc); err != nil {
 			return err
 		}
 
@@ -165,7 +35,7 @@ func (server *SubscriptionServer) UpdateSubscriptionsForAccount(acc *Subscriptio
 	return nil
 }
 
-func (server *SubscriptionServer) CheckSubscriptionsForAccount(acc *SubscriptionAccount) (bool, error) {
+func (server *Server) CheckSubscriptionsForAccount(acc *SubscriptionAccount) (bool, error) {
 	if acc.HasActiveSubscription() {
 		return true, nil
 	}
@@ -177,7 +47,7 @@ func (server *SubscriptionServer) CheckSubscriptionsForAccount(acc *Subscription
 	return acc.HasActiveSubscription(), nil
 }
 
-func (server *SubscriptionServer) CheckSubscription(email string, w http.ResponseWriter, r *http.Request) {
+func (server *Server) CheckSubscription(email string, w http.ResponseWriter, r *http.Request) {
 	// Get subscription account for this email
 	acc := &SubscriptionAccount{Email: email}
 
@@ -206,7 +76,7 @@ func (server *SubscriptionServer) CheckSubscription(email string, w http.Respons
 	}
 }
 
-func (server *SubscriptionServer) ValidateReceipt(w http.ResponseWriter, r *http.Request) {
+func (server *Server) ValidateReceipt(w http.ResponseWriter, r *http.Request) {
 	receiptType := r.PostFormValue("type")
 	receiptData := r.PostFormValue("receipt")
 	email := r.PostFormValue("email")
@@ -226,15 +96,22 @@ func (server *SubscriptionServer) ValidateReceipt(w http.ResponseWriter, r *http
 
 	switch receiptType {
 	case ReceiptTypeItunes:
-		acc.ItunesSubscription = &ItunesSubscription{Receipt: receiptData}
-		err := server.ValidateItunesReceipt(acc)
-
-		if err == ErrInvalidReceipt {
+		// Validate receipt
+		subscription, err := server.Itunes.ValidateReceipt(receiptData)
+		// If the receipt is invalid or the subcription expired, return the appropriate error
+		if err == ErrInvalidReceipt || subscription.Status == ItunesStatusExpired {
 			http.Error(w, "{\"error\": \"invalid_receipt\"}", http.StatusBadRequest)
 			return
 		}
 
 		if err != nil {
+			server.HandleError(err, w, r)
+			return
+		}
+
+		// Save the subscription with the corresponding account
+		acc.ItunesSubscription = subscription
+		if err := server.Put(acc); err != nil {
 			server.HandleError(err, w, r)
 			return
 		}
@@ -246,7 +123,7 @@ func (server *SubscriptionServer) ValidateReceipt(w http.ResponseWriter, r *http
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (server *SubscriptionServer) SetupRoutes() {
+func (server *Server) SetupRoutes() {
 	server.HandleFunc("/auth/", func(w http.ResponseWriter, r *http.Request) {
 		// A subscription is required only for creating new accounts (POST method)
 		// Retrieving authentication tokens for existing accounts (PUT) does not
@@ -300,11 +177,11 @@ func (server *SubscriptionServer) SetupRoutes() {
 	server.Handle("/", server.Server)
 }
 
-func (server *SubscriptionServer) Init() {
+func (server *Server) Init() {
 	server.SetupRoutes()
 }
 
-func (server *SubscriptionServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (server *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer server.HandlePanic(w, r)
 
 	if server.CheckVersion(w, r) {
@@ -322,15 +199,15 @@ func (server *SubscriptionServer) ServeHTTP(w http.ResponseWriter, r *http.Reque
 	server.ServeMux.ServeHTTP(w, r)
 }
 
-func NewSubscriptionServer(server *pc.Server, config *SubscriptionServerConfig) *SubscriptionServer {
+func NewServer(pcServer *pc.Server, itunes ItunesInterface) *Server {
 	// Initialize server instance
-	subServer := &SubscriptionServer{
+	server := &Server{
 		http.NewServeMux(),
-		server,
-		config,
+		pcServer,
+		itunes,
 	}
-	subServer.Init()
-	return subServer
+	server.Init()
+	return server
 }
 
 func init() {
