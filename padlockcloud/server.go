@@ -157,10 +157,10 @@ type ServerConfig struct {
 // Users should use the `NewServer` function to instantiate an `Server` instance
 type Server struct {
 	*http.ServeMux
-	Sender
-	Storage
-	*Templates
-	Config *ServerConfig
+	Storage   Storage
+	Sender    Sender
+	Templates *Templates
+	Config    *ServerConfig
 }
 
 func (server *Server) GetHostName(r *http.Request) string {
@@ -183,7 +183,7 @@ func (server *Server) AccountFromRequest(r *http.Request) (*Account, error) {
 	acc := &Account{Email: email}
 
 	// Fetch account for the given email address
-	err := server.Get(acc)
+	err := server.Storage.Get(acc)
 	if err != nil {
 		return nil, ErrNotAuthenticated
 	}
@@ -194,7 +194,7 @@ func (server *Server) AccountFromRequest(r *http.Request) (*Account, error) {
 	}
 
 	// Save account info to persist last used data for auth tokens
-	server.Put(acc)
+	server.Storage.Put(acc)
 
 	return acc, nil
 }
@@ -230,7 +230,7 @@ func (server *Server) HandleError(e error, w http.ResponseWriter, r *http.Reques
 			log.Printf("Internal Server Error: %v", e)
 
 			if server.Config.NotifyEmail != "" {
-				go server.Send(server.Config.NotifyEmail, "Padlock Cloud Error Notification",
+				go server.Sender.Send(server.Config.NotifyEmail, "Padlock Cloud Error Notification",
 					fmt.Sprintf("Internal server error: %v\nRequest: %v", e, r))
 			}
 		}
@@ -253,7 +253,7 @@ func (server *Server) RequestAuthToken(w http.ResponseWriter, r *http.Request, c
 	// If the client does not explicitly state that the server should create a new account for this email
 	// address in case it does not exist, we have to check if an account exists first
 	if !create {
-		err := server.Get(&Account{Email: email})
+		err := server.Storage.Get(&Account{Email: email})
 		if err != nil {
 			server.HandleError(err, w, r)
 			return
@@ -266,7 +266,7 @@ func (server *Server) RequestAuthToken(w http.ResponseWriter, r *http.Request, c
 	}
 
 	// Save key-token pair to database for activating it later in a separate request
-	err = server.Put(authRequest)
+	err = server.Storage.Put(authRequest)
 	if err != nil {
 		server.HandleError(err, w, r)
 		return
@@ -287,7 +287,7 @@ func (server *Server) RequestAuthToken(w http.ResponseWriter, r *http.Request, c
 	body := buff.String()
 
 	// Send email with activation link
-	go server.Send(email, "Connect to Padlock Cloud", body)
+	go server.Sender.Send(email, "Connect to Padlock Cloud", body)
 
 	resp, err := json.Marshal(map[string]string{
 		"id":    authRequest.AuthToken.Id,
@@ -316,7 +316,7 @@ func (server *Server) ActivateAuthToken(w http.ResponseWriter, r *http.Request) 
 	// Let's check if an unactivate api key exists for this token. If not,
 	// the token is not valid
 	authRequest := &AuthRequest{Token: token}
-	err = server.Get(authRequest)
+	err = server.Storage.Get(authRequest)
 	if err != nil {
 		server.HandleError(err, w, r)
 		return
@@ -327,7 +327,7 @@ func (server *Server) ActivateAuthToken(w http.ResponseWriter, r *http.Request) 
 
 	// Fetch existing account data. It's fine if no existing data is found. In that case we'll create
 	// a new entry in the database
-	err = server.Get(acc)
+	err = server.Storage.Get(acc)
 	if err != nil && err != ErrNotFound {
 		server.HandleError(err, w, r)
 		return
@@ -337,13 +337,13 @@ func (server *Server) ActivateAuthToken(w http.ResponseWriter, r *http.Request) 
 	acc.AddAuthToken(&authRequest.AuthToken)
 
 	// Save the changes
-	err = server.Put(acc)
+	err = server.Storage.Put(acc)
 	if err != nil {
 		server.HandleError(err, w, r)
 	}
 
 	// Delete the authentication request from the database
-	server.Delete(authRequest)
+	server.Storage.Delete(authRequest)
 
 	// Render success page
 	var buff bytes.Buffer
@@ -369,7 +369,7 @@ func (server *Server) ReadStore(w http.ResponseWriter, r *http.Request) {
 	// This is not considered an error. Instead we simply return an empty response body. Clients should
 	// know how to deal with this.
 	data := &DataStore{Account: acc}
-	err = server.Get(data)
+	err = server.Storage.Get(data)
 	if err != nil && err != ErrNotFound {
 		server.HandleError(err, w, r)
 		return
@@ -402,7 +402,7 @@ func (server *Server) WriteStore(w http.ResponseWriter, r *http.Request) {
 	data.Content = content
 
 	// Update database entry
-	err = server.Put(data)
+	err = server.Storage.Put(data)
 	if err != nil {
 		server.HandleError(err, w, r)
 		return
@@ -429,7 +429,7 @@ func (server *Server) RequestDeleteStore(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Save token/email pair in database to we can verify it later
-	if err := server.Put(deleteRequest); err != nil {
+	if err := server.Storage.Put(deleteRequest); err != nil {
 		server.HandleError(err, w, r)
 		return
 	}
@@ -448,7 +448,7 @@ func (server *Server) RequestDeleteStore(w http.ResponseWriter, r *http.Request)
 
 	// Send email with confirmation link
 	body := buff.String()
-	go server.Send(acc.Email, "Padlock Cloud Delete Request", body)
+	go server.Sender.Send(acc.Email, "Padlock Cloud Delete Request", body)
 
 	// Send ACCEPTED status code
 	w.WriteHeader(http.StatusAccepted)
@@ -465,7 +465,7 @@ func (server *Server) CompleteDeleteStore(w http.ResponseWriter, r *http.Request
 
 	// Fetch reset request from database
 	resetRequest := &DeleteStoreRequest{Token: token}
-	err = server.Get(resetRequest)
+	err = server.Storage.Get(resetRequest)
 	if err != nil {
 		server.HandleError(err, w, r)
 		return
@@ -473,7 +473,7 @@ func (server *Server) CompleteDeleteStore(w http.ResponseWriter, r *http.Request
 
 	// If the corresponding delete request was found in the database, we consider the data reset request
 	// as verified so we can proceed with deleting the data for the corresponding account
-	err = server.Delete(&DataStore{Account: &Account{Email: resetRequest.Account}})
+	err = server.Storage.Delete(&DataStore{Account: &Account{Email: resetRequest.Account}})
 	if err != nil {
 		server.HandleError(err, w, r)
 		return
@@ -491,7 +491,7 @@ func (server *Server) CompleteDeleteStore(w http.ResponseWriter, r *http.Request
 	buff.WriteTo(w)
 
 	// Delete the request token
-	server.Delete(resetRequest)
+	server.Storage.Delete(resetRequest)
 }
 
 // Registeres http handlers for various routes
@@ -571,7 +571,7 @@ func (server *Server) DeprecatedVersion(w http.ResponseWriter, r *http.Request) 
 		body := buff.String()
 
 		// Send email with activation link
-		go server.Send(email, "Please update your version of Padlock", body)
+		go server.Sender.Send(email, "Please update your version of Padlock", body)
 	}
 
 	http.Error(w, "", http.StatusNotAcceptable)
@@ -584,7 +584,7 @@ func (server *Server) HandlePanic(w http.ResponseWriter, r *http.Request) {
 		server.HandleError(ErrPanic, w, r)
 
 		if server.Config.NotifyEmail != "" {
-			go server.Send(server.Config.NotifyEmail, "Padlock Cloud Error Notification",
+			go server.Sender.Send(server.Config.NotifyEmail, "Padlock Cloud Error Notification",
 				fmt.Sprintf("Recovered from panic: %v\nRequest: %v", e, r))
 		}
 	}
@@ -645,8 +645,8 @@ func (server *Server) CleanUp() error {
 func NewServer(storage Storage, sender Sender, config *ServerConfig) *Server {
 	server := &Server{
 		http.NewServeMux(),
-		sender,
 		storage,
+		sender,
 		nil,
 		config,
 	}
