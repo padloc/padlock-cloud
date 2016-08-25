@@ -13,21 +13,6 @@ import "gopkg.in/urfave/cli.v1"
 
 var gopath = os.Getenv("GOPATH")
 
-func loadConfigFromFile(cliApp *CliApp) error {
-	// load config file
-	yamlData, err := ioutil.ReadFile(cliApp.ConfigPath)
-	if err != nil {
-		return err
-	}
-
-	err = yaml.Unmarshal(yamlData, cliApp.Config)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
 func HandleInterrupt(cb func() error) {
 	// Handle INTERRUPT and KILL signals
 	c := make(chan os.Signal, 1)
@@ -50,12 +35,35 @@ type CliConfig struct {
 	Email   EmailConfig   `yaml:"email"`
 }
 
+func (c *CliConfig) LoadFromFile(path string) error {
+	// load config file
+	yamlData, err := ioutil.ReadFile(path)
+	if err != nil {
+		return err
+	}
+
+	err = yaml.Unmarshal(yamlData, c)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 type CliApp struct {
 	*cli.App
-	Storage
-	*Server
+	Storage    *LevelDBStorage
+	Email      *EmailSender
+	Server     *Server
 	Config     *CliConfig
 	ConfigPath string
+}
+
+func (cliApp *CliApp) InitConfig() {
+	cliApp.Config = &CliConfig{}
+	cliApp.Storage.Config = &cliApp.Config.LevelDB
+	cliApp.Email.Config = &cliApp.Config.Email
+	cliApp.Server.Config = &cliApp.Config.Server
 }
 
 func (cliApp *CliApp) ServeHandler(handler http.Handler) error {
@@ -191,19 +199,22 @@ func (cliApp *CliApp) DeleteAccount(context *cli.Context) error {
 }
 
 func NewCliApp() *CliApp {
-	config := CliConfig{}
-	storage := &LevelDBStorage{LevelDBConfig: &config.LevelDB}
+	storage := &LevelDBStorage{}
+	email := &EmailSender{}
 	server := NewServer(
 		storage,
-		&EmailSender{&config.Email},
-		&config.Server,
+		email,
+		nil,
 	)
 	cliApp := &CliApp{
 		App:     cli.NewApp(),
 		Storage: storage,
+		Email:   email,
 		Server:  server,
-		Config:  &config,
 	}
+	cliApp.InitConfig()
+	config := cliApp.Config
+
 	cliApp.Name = "padlock-cloud"
 	cliApp.Version = Version
 	cliApp.Usage = "A command line interface for Padlock Cloud"
@@ -341,9 +352,9 @@ func NewCliApp() *CliApp {
 		if cliApp.ConfigPath != "" {
 			absPath, _ := filepath.Abs(cliApp.ConfigPath)
 			log.Printf("Loading config from %s - all other flags and environment variables will be ignored!", absPath)
-			// Replace original config object to prevent other flags from being applied
-			cliApp.Config = &CliConfig{}
-			return loadConfigFromFile(cliApp)
+			// Replace original config object to prevent flags from being applied
+			cliApp.InitConfig()
+			return cliApp.Config.LoadFromFile(cliApp.ConfigPath)
 		}
 		return nil
 	}
