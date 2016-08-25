@@ -25,8 +25,6 @@ var (
 	ErrWrongMethod = errors.New("padlock: wrong http method")
 	// Received request via http:// protocol when https:// is explicitly required
 	ErrInsecureConnection = errors.New("padlock: insecure connection")
-	// Recovered from a panic
-	ErrPanic = errors.New("padlock: panic")
 )
 
 // Extracts a uuid-formated token from a given url
@@ -138,8 +136,6 @@ func (d *DataStore) Serialize() ([]byte, error) {
 type ServerConfig struct {
 	// If true, all requests via plain http will be rejected. Only https requests are allowed
 	RequireTLS bool `yaml:"require_tls"`
-	// Email address for sending error reports; Leave empty for no notifications
-	NotifyEmail string `yaml:"notify_email"`
 	// Path to assets directory; used for loading templates and such
 	AssetsPath string `yaml:"assets_path"`
 	// Port to listen on
@@ -226,13 +222,7 @@ func (server *Server) HandleError(e error, w http.ResponseWriter, r *http.Reques
 	default:
 		{
 			http.Error(w, "", http.StatusInternalServerError)
-
-			server.Error.Printf("Internal Server Error: %v", e)
-
-			if server.Config.NotifyEmail != "" {
-				go server.Sender.Send(server.Config.NotifyEmail, "Padlock Cloud Error Notification",
-					fmt.Sprintf("Internal server error: %v\nRequest: %v", e, r))
-			}
+			server.Error.Printf("Internal Server Error: %v\nRequest: %v", e, r)
 		}
 	}
 }
@@ -579,14 +569,11 @@ func (server *Server) DeprecatedVersion(w http.ResponseWriter, r *http.Request) 
 
 func (server *Server) HandlePanic(w http.ResponseWriter, r *http.Request) {
 	if e := recover(); e != nil {
-		server.Error.Printf("Recovered from panic: %v", e)
-
-		server.HandleError(ErrPanic, w, r)
-
-		if server.Config.NotifyEmail != "" {
-			go server.Sender.Send(server.Config.NotifyEmail, "Padlock Cloud Error Notification",
-				fmt.Sprintf("Recovered from panic: %v\nRequest: %v", e, r))
+		err, ok := e.(error)
+		if !ok {
+			err = errors.New(fmt.Sprintf("%v", e))
 		}
+		server.HandleError(err, w, r)
 	}
 }
 
@@ -597,7 +584,6 @@ func (server *Server) CheckVersion(w http.ResponseWriter, r *http.Request) bool 
 // Implements `http.Handler.ServeHTTP` interface method. Handles panic recovery and TLS checking, Delegates
 // requests to embedded `http.ServeMux`
 func (server *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-
 	defer server.HandlePanic(w, r)
 
 	// Only accept connections via https if `RequireTLS` configuration is true

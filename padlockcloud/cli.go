@@ -202,9 +202,11 @@ func (cliApp *CliApp) DeleteAccount(context *cli.Context) error {
 }
 
 func NewCliApp() *CliApp {
-	logger := &Log{}
 	storage := &LevelDBStorage{}
 	email := &EmailSender{}
+	logger := &Log{
+		Sender: email,
+	}
 	server := NewServer(
 		logger,
 		storage,
@@ -246,6 +248,13 @@ func NewCliApp() *CliApp {
 			Usage:       "Path to error log file",
 			EnvVar:      "PC_ERR_FILE",
 			Destination: &config.Log.ErrFile,
+		},
+		cli.StringFlag{
+			Name:        "notify-errors",
+			Usage:       "Email address to send unexpected errors to",
+			Value:       "",
+			EnvVar:      "PC_NOTIFY_ERRORS",
+			Destination: &config.Log.NotifyErrors,
 		},
 		cli.StringFlag{
 			Name:        "db-path",
@@ -308,13 +317,6 @@ func NewCliApp() *CliApp {
 					Usage:       "Reject insecure connections",
 					EnvVar:      "PC_REQUIRE_TLS",
 					Destination: &config.Server.RequireTLS,
-				},
-				cli.StringFlag{
-					Name:        "notify-email",
-					Usage:       "Email address to send error reports to",
-					Value:       "",
-					EnvVar:      "PC_NOTIFY_EMAIL",
-					Destination: &config.Server.NotifyEmail,
 				},
 				cli.StringFlag{
 					Name:        "tls-cert",

@@ -4,9 +4,9 @@ import "fmt"
 import "net/smtp"
 
 // Sender is a interface that exposes the `Send` method for sending messages with a subject to a given
-// receiver.
+// recipient.
 type Sender interface {
-	Send(receiver string, subject string, message string) error
+	Send(recipient string, subject string, message string) error
 }
 
 type EmailConfig struct {
@@ -25,7 +25,7 @@ type EmailSender struct {
 	Config *EmailConfig
 }
 
-// Attempts to send an email to a given receiver. Through `smpt.SendMail`
+// Attempts to send an email to a given recipient. Through `smpt.SendMail`
 func (sender *EmailSender) Send(rec string, subject string, body string) error {
 	auth := smtp.PlainAuth(
 		"",
