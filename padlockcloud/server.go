@@ -160,12 +160,12 @@ type Server struct {
 	Sender
 	Storage
 	*Templates
-	*ServerConfig
+	Config *ServerConfig
 }
 
 func (server *Server) GetHostName(r *http.Request) string {
-	if server.HostName != "" {
-		return fmt.Sprintf("%s:%d", server.HostName, server.Port)
+	if server.Config.HostName != "" {
+		return fmt.Sprintf("%s:%d", server.Config.HostName, server.Config.Port)
 	} else {
 		return r.Host
 	}
@@ -229,8 +229,8 @@ func (server *Server) HandleError(e error, w http.ResponseWriter, r *http.Reques
 
 			log.Printf("Internal Server Error: %v", e)
 
-			if server.NotifyEmail != "" {
-				go server.Send(server.NotifyEmail, "Padlock Cloud Error Notification",
+			if server.Config.NotifyEmail != "" {
+				go server.Send(server.Config.NotifyEmail, "Padlock Cloud Error Notification",
 					fmt.Sprintf("Internal server error: %v\nRequest: %v", e, r))
 			}
 		}
@@ -583,8 +583,8 @@ func (server *Server) HandlePanic(w http.ResponseWriter, r *http.Request) {
 
 		server.HandleError(ErrPanic, w, r)
 
-		if server.NotifyEmail != "" {
-			go server.Send(server.NotifyEmail, "Padlock Cloud Error Notification",
+		if server.Config.NotifyEmail != "" {
+			go server.Send(server.Config.NotifyEmail, "Padlock Cloud Error Notification",
 				fmt.Sprintf("Recovered from panic: %v\nRequest: %v", e, r))
 		}
 	}
@@ -601,7 +601,7 @@ func (server *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer server.HandlePanic(w, r)
 
 	// Only accept connections via https if `RequireTLS` configuration is true
-	if server.RequireTLS && r.TLS == nil {
+	if server.Config.RequireTLS && r.TLS == nil {
 		server.HandleError(ErrInsecureConnection, w, r)
 		return
 	}
@@ -623,7 +623,7 @@ func (server *Server) Init() error {
 
 	if server.Templates == nil {
 		// Load templates from assets directory
-		server.Templates, err = LoadTemplates(filepath.Join(server.AssetsPath, "templates"))
+		server.Templates, err = LoadTemplates(filepath.Join(server.Config.AssetsPath, "templates"))
 		if err != nil {
 			return err
 		}

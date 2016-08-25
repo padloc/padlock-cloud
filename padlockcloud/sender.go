@@ -22,23 +22,23 @@ type EmailConfig struct {
 
 // EmailSender implements the `Sender` interface for emails
 type EmailSender struct {
-	*EmailConfig
+	Config *EmailConfig
 }
 
 // Attempts to send an email to a given receiver. Through `smpt.SendMail`
 func (sender *EmailSender) Send(rec string, subject string, body string) error {
 	auth := smtp.PlainAuth(
 		"",
-		sender.User,
-		sender.Password,
-		sender.Server,
+		sender.Config.User,
+		sender.Config.Password,
+		sender.Config.Server,
 	)
 
-	message := fmt.Sprintf("Subject: %s\r\nFrom: Padlock Cloud <%s>\r\n\r\n%s", subject, sender.User, body)
+	message := fmt.Sprintf("Subject: %s\r\nFrom: Padlock Cloud <%s>\r\n\r\n%s", subject, sender.Config.User, body)
 	return smtp.SendMail(
-		sender.Server+":"+sender.Port,
+		sender.Config.Server+":"+sender.Config.Port,
 		auth,
-		sender.User,
+		sender.Config.User,
 		[]string{rec},
 		[]byte(message),
 	)

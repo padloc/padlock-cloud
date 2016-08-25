@@ -59,7 +59,7 @@ type LevelDBConfig struct {
 
 // LevelDB implementation of the `Storage` interface
 type LevelDBStorage struct {
-	*LevelDBConfig
+	Config *LevelDBConfig
 	// Map of `leveldb.DB` instances associated with different `Storable` types
 	stores map[reflect.Type]*leveldb.DB
 }
@@ -71,7 +71,7 @@ func (s *LevelDBStorage) Open() error {
 
 	// Create `leveldb.DB` instance for each supported `Storable` type
 	for t, loc := range StorableTypes {
-		db, err := leveldb.OpenFile(filepath.Join(s.Path, loc), nil)
+		db, err := leveldb.OpenFile(filepath.Join(s.Config.Path, loc), nil)
 		if err != nil {
 			return err
 		}
