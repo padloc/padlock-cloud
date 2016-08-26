@@ -15,12 +15,13 @@ import "bytes"
 import "encoding/json"
 
 var (
-	app       *Server
-	server    *httptest.Server
-	storage   *MemoryStorage
-	sender    *RecordSender
-	testEmail = "martin@padlock.io"
-	testData  = "Hello World!"
+	server     *Server
+	testServer *httptest.Server
+	storage    *MemoryStorage
+	sender     *RecordSender
+	testEmail  = "martin@padlock.io"
+	testData   = "Hello World!"
+	testURL    string
 )
 
 func TestMain(m *testing.M) {
@@ -34,19 +35,22 @@ func TestMain(m *testing.M) {
 		template.Must(template.New("").Parse("")),
 	}
 
-	app = NewServer(storage, sender, templates, Config{RequireTLS: false})
+	logger := &Log{Config: &LogConfig{}}
+	server = NewServer(logger, storage, sender, &ServerConfig{RequireTLS: false})
+	server.Templates = templates
 
-	app.Storage.Open()
-	defer app.Storage.Close()
+	server.Init()
+	defer server.CleanUp()
 
-	server = httptest.NewServer(app)
+	testServer = httptest.NewServer(server)
+	testURL = testServer.URL
 
 	os.Exit(m.Run())
 }
 
 // Helper function for creating (optionally authenticated) requests
 func request(method string, path string, body string, asForm bool, authToken *AuthToken, version int) (*http.Response, error) {
-	req, _ := http.NewRequest(method, server.URL+path, bytes.NewBuffer([]byte(body)))
+	req, _ := http.NewRequest(method, testURL+path, bytes.NewBuffer([]byte(body)))
 
 	if asForm {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -105,7 +109,7 @@ func TestLifeCycle(t *testing.T) {
 	// Post request for api key
 	res, _ := request("POST", "/auth/", url.Values{
 		"email": {testEmail},
-	}.Encode(), true, nil, version)
+	}.Encode(), true, nil, ApiVersion)
 
 	// Response status code should be "ACCEPTED", response body should be the RFC4122-compliant auth token
 	tokenJSON := checkResponse(t, res, http.StatusAccepted, "")
@@ -123,7 +127,7 @@ func TestLifeCycle(t *testing.T) {
 	}
 
 	// Activation message should contain a valid activation link
-	linkPattern := fmt.Sprintf("%s/activate/\\?v=%d&t=%s", server.URL, version, tokenPattern)
+	linkPattern := fmt.Sprintf("%s/activate/\\?v=%d&t=%s", testURL, ApiVersion, tokenPattern)
 	msgPattern := fmt.Sprintf("%s, %s", testEmail, linkPattern)
 	match, _ := regexp.MatchString(msgPattern, sender.Message)
 	if !match {
@@ -137,20 +141,20 @@ func TestLifeCycle(t *testing.T) {
 
 	// Get data request authenticated with obtained api key should return with status code 200 - OK and
 	// empty response body (since we haven't written any data yet)
-	res, _ = request("GET", "/store/", "", false, authToken, version)
+	res, _ = request("GET", "/store/", "", false, authToken, ApiVersion)
 	checkResponse(t, res, http.StatusOK, "^$")
 
 	// Put request should return with status code 204 - NO CONTENT
-	res, _ = request("PUT", "/store/", testData, false, authToken, version)
+	res, _ = request("PUT", "/store/", testData, false, authToken, ApiVersion)
 	checkResponse(t, res, http.StatusNoContent, "")
 
 	// Now get data request should return the data previously save through PUT
-	res, _ = request("GET", "/store/", "", false, authToken, version)
+	res, _ = request("GET", "/store/", "", false, authToken, ApiVersion)
 	checkResponse(t, res, http.StatusOK, fmt.Sprintf("^%s$", testData))
 
 	// Send data reset request. Response should have status code 202 - ACCEPTED
 	sender.Reset()
-	res, _ = request("DELETE", "/store/", "", false, authToken, version)
+	res, _ = request("DELETE", "/store/", "", false, authToken, ApiVersion)
 	checkResponse(t, res, http.StatusAccepted, "")
 
 	// Activation message should be sent to the correct email
@@ -159,7 +163,7 @@ func TestLifeCycle(t *testing.T) {
 	}
 
 	// Confirmation message should contain a valid confirmation link
-	linkPattern = fmt.Sprintf("%s/deletestore/\\?v=%d&t=%s", server.URL, version, tokenPattern)
+	linkPattern = fmt.Sprintf("%s/deletestore/\\?v=%d&t=%s", testURL, ApiVersion, tokenPattern)
 	msgPattern = fmt.Sprintf("%s, %s", testEmail, linkPattern)
 	match, _ = regexp.MatchString(msgPattern, sender.Message)
 	if !match {
@@ -172,7 +176,7 @@ func TestLifeCycle(t *testing.T) {
 	checkResponse(t, res, http.StatusOK, fmt.Sprintf("^%s$", testEmail))
 
 	// After data reset, data should be an empty string
-	res, _ = request("GET", "/store/", "", false, authToken, version)
+	res, _ = request("GET", "/store/", "", false, authToken, ApiVersion)
 	checkResponse(t, res, http.StatusOK, "^$")
 }
 
@@ -181,29 +185,29 @@ func TestErrorConditions(t *testing.T) {
 	// Trying to get an api key for a non-existing account using the PUT method should result in a 404
 	res, _ := request("PUT", "/auth/", url.Values{
 		"email": {"hello@world.com"},
-	}.Encode(), true, nil, version)
+	}.Encode(), true, nil, ApiVersion)
 
 	// No account with this email exists yet and we have not specified 'create=true' in our request
 	// so the status code of th response should be "PRECONDITION FAILED"
 	checkResponse(t, res, http.StatusNotFound, "")
 
 	// A request without a valid authorization header should return with status code 401 - Unauthorized
-	res, _ = request("GET", "/store/", "", false, nil, version)
+	res, _ = request("GET", "/store/", "", false, nil, ApiVersion)
 	checkResponse(t, res, http.StatusUnauthorized, "")
 
 	// Requests with unsupported HTTP methods should return with 405 - method not allowed
-	res, _ = request("POST", "/store/", "", false, nil, version)
+	res, _ = request("POST", "/store/", "", false, nil, ApiVersion)
 	checkResponse(t, res, http.StatusMethodNotAllowed, "")
 
 	// Requests to unsupported paths should return with 404 - not found
-	res, _ = request("GET", "/invalidpath", "", false, nil, version)
+	res, _ = request("GET", "/invalidpath", "", false, nil, ApiVersion)
 	checkResponse(t, res, http.StatusNotFound, "")
 
 	// In case `RequireTLS` is set to true, requests via http should be rejected with status code 403 - forbidden
-	app.RequireTLS = true
-	res, _ = request("GET", "", "", false, nil, version)
+	server.Config.RequireTLS = true
+	res, _ = request("GET", "", "", false, nil, ApiVersion)
 	checkResponse(t, res, http.StatusForbidden, "")
-	app.RequireTLS = false
+	server.Config.RequireTLS = false
 }
 
 func TestOutdatedVersion(t *testing.T) {
