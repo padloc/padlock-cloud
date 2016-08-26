@@ -13,6 +13,7 @@ import "io/ioutil"
 import "regexp"
 import "bytes"
 import "encoding/json"
+import "errors"
 
 var (
 	server     *Server
@@ -36,6 +37,7 @@ func TestMain(m *testing.M) {
 	}
 
 	logger := &Log{Config: &LogConfig{}}
+	logger.Init()
 	server = NewServer(logger, storage, sender, &ServerConfig{RequireTLS: false})
 	server.Templates = templates
 
@@ -148,7 +150,7 @@ func TestLifeCycle(t *testing.T) {
 	res, _ = request("PUT", "/store/", testData, false, authToken, ApiVersion)
 	checkResponse(t, res, http.StatusNoContent, "")
 
-	// Now get data request should return the data previously save through PUT
+	// Now get data request should return the data previously saved through PUT
 	res, _ = request("GET", "/store/", "", false, authToken, ApiVersion)
 	checkResponse(t, res, http.StatusOK, fmt.Sprintf("^%s$", testData))
 
@@ -234,4 +236,18 @@ func TestOutdatedVersion(t *testing.T) {
 	if sender.Receiver != testEmail {
 		t.Errorf("Expected outdated message to be sent to %s, instead got %s", testEmail, sender.Receiver)
 	}
+}
+
+func TestPanicRecovery(t *testing.T) {
+	// Make sure the server recovers properly from runtime panics in handler functions
+	server.HandleFunc("/panic/", func(w http.ResponseWriter, r *http.Request) {
+		panic("Everyone panic!!!")
+	})
+	res, _ := request("GET", "/panic/", "", false, nil, 1)
+	checkResponse(t, res, http.StatusInternalServerError, "")
+	server.HandleFunc("/panic2/", func(w http.ResponseWriter, r *http.Request) {
+		panic(errors.New("Everyone panic!!!"))
+	})
+	res, _ = request("GET", "/panic2/", "", false, nil, 1)
+	checkResponse(t, res, http.StatusInternalServerError, "")
 }
