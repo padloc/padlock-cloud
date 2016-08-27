@@ -48,7 +48,7 @@ type Storage interface {
 // internal store or file names
 var StorableTypes = map[reflect.Type]string{}
 
-func AddStorable(t interface{}, loc string) {
+func AddStorable(t Storable, loc string) {
 	StorableTypes[reflect.TypeOf(t).Elem()] = loc
 }
 
