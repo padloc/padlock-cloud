@@ -118,6 +118,6 @@ func NewAuthRequest(email string) (*AuthRequest, error) {
 }
 
 func init() {
-	AddStorable(&Account{}, "auth-accounts")
-	AddStorable(&AuthRequest{}, "auth-requests")
+	RegisterStorable(&Account{}, "auth-accounts")
+	RegisterStorable(&AuthRequest{}, "auth-requests")
 }

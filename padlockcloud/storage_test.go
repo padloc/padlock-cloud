@@ -41,16 +41,16 @@ func TestLevelDBStorage(t *testing.T) {
 	}
 
 	// Let's open the storage very quickly even though we haven't registered any types yet so we can
-	// check for the ErrStorableTypeNotSupported error
+	// check for the ErrUnregisteredStorable error
 	storage.Open()
 	// Storage.Open() has not been called yet so we should get the appropriate error
-	if err := storage.Get(&storable); err != ErrStorableTypeNotSupported {
+	if err := storage.Get(&storable); err != ErrUnregisteredStorable {
 		t.Fatalf("Should return error for unregistered storable type, got %v", err)
 	}
 	storage.Close()
 
 	// No register the storable type
-	AddStorable(&storable, "mystrbl")
+	RegisterStorable(&storable, "mystrbl")
 
 	// Open storage now
 	storage.Open()
