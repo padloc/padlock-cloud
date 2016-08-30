@@ -46,20 +46,20 @@ func (sender *EmailSender) Send(rec string, subject string, body string) error {
 
 // Mock implementation of the `Sender` interface. Simply records arguments passed to the `Send` method
 type RecordSender struct {
-	Receiver string
-	Subject  string
-	Message  string
+	Recipient string
+	Subject   string
+	Message   string
 }
 
 func (s *RecordSender) Send(rec string, subj string, message string) error {
-	s.Receiver = rec
+	s.Recipient = rec
 	s.Subject = subj
 	s.Message = message
 	return nil
 }
 
 func (s *RecordSender) Reset() {
-	s.Receiver = ""
+	s.Recipient = ""
 	s.Subject = ""
 	s.Message = ""
 }

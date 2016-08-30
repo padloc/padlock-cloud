@@ -119,8 +119,8 @@ func TestLifeCycle(t *testing.T) {
 	}
 
 	// Activation message should be sent to the correct email
-	if sender.Receiver != testEmail {
-		t.Errorf("Expected activation message to be sent to %s, instead got %s", testEmail, sender.Receiver)
+	if sender.Recipient != testEmail {
+		t.Errorf("Expected activation message to be sent to %s, instead got %s", testEmail, sender.Recipient)
 	}
 
 	// Activation message should contain a valid activation link
@@ -155,8 +155,8 @@ func TestLifeCycle(t *testing.T) {
 	checkResponse(t, res, http.StatusAccepted, "")
 
 	// Activation message should be sent to the correct email
-	if sender.Receiver != testEmail {
-		t.Errorf("Expected confirm delete message to be sent to %s, instead got %s", testEmail, sender.Receiver)
+	if sender.Recipient != testEmail {
+		t.Errorf("Expected confirm delete message to be sent to %s, instead got %s", testEmail, sender.Recipient)
 	}
 
 	// Confirmation message should contain a valid confirmation link
@@ -217,8 +217,8 @@ func TestOutdatedVersion(t *testing.T) {
 	token, _ := token()
 	res, _ := request("GET", testURL+"/", "", false, &AuthToken{Email: testEmail, Token: token}, 0)
 	checkResponse(t, res, http.StatusNotAcceptable, "")
-	if sender.Receiver != testEmail {
-		t.Errorf("Expected outdated message to be sent to %s, instead got %s", testEmail, sender.Receiver)
+	if sender.Recipient != testEmail {
+		t.Errorf("Expected outdated message to be sent to %s, instead got %s", testEmail, sender.Recipient)
 	}
 
 	sender.Reset()
@@ -226,15 +226,15 @@ func TestOutdatedVersion(t *testing.T) {
 		"email": {testEmail},
 	}.Encode(), true, nil, 0)
 	checkResponse(t, res, http.StatusNotAcceptable, "")
-	if sender.Receiver != testEmail {
-		t.Errorf("Expected outdated message to be sent to %s, instead got %s", testEmail, sender.Receiver)
+	if sender.Recipient != testEmail {
+		t.Errorf("Expected outdated message to be sent to %s, instead got %s", testEmail, sender.Recipient)
 	}
 
 	sender.Reset()
 	res, _ = request("DELETE", testURL+"/"+testEmail, "", false, nil, 0)
 	checkResponse(t, res, http.StatusNotAcceptable, "")
-	if sender.Receiver != testEmail {
-		t.Errorf("Expected outdated message to be sent to %s, instead got %s", testEmail, sender.Receiver)
+	if sender.Recipient != testEmail {
+		t.Errorf("Expected outdated message to be sent to %s, instead got %s", testEmail, sender.Recipient)
 	}
 }
 
@@ -242,12 +242,12 @@ func TestPanicRecovery(t *testing.T) {
 	server, testURL := setupServer()
 
 	// Make sure the server recovers properly from runtime panics in handler functions
-	server.HandleFunc("/panic/", func(w http.ResponseWriter, r *http.Request) {
+	server.mux.HandleFunc("/panic/", func(w http.ResponseWriter, r *http.Request) {
 		panic("Everyone panic!!!")
 	})
 	res, _ := request("GET", testURL+"/panic/", "", false, nil, 1)
 	checkResponse(t, res, http.StatusInternalServerError, "")
-	server.HandleFunc("/panic2/", func(w http.ResponseWriter, r *http.Request) {
+	server.mux.HandleFunc("/panic2/", func(w http.ResponseWriter, r *http.Request) {
 		panic(errors.New("Everyone panic!!!"))
 	})
 	res, _ = request("GET", testURL+"/panic2/", "", false, nil, 1)
