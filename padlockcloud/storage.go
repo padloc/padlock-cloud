@@ -83,12 +83,9 @@ func (s *LevelDBStorage) Open() error {
 
 // Implementation of the `Storage.Close` interface method
 func (s *LevelDBStorage) Close() error {
-	var err error
-
 	// Close all existing `leveldb.DB` instances
 	for _, db := range s.stores {
-		err = db.Close()
-		if err != nil {
+		if err := db.Close(); err != nil {
 			return err
 		}
 	}

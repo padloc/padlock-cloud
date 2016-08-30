@@ -1,10 +1,6 @@
 package padlockcloud
 
-import "os"
 import "fmt"
-import "log"
-import "net/http"
-import "os/signal"
 import "path/filepath"
 import "io/ioutil"
 import "errors"
@@ -53,65 +49,8 @@ func (cliApp *CliApp) InitConfig() {
 	cliApp.Server.Config = &cliApp.Config.Server
 }
 
-func (cliApp *CliApp) HandleInterrupt(cb func() error) {
-	// Handle INTERRUPT and KILL signals
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, os.Kill)
-	go func() {
-		s := <-c
-		cliApp.Info.Printf("Received %v signal. Exiting...", s)
-		err := cb()
-		if err != nil {
-			os.Exit(1)
-		} else {
-			os.Exit(0)
-		}
-	}()
-}
-
-func (cliApp *CliApp) ServeHandler(handler http.Handler) error {
-	var err error
-
-	// Add rate limiting middleWare
-	handler = RateLimit(handler, map[Route]RateQuota{
-		Route{"POST", "/auth/"}:    RateQuota{PerMin(1), 0},
-		Route{"PUT", "/auth/"}:     RateQuota{PerMin(1), 0},
-		Route{"DELETE", "/store/"}: RateQuota{PerMin(1), 0},
-	})
-
-	// Add CORS middleware
-	handler = Cors(handler)
-
-	port := cliApp.Config.Server.Port
-	tlsCert := cliApp.Config.Server.TLSCert
-	tlsKey := cliApp.Config.Server.TLSKey
-	// Start server
-	cliApp.Info.Printf("Starting server on port %v", port)
-	if tlsCert != "" && tlsKey != "" {
-		err = http.ListenAndServeTLS(fmt.Sprintf(":%d", port), tlsCert, tlsKey, handler)
-	} else {
-		err = http.ListenAndServe(fmt.Sprintf(":%d", port), handler)
-	}
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
 func (cliApp *CliApp) RunServer(context *cli.Context) error {
-	var err error
-
-	if err = cliApp.Server.Init(); err != nil {
-		return err
-	}
-
-	// Clean up after method returns (should never happen under normal circumstances but you never know)
-	defer cliApp.Server.CleanUp()
-
-	cliApp.HandleInterrupt(cliApp.Server.CleanUp)
-
-	return cliApp.ServeHandler(cliApp.Server)
+	return cliApp.Server.Start()
 }
 
 func (cliApp *CliApp) ListAccounts(context *cli.Context) error {
@@ -374,7 +313,7 @@ func NewCliApp() *CliApp {
 		if cliApp.ConfigPath != "" {
 			absPath, _ := filepath.Abs(cliApp.ConfigPath)
 
-			log.Printf("Loading config from %s - all other flags and environment variables will be ignored!", absPath)
+			fmt.Printf("Loading config from %s - all other flags and environment variables will be ignored!\n", absPath)
 			// Replace original config object to prevent flags from being applied
 			cliApp.InitConfig()
 			err := cliApp.Config.LoadFromFile(cliApp.ConfigPath)

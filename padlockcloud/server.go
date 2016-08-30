@@ -1,5 +1,6 @@
 package padlockcloud
 
+import "net"
 import "net/http"
 import "io/ioutil"
 import "fmt"
@@ -10,6 +11,7 @@ import "bytes"
 import "time"
 import "strconv"
 import "path/filepath"
+import "gopkg.in/tylerb/graceful.v1"
 
 const (
 	ApiVersion = 1
@@ -151,8 +153,10 @@ type ServerConfig struct {
 // The Server type holds all the contextual data and logic used for running a Padlock Cloud instances
 // Users should use the `NewServer` function to instantiate an `Server` instance
 type Server struct {
-	*http.ServeMux
+	*graceful.Server
 	*Log
+	Mux       *http.ServeMux
+	Listener  net.Listener
 	Storage   Storage
 	Sender    Sender
 	Templates *Templates
@@ -487,7 +491,7 @@ func (server *Server) CompleteDeleteStore(w http.ResponseWriter, r *http.Request
 // Registeres http handlers for various routes
 func (server *Server) SetupRoutes() {
 	// Endpoint for requesting api keys, only POST method is supported
-	server.HandleFunc("/auth/", func(w http.ResponseWriter, r *http.Request) {
+	server.Mux.HandleFunc("/auth/", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case "PUT":
 			server.RequestAuthToken(w, r, false)
@@ -499,7 +503,7 @@ func (server *Server) SetupRoutes() {
 	})
 
 	// Endpoint for requesting api keys, only POST method is supported
-	server.HandleFunc("/activate/", func(w http.ResponseWriter, r *http.Request) {
+	server.Mux.HandleFunc("/activate/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "GET" {
 			server.ActivateAuthToken(w, r)
 		} else {
@@ -508,7 +512,7 @@ func (server *Server) SetupRoutes() {
 	})
 
 	// Endpoint for reading, writing and deleting store data
-	server.HandleFunc("/store/", func(w http.ResponseWriter, r *http.Request) {
+	server.Mux.HandleFunc("/store/", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case "GET", "HEAD":
 			server.ReadStore(w, r)
@@ -522,7 +526,7 @@ func (server *Server) SetupRoutes() {
 	})
 
 	// Endpoint for requesting a data reset. Only GET supported
-	server.HandleFunc("/deletestore/", func(w http.ResponseWriter, r *http.Request) {
+	server.Mux.HandleFunc("/deletestore/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "GET" {
 			server.CompleteDeleteStore(w, r)
 		} else {
@@ -531,7 +535,7 @@ func (server *Server) SetupRoutes() {
 	})
 
 	// Endpoint for requesting a data reset. Only GET supported
-	server.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	server.Mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "", http.StatusNotFound)
 	})
 }
@@ -598,7 +602,7 @@ func (server *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Delegate requests to embedded `http.ServeMux`
-	server.ServeMux.ServeHTTP(w, r)
+	server.Mux.ServeHTTP(w, r)
 }
 
 // Initialize Server with dependencies and configuration
@@ -627,16 +631,69 @@ func (server *Server) CleanUp() error {
 	return server.Storage.Close()
 }
 
+func (server *Server) Start() error {
+	if err := server.Init(); err != nil {
+		return err
+	}
+	defer server.CleanUp()
+
+	// Add rate limiting middleWare
+	handler := RateLimit(server, map[Route]RateQuota{
+		Route{"POST", "/auth/"}:    RateQuota{PerMin(1), 0},
+		Route{"PUT", "/auth/"}:     RateQuota{PerMin(1), 0},
+		Route{"DELETE", "/store/"}: RateQuota{PerMin(1), 0},
+	})
+
+	// Add CORS middleware
+	handler = Cors(handler)
+
+	server.Handler = handler
+
+	port := server.Config.Port
+	tlsCert := server.Config.TLSCert
+	tlsKey := server.Config.TLSKey
+
+	server.Addr = fmt.Sprintf(":%d", port)
+
+	// Start server
+	server.Info.Printf("Starting server on port %v", port)
+	if tlsCert != "" && tlsKey != "" {
+		server.Config.RequireTLS = true
+		return server.ListenAndServeTLS(tlsCert, tlsKey)
+	} else {
+		return server.ListenAndServe()
+	}
+}
+
 // Instantiates and initializes a new Server and returns a reference to it
 func NewServer(log *Log, storage Storage, sender Sender, config *ServerConfig) *Server {
 	server := &Server{
-		http.NewServeMux(),
+		&graceful.Server{
+			Server:  &http.Server{},
+			Timeout: time.Second * 10,
+		},
 		log,
+		http.NewServeMux(),
+		nil,
 		storage,
 		sender,
 		nil,
 		config,
 	}
+
+	// Call server.CleanUp when shutting down
+	server.ShutdownInitiated = func() {
+		err := server.CleanUp()
+		if err != nil {
+			server.Error.Print(err)
+		}
+	}
+
+	// Hook up logger for http.Server
+	server.ErrorLog = server.Error
+	// Hook up logger for graceful.Server
+	server.Logger = server.Error
+
 	return server
 }
 
