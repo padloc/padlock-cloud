@@ -281,7 +281,11 @@ func (server *Server) RequestAuthToken(w http.ResponseWriter, r *http.Request, c
 	body := buff.String()
 
 	// Send email with activation link
-	go server.Sender.Send(email, "Connect to Padlock Cloud", body)
+	go func() {
+		if err := server.Sender.Send(email, "Connect to Padlock Cloud", body); err != nil {
+			server.Error.Print(err)
+		}
+	}()
 
 	resp, err := json.Marshal(map[string]string{
 		"id":    authRequest.AuthToken.Id,
@@ -440,9 +444,14 @@ func (server *Server) RequestDeleteStore(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Send email with confirmation link
 	body := buff.String()
-	go server.Sender.Send(acc.Email, "Padlock Cloud Delete Request", body)
+
+	// Send email with confirmation link
+	go func() {
+		if err := server.Sender.Send(acc.Email, "Padlock Cloud Delete Request", body); err != nil {
+			server.Error.Print(err)
+		}
+	}()
 
 	// Send ACCEPTED status code
 	w.WriteHeader(http.StatusAccepted)
@@ -555,7 +564,6 @@ func (server *Server) DeprecatedVersion(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if email != "" {
-		// Render activation email
 		var buff bytes.Buffer
 		err := server.Templates.DeprecatedVersionEmail.Execute(&buff, nil)
 		if err != nil {
@@ -564,8 +572,12 @@ func (server *Server) DeprecatedVersion(w http.ResponseWriter, r *http.Request) 
 		}
 		body := buff.String()
 
-		// Send email with activation link
-		go server.Sender.Send(email, "Please update your version of Padlock", body)
+		// Send email about deprecated api version
+		go func() {
+			if err := server.Sender.Send(email, "Please update your version of Padlock", body); err != nil {
+				server.Error.Print(err)
+			}
+		}()
 	}
 
 	http.Error(w, "", http.StatusNotAcceptable)
