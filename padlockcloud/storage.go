@@ -9,7 +9,7 @@ import "github.com/syndtr/goleveldb/leveldb"
 // Error singletons
 var (
 	// A particular implementation of the Storable implementation is not supported
-	ErrStorableTypeNotSupported = errors.New("padlock: storable type not supported")
+	ErrUnregisteredStorable = errors.New("padlock: unregistered storable type")
 	// An object was not found
 	ErrNotFound = errors.New("padlock: not found")
 	// A query was attempted on a closed storage
@@ -48,7 +48,7 @@ type Storage interface {
 // internal store or file names
 var StorableTypes = map[reflect.Type]string{}
 
-func AddStorable(t interface{}, loc string) {
+func RegisterStorable(t Storable, loc string) {
 	StorableTypes[reflect.TypeOf(t).Elem()] = loc
 }
 
@@ -100,7 +100,7 @@ func (s *LevelDBStorage) getDB(t Storable) (*leveldb.DB, error) {
 	db := s.stores[reflect.TypeOf(t).Elem()]
 
 	if db == nil {
-		return nil, ErrStorableTypeNotSupported
+		return nil, ErrUnregisteredStorable
 	}
 
 	return db, nil
@@ -113,7 +113,7 @@ func (s *LevelDBStorage) Get(t Storable) error {
 	}
 
 	if t == nil {
-		return ErrStorableTypeNotSupported
+		return ErrUnregisteredStorable
 	}
 
 	db, err := s.getDB(t)
@@ -138,7 +138,7 @@ func (s *LevelDBStorage) Put(t Storable) error {
 	}
 
 	if t == nil {
-		return ErrStorableTypeNotSupported
+		return ErrUnregisteredStorable
 	}
 
 	db, err := s.getDB(t)
@@ -161,7 +161,7 @@ func (s *LevelDBStorage) Delete(t Storable) error {
 	}
 
 	if t == nil {
-		return ErrStorableTypeNotSupported
+		return ErrUnregisteredStorable
 	}
 
 	db, err := s.getDB(t)
@@ -209,7 +209,7 @@ func (s *MemoryStorage) Get(t Storable) error {
 	}
 
 	if t == nil {
-		return ErrStorableTypeNotSupported
+		return ErrUnregisteredStorable
 	}
 
 	tm := s.store[reflect.TypeOf(t)]
@@ -229,7 +229,7 @@ func (s *MemoryStorage) Put(t Storable) error {
 	}
 
 	if t == nil {
-		return ErrStorableTypeNotSupported
+		return ErrUnregisteredStorable
 	}
 
 	data, err := json.Marshal(t)
@@ -251,7 +251,7 @@ func (s *MemoryStorage) Delete(t Storable) error {
 	}
 
 	if t == nil {
-		return ErrStorableTypeNotSupported
+		return ErrUnregisteredStorable
 	}
 
 	ts := s.store[reflect.TypeOf(t)]
@@ -269,12 +269,12 @@ func (s *MemoryStorage) List(t Storable) ([]string, error) {
 	}
 
 	if t == nil {
-		return l, ErrStorableTypeNotSupported
+		return l, ErrUnregisteredStorable
 	}
 
 	ts := s.store[reflect.TypeOf(t)]
 	if ts == nil {
-		return l, ErrStorableTypeNotSupported
+		return l, ErrUnregisteredStorable
 	}
 
 	for key, _ := range ts {

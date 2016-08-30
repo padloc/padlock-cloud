@@ -602,7 +602,7 @@ func (server *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Delegate requests to embedded `http.ServeMux`
-	server.Mux.ServeHTTP(w, r)
+	server.mux.ServeHTTP(w, r)
 }
 
 // Initialize Server with dependencies and configuration
@@ -698,6 +698,6 @@ func NewServer(log *Log, storage Storage, sender Sender, config *ServerConfig) *
 }
 
 func init() {
-	AddStorable(&DataStore{}, "data-stores")
-	AddStorable(&DeleteStoreRequest{}, "delete-requests")
+	RegisterStorable(&DataStore{}, "data-stores")
+	RegisterStorable(&DeleteStoreRequest{}, "delete-requests")
 }

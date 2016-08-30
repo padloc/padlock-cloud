@@ -7,6 +7,7 @@ import "gopkg.in/throttled/throttled.v2/store/memstore"
 
 type RateQuota throttled.RateQuota
 
+var PerSec = throttled.PerSec
 var PerMin = throttled.PerMin
 
 type Route struct {

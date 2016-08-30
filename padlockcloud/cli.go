@@ -7,8 +7,6 @@ import "errors"
 import "gopkg.in/yaml.v2"
 import "gopkg.in/urfave/cli.v1"
 
-var gopath = os.Getenv("GOPATH")
-
 type CliConfig struct {
 	Log     LogConfig     `yaml:"log"`
 	Server  ServerConfig  `yaml:"server"`
@@ -247,7 +245,7 @@ func NewCliApp() *CliApp {
 				cli.StringFlag{
 					Name:        "assets-path",
 					Usage:       "Path to assets directory",
-					Value:       filepath.Join(gopath, "src/github.com/maklesoft/padlock-cloud/assets"),
+					Value:       DefaultAssetsPath,
 					EnvVar:      "PC_ASSETS_PATH",
 					Destination: &config.Server.AssetsPath,
 				},
