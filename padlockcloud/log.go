@@ -4,6 +4,9 @@ import "os"
 import "io"
 import "log"
 
+var stdout io.Writer = os.Stdout
+var stderr io.Writer = os.Stderr
+
 type LogConfig struct {
 	LogFile      string `yaml:"log_file"`
 	ErrFile      string `yaml:"err_file"`
@@ -50,13 +53,13 @@ func (l *Log) Init() error {
 	}
 
 	if out == nil {
-		out = os.Stdout
+		out = stdout
 	}
 	if errOut == nil {
-		errOut = os.Stderr
+		errOut = stderr
 	}
 
-	if l.Config.NotifyErrors != "" {
+	if l.Config.NotifyErrors != "" && l.Sender != nil {
 		sw := &SendWriter{
 			l.Sender,
 			l.Config.NotifyErrors,
@@ -69,4 +72,15 @@ func (l *Log) Init() error {
 	l.Error = log.New(errOut, "ERROR: ", log.Ldate|log.Ltime)
 
 	return nil
+}
+
+func (l *Log) InitWithConfig(config *LogConfig) {
+	l.Config = config
+	l.Init()
+}
+
+func NewLog(config *LogConfig, sender Sender) *Log {
+	l := &Log{Sender: sender}
+	l.InitWithConfig(config)
+	return l
 }
