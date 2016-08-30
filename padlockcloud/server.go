@@ -155,7 +155,7 @@ type ServerConfig struct {
 type Server struct {
 	*graceful.Server
 	*Log
-	Mux       *http.ServeMux
+	mux       *http.ServeMux
 	Listener  net.Listener
 	Storage   Storage
 	Sender    Sender
@@ -491,7 +491,7 @@ func (server *Server) CompleteDeleteStore(w http.ResponseWriter, r *http.Request
 // Registeres http handlers for various routes
 func (server *Server) SetupRoutes() {
 	// Endpoint for requesting api keys, only POST method is supported
-	server.Mux.HandleFunc("/auth/", func(w http.ResponseWriter, r *http.Request) {
+	server.mux.HandleFunc("/auth/", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case "PUT":
 			server.RequestAuthToken(w, r, false)
@@ -503,7 +503,7 @@ func (server *Server) SetupRoutes() {
 	})
 
 	// Endpoint for requesting api keys, only POST method is supported
-	server.Mux.HandleFunc("/activate/", func(w http.ResponseWriter, r *http.Request) {
+	server.mux.HandleFunc("/activate/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "GET" {
 			server.ActivateAuthToken(w, r)
 		} else {
@@ -512,7 +512,7 @@ func (server *Server) SetupRoutes() {
 	})
 
 	// Endpoint for reading, writing and deleting store data
-	server.Mux.HandleFunc("/store/", func(w http.ResponseWriter, r *http.Request) {
+	server.mux.HandleFunc("/store/", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case "GET", "HEAD":
 			server.ReadStore(w, r)
@@ -526,7 +526,7 @@ func (server *Server) SetupRoutes() {
 	})
 
 	// Endpoint for requesting a data reset. Only GET supported
-	server.Mux.HandleFunc("/deletestore/", func(w http.ResponseWriter, r *http.Request) {
+	server.mux.HandleFunc("/deletestore/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "GET" {
 			server.CompleteDeleteStore(w, r)
 		} else {
@@ -535,7 +535,7 @@ func (server *Server) SetupRoutes() {
 	})
 
 	// Endpoint for requesting a data reset. Only GET supported
-	server.Mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	server.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "", http.StatusNotFound)
 	})
 }
