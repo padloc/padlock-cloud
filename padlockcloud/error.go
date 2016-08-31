@@ -2,9 +2,15 @@ package padlockcloud
 
 import "fmt"
 import "net/http"
+import "net/http/httputil"
 
 func formatRequest(r *http.Request) string {
 	return fmt.Sprintf("%s %s", r.Method, r.URL)
+}
+
+func formatRequestVerbose(r *http.Request) string {
+	dump, _ := httputil.DumpRequest(r, true)
+	return string(dump)
 }
 
 type ErrorResponse interface {
@@ -201,6 +207,10 @@ func (e *TooManyRequests) Message() string {
 type ServerError struct {
 	error
 	request *http.Request
+}
+
+func (e *ServerError) Error() string {
+	return fmt.Sprintf("%s - Error: %s; Request:\n%s", e.Code(), e.error.Error(), formatRequestVerbose(e.request))
 }
 
 func (e *ServerError) Code() string {
