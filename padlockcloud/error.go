@@ -158,6 +158,26 @@ func (e *DeprecatedApiVersion) Message() string {
 	return fmt.Sprintf("The api version you are using (%d) has been deprecated. Please use version %d", e.version, ApiVersion)
 }
 
+type TooManyRequests struct {
+	request *http.Request
+}
+
+func (e *TooManyRequests) Code() string {
+	return "too_many_requests"
+}
+
+func (e *TooManyRequests) Error() string {
+	return fmt.Sprintf("%s - Request: %s", e.Code(), formatRequest(e.request))
+}
+
+func (e *TooManyRequests) Status() int {
+	return http.StatusTooManyRequests
+}
+
+func (e *TooManyRequests) Message() string {
+	return http.StatusText(e.Status())
+}
+
 type ServerError struct {
 	error
 	request *http.Request

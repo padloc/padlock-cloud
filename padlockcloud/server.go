@@ -672,7 +672,9 @@ func (server *Server) Start() error {
 		Route{"POST", "/auth/"}:    RateQuota{PerMin(1), 0},
 		Route{"PUT", "/auth/"}:     RateQuota{PerMin(1), 0},
 		Route{"DELETE", "/store/"}: RateQuota{PerMin(1), 0},
-	})
+	}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		server.HandleError(&TooManyRequests{r}, w, r)
+	}))
 
 	// Add CORS middleware
 	handler = Cors(handler)

@@ -16,7 +16,7 @@ type Route struct {
 }
 
 // Limits the rate of a given handler to a certain number of requests per minute
-func RateLimit(handler http.Handler, quotas map[Route]RateQuota) http.Handler {
+func RateLimit(handler http.Handler, quotas map[Route]RateQuota, deniedHandler http.Handler) http.Handler {
 	store, err := memstore.New(65536)
 	if err != nil {
 		log.Fatal(err)
@@ -39,6 +39,7 @@ func RateLimit(handler http.Handler, quotas map[Route]RateQuota) http.Handler {
 				// actual IP, so check for the X-Real-IP header also, which needs to be set by the reverse proxy
 				Headers: []string{"X-Real-IP"},
 			},
+			DeniedHandler: deniedHandler,
 		}).RateLimit(handler)
 	}
 
