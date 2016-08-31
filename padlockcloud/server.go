@@ -179,7 +179,11 @@ func (server *Server) AccountFromRequest(r *http.Request) (*Account, error) {
 	// Fetch account for the given email address
 	err := server.Storage.Get(acc)
 	if err != nil {
-		return nil, &Unauthorized{email, token, r}
+		if err == ErrNotFound {
+			return nil, &Unauthorized{email, token, r}
+		} else {
+			return nil, err
+		}
 	}
 
 	// Check if the provide api token is valid
@@ -188,7 +192,9 @@ func (server *Server) AccountFromRequest(r *http.Request) (*Account, error) {
 	}
 
 	// Save account info to persist last used data for auth tokens
-	server.Storage.Put(acc)
+	if err := server.Storage.Put(acc); err != nil {
+		server.Error.Print(err)
+	}
 
 	return acc, nil
 }
@@ -252,7 +258,11 @@ func (server *Server) RequestAuthToken(w http.ResponseWriter, r *http.Request, c
 	// address in case it does not exist, we have to check if an account exists first
 	if !create {
 		if err := server.Storage.Get(&Account{Email: email}); err != nil {
-			return err
+			if err == ErrNotFound {
+				return &AccountNotFound{email}
+			} else {
+				return err
+			}
 		}
 	}
 
@@ -317,7 +327,11 @@ func (server *Server) ActivateAuthToken(w http.ResponseWriter, r *http.Request) 
 	authRequest := &AuthRequest{Token: token}
 	err = server.Storage.Get(authRequest)
 	if err != nil {
-		return err
+		if err == ErrNotFound {
+			return &InvalidToken{token, r}
+		} else {
+			return err
+		}
 	}
 
 	// Create account instance with the given email address.
@@ -465,7 +479,11 @@ func (server *Server) CompleteDeleteStore(w http.ResponseWriter, r *http.Request
 	// Fetch reset request from database
 	resetRequest := &DeleteStoreRequest{Token: token}
 	if err := server.Storage.Get(resetRequest); err != nil {
-		return err
+		if err == ErrNotFound {
+			return &InvalidToken{token, r}
+		} else {
+			return err
+		}
 	}
 
 	// If the corresponding delete request was found in the database, we consider the data reset request

@@ -137,6 +137,26 @@ func (e *UnsupportedEndpoint) Message() string {
 	return http.StatusText(e.Status())
 }
 
+type AccountNotFound struct {
+	email string
+}
+
+func (e *AccountNotFound) Code() string {
+	return "account_not_found"
+}
+
+func (e *AccountNotFound) Error() string {
+	return fmt.Sprintf("%s - Email: %s", e.Code(), e.email)
+}
+
+func (e *AccountNotFound) Status() int {
+	return http.StatusNotFound
+}
+
+func (e *AccountNotFound) Message() string {
+	return http.StatusText(e.Status())
+}
+
 type DeprecatedApiVersion struct {
 	version int
 	request *http.Request
