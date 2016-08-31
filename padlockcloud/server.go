@@ -11,6 +11,7 @@ import "bytes"
 import "time"
 import "strconv"
 import "path/filepath"
+import "strings"
 import "gopkg.in/tylerb/graceful.v1"
 
 const (
@@ -198,16 +199,41 @@ func (server *Server) HandleError(e error, w http.ResponseWriter, r *http.Reques
 	err, ok := e.(ErrorResponse)
 
 	if !ok {
-		err = &InternalServerError{e, r}
+		err = &ServerError{e, r}
 	}
 
-	WriteErrorResponse(err, w)
-
-	if _, ok := err.(*InternalServerError); ok {
+	if _, ok := err.(*ServerError); ok {
 		server.Error.Print(err)
 	} else {
 		server.Info.Print(err)
 	}
+
+	w.WriteHeader(err.Status())
+
+	var response []byte
+	accept := r.Header.Get("Accept")
+
+	if accept == "application/json" || strings.HasPrefix(accept, "application/vnd.padlock") {
+		w.Header().Set("Content-Type", "application/json")
+		response = []byte(fmt.Sprintf("{\"error\": \"%s\"}", err.Code()))
+	} else if accept == "text/html" {
+		w.Header().Set("Content-Type", "text/html")
+		// Render success page
+		var buff bytes.Buffer
+		if err := server.Templates.ErrorPage.Execute(&buff, map[string]string{
+			"message": err.Message(),
+		}); err != nil {
+			server.Error.Print(err)
+		} else {
+			response = buff.Bytes()
+		}
+	}
+
+	if response == nil {
+		response = []byte(err.Message())
+	}
+
+	w.Write(response)
 }
 
 // Handler function for requesting an api key. Generates a key-token pair and stores them.

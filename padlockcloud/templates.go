@@ -16,6 +16,7 @@ type Templates struct {
 	DeleteStoreSuccess *ht.Template
 	// Email template for clients using an outdated api version
 	DeprecatedVersionEmail *t.Template
+	ErrorPage              *ht.Template
 }
 
 // Loads templates from given directory
@@ -41,6 +42,9 @@ func LoadTemplates(path string) (*Templates, error) {
 		return nil, err
 	}
 	if tt.DeprecatedVersionEmail, err = t.ParseFiles(tPath("deprecated-version-email.txt")); err != nil {
+		return nil, err
+	}
+	if tt.ErrorPage, err = ht.ParseFiles(tPath("error-page.html")); err != nil {
 		return nil, err
 	}
 

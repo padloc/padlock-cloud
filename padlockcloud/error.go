@@ -3,10 +3,15 @@ package padlockcloud
 import "fmt"
 import "net/http"
 
+func formatRequest(r *http.Request) string {
+	return fmt.Sprintf("%s %s", r.Method, r.URL)
+}
+
 type ErrorResponse interface {
 	error
 	Code() string
 	Status() int
+	Message() string
 }
 
 type BadRequest struct {
@@ -18,11 +23,15 @@ func (e *BadRequest) Code() string {
 }
 
 func (e *BadRequest) Error() string {
-	return "Bad request"
+	return fmt.Sprintf("%s - Request: %s", e.Code(), formatRequest(e.request))
 }
 
 func (e *BadRequest) Status() int {
 	return http.StatusBadRequest
+}
+
+func (e *BadRequest) Message() string {
+	return http.StatusText(e.Status())
 }
 
 type InvalidToken struct {
@@ -35,11 +44,15 @@ func (e *InvalidToken) Code() string {
 }
 
 func (e *InvalidToken) Error() string {
-	return fmt.Sprintf("Invalid token: %s", e.token)
+	return fmt.Sprintf("%s - Token: %s; Request: %s", e.Code(), e.token, formatRequest(e.request))
 }
 
 func (e *InvalidToken) Status() int {
 	return http.StatusBadRequest
+}
+
+func (e *InvalidToken) Message() string {
+	return "Invalid Token"
 }
 
 type Unauthorized struct {
@@ -53,11 +66,15 @@ func (e *Unauthorized) Code() string {
 }
 
 func (e *Unauthorized) Error() string {
-	return fmt.Sprintf("Unauthorized - Url: '%s', Email: '%s', token: '%s'", e.request.URL, e.email, e.token)
+	return fmt.Sprintf("%s - Email: %s; Token: %s; Request: %s", e.Code(), e.email, e.token, formatRequest(e.request))
 }
 
 func (e *Unauthorized) Status() int {
 	return http.StatusUnauthorized
+}
+
+func (e *Unauthorized) Message() string {
+	return http.StatusText(e.Status())
 }
 
 type MethodNotAllowed struct {
@@ -69,11 +86,15 @@ func (e *MethodNotAllowed) Code() string {
 }
 
 func (e *MethodNotAllowed) Error() string {
-	return fmt.Sprintf("Method not allowed - %s %s", e.request.Method, e.request.URL)
+	return fmt.Sprintf("%s - Request: %s", e.Code(), formatRequest(e.request))
 }
 
 func (e *MethodNotAllowed) Status() int {
 	return http.StatusMethodNotAllowed
+}
+
+func (e *MethodNotAllowed) Message() string {
+	return http.StatusText(e.Status())
 }
 
 type InsecureConnection struct {
@@ -85,11 +106,15 @@ func (e *InsecureConnection) Code() string {
 }
 
 func (e *InsecureConnection) Error() string {
-	return fmt.Sprintf("Insecure connection - %s %s", e.request.Method, e.request.URL)
+	return fmt.Sprintf("%s - Request: %s", e.Code(), formatRequest(e.request))
 }
 
 func (e *InsecureConnection) Status() int {
 	return http.StatusForbidden
+}
+
+func (e *InsecureConnection) Message() string {
+	return "Secure Connection Required"
 }
 
 type UnsupportedEndpoint struct {
@@ -101,11 +126,15 @@ func (e *UnsupportedEndpoint) Code() string {
 }
 
 func (e *UnsupportedEndpoint) Error() string {
-	return fmt.Sprintf("Unsupported endpoint - %s %s", e.request.Method, e.request.URL)
+	return fmt.Sprintf("%s - Request: %s", e.Code(), formatRequest(e.request))
 }
 
 func (e *UnsupportedEndpoint) Status() int {
 	return http.StatusNotFound
+}
+
+func (e *UnsupportedEndpoint) Message() string {
+	return http.StatusText(e.Status())
 }
 
 type DeprecatedApiVersion struct {
@@ -118,28 +147,30 @@ func (e *DeprecatedApiVersion) Code() string {
 }
 
 func (e *DeprecatedApiVersion) Error() string {
-	return fmt.Sprintf("Deprecated version - %d", e.version)
+	return fmt.Sprintf("%s - Version: %d; Request: %s", e.Code(), e.version, formatRequest(e.request))
 }
 
 func (e *DeprecatedApiVersion) Status() int {
 	return http.StatusNotAcceptable
 }
 
-type InternalServerError struct {
+func (e *DeprecatedApiVersion) Message() string {
+	return fmt.Sprintf("The api version you are using (%d) has been deprecated. Please use version %d", e.version, ApiVersion)
+}
+
+type ServerError struct {
 	error
 	request *http.Request
 }
 
-func (e *InternalServerError) Code() string {
+func (e *ServerError) Code() string {
 	return "internal_server_error"
 }
 
-func (e *InternalServerError) Status() int {
+func (e *ServerError) Status() int {
 	return http.StatusInternalServerError
 }
 
-func WriteErrorResponse(e ErrorResponse, w http.ResponseWriter) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(e.Status())
-	w.Write([]byte(fmt.Sprintf("{\"error\": \"%s\"}", e.Code())))
+func (e *ServerError) Message() string {
+	return http.StatusText(e.Status())
 }
