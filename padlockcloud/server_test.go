@@ -29,6 +29,8 @@ func request(method string, url string, body string, asForm bool, authToken *Aut
 
 	if version > 0 {
 		req.Header.Add("Accept", fmt.Sprintf("application/vnd.padlock;version=%d", version))
+	} else {
+		req.Header.Add("Accept", "application/json")
 	}
 
 	if authToken != nil {
@@ -43,9 +45,9 @@ func request(method string, url string, body string, asForm bool, authToken *Aut
 // E.g.:
 // ```
 // // Response body should be empty
-// checkResponse(t, res, 204, "^$")
+// testResponse(t, res, 204, "^$")
 // ```
-func checkResponse(t *testing.T, res *http.Response, code int, body string) []byte {
+func testResponse(t *testing.T, res *http.Response, code int, body string) []byte {
 	if res.StatusCode != code {
 		t.Errorf("%s %s: Expected status code to be %d, is %d", res.Request.Method, res.Request.URL, code, res.StatusCode)
 	}
@@ -68,6 +70,10 @@ func checkResponse(t *testing.T, res *http.Response, code int, body string) []by
 	return resBody
 }
 
+func testError(t *testing.T, res *http.Response, e ErrorResponse) {
+	testResponse(t, res, e.Status(), regexp.QuoteMeta(string(JsonifyErrorResponse(e))))
+}
+
 func setupServer() (*Server, string) {
 	storage := &MemoryStorage{}
 	sender := &RecordSender{}
@@ -77,6 +83,7 @@ func setupServer() (*Server, string) {
 		htmlTemplate.Must(htmlTemplate.New("").Parse("")),
 		htmlTemplate.Must(htmlTemplate.New("").Parse("{{ .email }}")),
 		template.Must(template.New("").Parse("")),
+		htmlTemplate.Must(htmlTemplate.New("").Parse("<html>{{ .message }}</html>")),
 	}
 
 	logger := &Log{Config: &LogConfig{}}
@@ -109,7 +116,7 @@ func TestLifeCycle(t *testing.T) {
 	}.Encode(), true, nil, ApiVersion)
 
 	// Response status code should be "ACCEPTED", response body should be the RFC4122-compliant auth token
-	tokenJSON := checkResponse(t, res, http.StatusAccepted, "")
+	tokenJSON := testResponse(t, res, http.StatusAccepted, "")
 
 	authToken := &AuthToken{}
 	err := json.Unmarshal(tokenJSON, authToken)
@@ -134,25 +141,25 @@ func TestLifeCycle(t *testing.T) {
 
 	// 'visit' activation link
 	res, _ = http.Get(link)
-	checkResponse(t, res, http.StatusOK, "")
+	testResponse(t, res, http.StatusOK, "")
 
 	// Get data request authenticated with obtained api key should return with status code 200 - OK and
 	// empty response body (since we haven't written any data yet)
 	res, _ = request("GET", testURL+"/store/", "", false, authToken, ApiVersion)
-	checkResponse(t, res, http.StatusOK, "^$")
+	testResponse(t, res, http.StatusOK, "^$")
 
 	// Put request should return with status code 204 - NO CONTENT
 	res, _ = request("PUT", testURL+"/store/", testData, false, authToken, ApiVersion)
-	checkResponse(t, res, http.StatusNoContent, "")
+	testResponse(t, res, http.StatusNoContent, "")
 
 	// Now get data request should return the data previously saved through PUT
 	res, _ = request("GET", testURL+"/store/", "", false, authToken, ApiVersion)
-	checkResponse(t, res, http.StatusOK, fmt.Sprintf("^%s$", testData))
+	testResponse(t, res, http.StatusOK, fmt.Sprintf("^%s$", testData))
 
 	// Send data reset request. Response should have status code 202 - ACCEPTED
 	sender.Reset()
 	res, _ = request("DELETE", testURL+"/store/", "", false, authToken, ApiVersion)
-	checkResponse(t, res, http.StatusAccepted, "")
+	testResponse(t, res, http.StatusAccepted, "")
 
 	// Activation message should be sent to the correct email
 	if sender.Recipient != testEmail {
@@ -170,11 +177,11 @@ func TestLifeCycle(t *testing.T) {
 
 	// 'visit' confirmation link
 	res, _ = http.Get(link)
-	checkResponse(t, res, http.StatusOK, fmt.Sprintf("^%s$", testEmail))
+	testResponse(t, res, http.StatusOK, fmt.Sprintf("^%s$", testEmail))
 
 	// After data reset, data should be an empty string
 	res, _ = request("GET", testURL+"/store/", "", false, authToken, ApiVersion)
-	checkResponse(t, res, http.StatusOK, "^$")
+	testResponse(t, res, http.StatusOK, "^$")
 }
 
 // Test correct handling of various error conditions
@@ -187,25 +194,32 @@ func TestErrorConditions(t *testing.T) {
 	}.Encode(), true, nil, ApiVersion)
 
 	// No account with this email exists yet and we have not specified 'create=true' in our request
-	// so the status code of th response should be "PRECONDITION FAILED"
-	checkResponse(t, res, http.StatusNotFound, "")
+	testError(t, res, &AccountNotFound{})
 
 	// A request without a valid authorization header should return with status code 401 - Unauthorized
 	res, _ = request("GET", testURL+"/store/", "", false, nil, ApiVersion)
-	checkResponse(t, res, http.StatusUnauthorized, "")
+	testError(t, res, &Unauthorized{})
 
 	// Requests with unsupported HTTP methods should return with 405 - method not allowed
 	res, _ = request("POST", testURL+"/store/", "", false, nil, ApiVersion)
-	checkResponse(t, res, http.StatusMethodNotAllowed, "")
+	testError(t, res, &MethodNotAllowed{})
 
 	// Requests to unsupported paths should return with 404 - not found
 	res, _ = request("GET", testURL+"/invalidpath", "", false, nil, ApiVersion)
-	checkResponse(t, res, http.StatusNotFound, "")
+	testError(t, res, &UnsupportedEndpoint{})
+
+	// An invalid activation token should result in a bad request response
+	res, _ = request("GET", testURL+"/activate/?t=asdf", "", false, nil, ApiVersion)
+	testError(t, res, &InvalidToken{})
+
+	// An invalid deletion token should result in a bad request response
+	res, _ = request("GET", testURL+"/deletestore/?t=asdf", "", false, nil, ApiVersion)
+	testError(t, res, &InvalidToken{})
 
 	// In case `RequireTLS` is set to true, requests via http should be rejected with status code 403 - forbidden
 	server.Config.RequireTLS = true
 	res, _ = request("GET", testURL+"", "", false, nil, ApiVersion)
-	checkResponse(t, res, http.StatusForbidden, "")
+	testError(t, res, &InsecureConnection{})
 	server.Config.RequireTLS = false
 }
 
@@ -213,10 +227,12 @@ func TestOutdatedVersion(t *testing.T) {
 	server, testURL := setupServer()
 	sender := server.Sender.(*RecordSender)
 
+	e := &UnsupportedApiVersion{}
+
 	sender.Reset()
 	token, _ := token()
 	res, _ := request("GET", testURL+"/", "", false, &AuthToken{Email: testEmail, Token: token}, 0)
-	checkResponse(t, res, http.StatusNotAcceptable, "")
+	testError(t, res, e)
 	if sender.Recipient != testEmail {
 		t.Errorf("Expected outdated message to be sent to %s, instead got %s", testEmail, sender.Recipient)
 	}
@@ -225,14 +241,14 @@ func TestOutdatedVersion(t *testing.T) {
 	res, _ = request("POST", testURL+"/auth", url.Values{
 		"email": {testEmail},
 	}.Encode(), true, nil, 0)
-	checkResponse(t, res, http.StatusNotAcceptable, "")
+	testError(t, res, e)
 	if sender.Recipient != testEmail {
 		t.Errorf("Expected outdated message to be sent to %s, instead got %s", testEmail, sender.Recipient)
 	}
 
 	sender.Reset()
 	res, _ = request("DELETE", testURL+"/"+testEmail, "", false, nil, 0)
-	checkResponse(t, res, http.StatusNotAcceptable, "")
+	testError(t, res, e)
 	if sender.Recipient != testEmail {
 		t.Errorf("Expected outdated message to be sent to %s, instead got %s", testEmail, sender.Recipient)
 	}
@@ -246,10 +262,33 @@ func TestPanicRecovery(t *testing.T) {
 		panic("Everyone panic!!!")
 	})
 	res, _ := request("GET", testURL+"/panic/", "", false, nil, 1)
-	checkResponse(t, res, http.StatusInternalServerError, "")
+	testError(t, res, &ServerError{})
 	server.mux.HandleFunc("/panic2/", func(w http.ResponseWriter, r *http.Request) {
 		panic(errors.New("Everyone panic!!!"))
 	})
 	res, _ = request("GET", testURL+"/panic2/", "", false, nil, 1)
-	checkResponse(t, res, http.StatusInternalServerError, "")
+	testError(t, res, &ServerError{})
+}
+
+func TestErrorFormat(t *testing.T) {
+	_, testURL := setupServer()
+
+	e := &UnsupportedEndpoint{}
+	testErr := func(format string, expected []byte) {
+		req, _ := http.NewRequest("GET", fmt.Sprintf("%s/invalidpath/?v=%d", testURL, ApiVersion), nil)
+		if format != "" {
+			req.Header.Add("Accept", format)
+		}
+		res, _ := http.DefaultClient.Do(req)
+		defer res.Body.Close()
+		body, _ := ioutil.ReadAll(res.Body)
+		if !bytes.Equal(body, expected) {
+			t.Errorf("Expected %s, instead got %s", expected, body)
+		}
+	}
+
+	testErr(fmt.Sprintf("application/vnd.padlock;version=%d", ApiVersion), JsonifyErrorResponse(e))
+	testErr("application/json", JsonifyErrorResponse(e))
+	testErr("text/html", []byte(fmt.Sprintf("<html>%s</html>", e.Message())))
+	testErr("", []byte(e.Message()))
 }
