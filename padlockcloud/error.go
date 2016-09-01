@@ -163,25 +163,25 @@ func (e *AccountNotFound) Message() string {
 	return http.StatusText(e.Status())
 }
 
-type DeprecatedApiVersion struct {
+type UnsupportedApiVersion struct {
 	version int
 	request *http.Request
 }
 
-func (e *DeprecatedApiVersion) Code() string {
+func (e *UnsupportedApiVersion) Code() string {
 	return "deprecated_api_version"
 }
 
-func (e *DeprecatedApiVersion) Error() string {
+func (e *UnsupportedApiVersion) Error() string {
 	return fmt.Sprintf("%s - Version: %d; Request: %s", e.Code(), e.version, formatRequest(e.request))
 }
 
-func (e *DeprecatedApiVersion) Status() int {
+func (e *UnsupportedApiVersion) Status() int {
 	return http.StatusNotAcceptable
 }
 
-func (e *DeprecatedApiVersion) Message() string {
-	return fmt.Sprintf("The api version you are using (%d) has been deprecated. Please use version %d", e.version, ApiVersion)
+func (e *UnsupportedApiVersion) Message() string {
+	return fmt.Sprintf("The api version you are using (%d) is not supported. Please use version %d", e.version, ApiVersion)
 }
 
 type TooManyRequests struct {

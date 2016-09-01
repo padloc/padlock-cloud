@@ -645,7 +645,7 @@ func (server *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			server.Error.Print(err)
 		}
 
-		server.HandleError(&DeprecatedApiVersion{version, r}, w, r)
+		server.HandleError(&UnsupportedApiVersion{version, r}, w, r)
 		return
 	}
 
