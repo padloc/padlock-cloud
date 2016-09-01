@@ -48,6 +48,8 @@ func (cliApp *CliApp) InitConfig() {
 }
 
 func (cliApp *CliApp) RunServer(context *cli.Context) error {
+	cfg, _ := yaml.Marshal(cliApp.Config)
+	cliApp.Server.Info.Printf("Running server with the following configuration:\n%s", cfg)
 	return cliApp.Server.Start()
 }
 

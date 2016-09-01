@@ -717,11 +717,12 @@ func (server *Server) Start() error {
 	server.Addr = fmt.Sprintf(":%d", port)
 
 	// Start server
-	server.Info.Printf("Starting server on port %v", port)
 	if tlsCert != "" && tlsKey != "" {
+		server.Info.Printf("Starting server with TLS on port %v", port)
 		server.Config.RequireTLS = true
 		return server.ListenAndServeTLS(tlsCert, tlsKey)
 	} else {
+		server.Info.Printf("Starting server on port %v", port)
 		return server.ListenAndServe()
 	}
 }
