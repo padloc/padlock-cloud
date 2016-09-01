@@ -11,13 +11,13 @@ type Sender interface {
 
 type EmailConfig struct {
 	// User name used for authentication with the mail server
-	User string
+	User string `yaml:"user"`
 	// Mail server address
-	Server string
+	Server string `yaml:"server"`
 	// Port on which to contact the mail server
-	Port string
+	Port string `yaml:"port"`
 	// Password used for authentication with the mail server
-	Password string
+	Password string `yaml:"password"`
 }
 
 // EmailSender implements the `Sender` interface for emails

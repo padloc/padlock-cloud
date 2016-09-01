@@ -54,7 +54,7 @@ func RegisterStorable(t Storable, loc string) {
 
 type LevelDBConfig struct {
 	// Path to directory on disc where database files should be stored
-	Path string
+	Path string `yaml:"path"`
 }
 
 // LevelDB implementation of the `Storage` interface

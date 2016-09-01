@@ -8,8 +8,11 @@ var stdout io.Writer = os.Stdout
 var stderr io.Writer = os.Stderr
 
 type LogConfig struct {
-	LogFile      string `yaml:"log_file"`
-	ErrFile      string `yaml:"err_file"`
+	// File to write logs to
+	LogFile string `yaml:"log_file"`
+	// File to write errors to. Defaults to the value of `LogFile`
+	ErrFile string `yaml:"err_file"`
+	// An address to send error notifications to
 	NotifyErrors string `yaml:"notify_errors"`
 }
 

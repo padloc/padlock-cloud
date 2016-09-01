@@ -170,7 +170,7 @@ func NewCliApp() *CliApp {
 		cli.StringFlag{
 			Name:        "config, c",
 			Value:       "",
-			Usage:       "Path to configuration file",
+			Usage:       "Path to configuration file. WARNING: If provided, all other flags will be ingored",
 			EnvVar:      "PC_CONFIG_PATH",
 			Destination: &cliApp.ConfigPath,
 		},
@@ -273,7 +273,7 @@ func NewCliApp() *CliApp {
 				},
 				cli.StringFlag{
 					Name:        "host-name",
-					Usage:       "Flag for manually setting the host name",
+					Usage:       "Manually set the host name",
 					Value:       "",
 					EnvVar:      "PC_HOST_NAME",
 					Destination: &config.Server.HostName,

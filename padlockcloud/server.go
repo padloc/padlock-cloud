@@ -128,7 +128,7 @@ func (d *DataStore) Serialize() ([]byte, error) {
 	return d.Content, nil
 }
 
-// Miscellaneaous options
+// Server configuration
 type ServerConfig struct {
 	// If true, all requests via plain http will be rejected. Only https requests are allowed
 	RequireTLS bool `yaml:"require_tls"`

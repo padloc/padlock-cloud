@@ -70,6 +70,8 @@ log:
   notify_errors: admin@example.com
 ```
 
+**NOTE**: If you are using a config file, all other flags and environment variables will be ingored.
+
 ## Troubleshooting
 
 ### Failed to load templates
