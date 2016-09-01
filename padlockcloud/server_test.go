@@ -83,7 +83,7 @@ func setupServer() (*Server, string) {
 		htmlTemplate.Must(htmlTemplate.New("").Parse("")),
 		htmlTemplate.Must(htmlTemplate.New("").Parse("{{ .email }}")),
 		template.Must(template.New("").Parse("")),
-		htmlTemplate.Must(htmlTemplate.New("").Parse("{{ .message }}")),
+		htmlTemplate.Must(htmlTemplate.New("").Parse("<html>{{ .message }}</html>")),
 	}
 
 	logger := &Log{Config: &LogConfig{}}
@@ -268,4 +268,27 @@ func TestPanicRecovery(t *testing.T) {
 	})
 	res, _ = request("GET", testURL+"/panic2/", "", false, nil, 1)
 	testError(t, res, &ServerError{})
+}
+
+func TestErrorFormat(t *testing.T) {
+	_, testURL := setupServer()
+
+	e := &UnsupportedEndpoint{}
+	testErr := func(format string, expected []byte) {
+		req, _ := http.NewRequest("GET", fmt.Sprintf("%s/invalidpath/?v=%d", testURL, ApiVersion), nil)
+		if format != "" {
+			req.Header.Add("Accept", format)
+		}
+		res, _ := http.DefaultClient.Do(req)
+		defer res.Body.Close()
+		body, _ := ioutil.ReadAll(res.Body)
+		if !bytes.Equal(body, expected) {
+			t.Errorf("Expected %s, instead got %s", expected, body)
+		}
+	}
+
+	testErr(fmt.Sprintf("application/vnd.padlock;version=%d", ApiVersion), JsonifyErrorResponse(e))
+	testErr("application/json", JsonifyErrorResponse(e))
+	testErr("text/html", []byte(fmt.Sprintf("<html>%s</html>", e.Message())))
+	testErr("", []byte(e.Message()))
 }
