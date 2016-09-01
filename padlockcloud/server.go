@@ -742,14 +742,6 @@ func NewServer(log *Log, storage Storage, sender Sender, config *ServerConfig) *
 		config,
 	}
 
-	// Call server.CleanUp when shutting down
-	server.ShutdownInitiated = func() {
-		err := server.CleanUp()
-		if err != nil {
-			server.Error.Print(err)
-		}
-	}
-
 	// Hook up logger for http.Server
 	server.ErrorLog = server.Error
 	// Hook up logger for graceful.Server
