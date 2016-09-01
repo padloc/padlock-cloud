@@ -13,6 +13,10 @@ func formatRequestVerbose(r *http.Request) string {
 	return string(dump)
 }
 
+func JsonifyErrorResponse(e ErrorResponse) []byte {
+	return []byte(fmt.Sprintf("{\"error\":\"%s\",\"message\":\"%s\"}", e.Code(), e.Message()))
+}
+
 type ErrorResponse interface {
 	error
 	Code() string

@@ -12,7 +12,7 @@ func TestRateLimit(t *testing.T) {
 
 	rl := RateLimit(handler, map[Route]RateQuota{
 		Route{"GET", "/test/"}: RateQuota{PerSec(1), 0},
-	})
+	}, nil)
 
 	testServer := httptest.NewServer(rl)
 

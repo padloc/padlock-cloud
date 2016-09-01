@@ -221,7 +221,7 @@ func (server *Server) HandleError(e error, w http.ResponseWriter, r *http.Reques
 
 	if accept == "application/json" || strings.HasPrefix(accept, "application/vnd.padlock") {
 		w.Header().Set("Content-Type", "application/json")
-		response = []byte(fmt.Sprintf("{\"error\": \"%s\"}", err.Code()))
+		response = JsonifyErrorResponse(err)
 	} else if accept == "text/html" {
 		w.Header().Set("Content-Type", "text/html")
 		// Render success page
