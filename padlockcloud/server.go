@@ -214,8 +214,6 @@ func (server *Server) HandleError(e error, w http.ResponseWriter, r *http.Reques
 		server.Info.Print(err)
 	}
 
-	w.WriteHeader(err.Status())
-
 	var response []byte
 	accept := r.Header.Get("Accept")
 
@@ -239,6 +237,7 @@ func (server *Server) HandleError(e error, w http.ResponseWriter, r *http.Reques
 		response = []byte(err.Message())
 	}
 
+	w.WriteHeader(err.Status())
 	w.Write(response)
 }
 
