@@ -46,7 +46,7 @@ padlock-cloud command --help
 ### Config file
 
 The `--config` flag offers the option of using a configuration file instead of command line flags. The
-provided file should be in the [YAML format]http://yaml.org/). Here is an example configuration file:
+provided file should be in the [YAML format](http://yaml.org/). Here is an example configuration file:
 
 ```yaml
 ---
