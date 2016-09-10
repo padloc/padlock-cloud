@@ -140,8 +140,8 @@ type ServerConfig struct {
 	TLSCert string `yaml:"tls_cert"`
 	// Path to TLS key file
 	TLSKey string `yaml:"tls_key"`
-	// Host name
-	HostName string `yaml:"host_name"`
+	// Explicit host to use in place of http.Request::Host when generating urls and such
+	Host string `yaml:"host"`
 }
 
 // The Server type holds all the contextual data and logic used for running a Padlock Cloud instances
@@ -157,9 +157,9 @@ type Server struct {
 	Config    *ServerConfig
 }
 
-func (server *Server) GetHostName(r *http.Request) string {
-	if server.Config.HostName != "" {
-		return fmt.Sprintf("%s:%d", server.Config.HostName, server.Config.Port)
+func (server *Server) GetHost(r *http.Request) string {
+	if server.Config.Host != "" {
+		return server.Config.Host
 	} else {
 		return r.Host
 	}
@@ -289,7 +289,7 @@ func (server *Server) RequestAuthToken(w http.ResponseWriter, r *http.Request, c
 	err = server.Templates.ActivateAuthTokenEmail.Execute(&buff, map[string]string{
 		"email": authRequest.AuthToken.Email,
 		"activation_link": fmt.Sprintf("%s://%s/activate/?v=%d&t=%s", schemeFromRequest(r),
-			server.GetHostName(r), ApiVersion, authRequest.Token),
+			server.GetHost(r), ApiVersion, authRequest.Token),
 		"conn_id": authRequest.AuthToken.Id,
 	})
 	if err != nil {
@@ -462,7 +462,7 @@ func (server *Server) RequestDeleteStore(w http.ResponseWriter, r *http.Request)
 	err = server.Templates.DeleteStoreEmail.Execute(&buff, map[string]string{
 		"email": acc.Email,
 		"delete_link": fmt.Sprintf("%s://%s/deletestore/?v=%d&t=%s", schemeFromRequest(r),
-			server.GetHostName(r), ApiVersion, deleteRequest.Token),
+			server.GetHost(r), ApiVersion, deleteRequest.Token),
 	})
 	if err != nil {
 		return err

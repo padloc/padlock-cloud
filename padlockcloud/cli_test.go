@@ -26,7 +26,7 @@ func NewSampleConfig(dir string) CliConfig {
 			Port:       5555,
 			TLSCert:    "",
 			TLSKey:     "",
-			HostName:   "myhostname.com",
+			Host:       "myhostname.com",
 		},
 		LevelDBConfig{
 			Path: dbpath,

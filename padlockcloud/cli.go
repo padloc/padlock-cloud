@@ -50,6 +50,14 @@ func (cliApp *CliApp) InitConfig() {
 func (cliApp *CliApp) RunServer(context *cli.Context) error {
 	cfg, _ := yaml.Marshal(cliApp.Config)
 	cliApp.Server.Info.Printf("Running server with the following configuration:\n%s", cfg)
+
+	if cliApp.Config.Server.Host == "" {
+		fmt.Printf("\nWARNING: No --host option provided for generating urls. The 'Host' header from\n" +
+			"incoming requests will be used instead. Note that the 'Host' header can easily be\n" +
+			"spoofed! Unless you're running this server behind a reverse proxy you probably want\n" +
+			"to provide an explicit host string! See the README for details.\n\n")
+	}
+
 	return cliApp.Server.Start()
 }
 
@@ -272,11 +280,12 @@ func NewCliApp() *CliApp {
 					Destination: &config.Server.TLSKey,
 				},
 				cli.StringFlag{
-					Name:        "host-name",
-					Usage:       "Manually set the host name",
+					Name: "host",
+					Usage: "Host string to used for generating urls. May include the port. " +
+						"If not provided the requests 'Host' header is used.",
 					Value:       "",
-					EnvVar:      "PC_HOST_NAME",
-					Destination: &config.Server.HostName,
+					EnvVar:      "PC_HOST",
+					Destination: &config.Server.Host,
 				},
 			},
 			Action: cliApp.RunServer,

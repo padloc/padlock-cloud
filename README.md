@@ -56,7 +56,7 @@ server:
   port: 5555
   tls_cert: cert.crt
   tls_key: cert.key
-  host_name: cloud.padlock.io
+  host: cloud.padlock.io
 leveldb:
   path: path/to/db
 email:
@@ -71,6 +71,40 @@ log:
 ```
 
 **NOTE**: If you are using a config file, all other flags and environment variables will be ingored.
+
+## Security Considerations
+
+### Link spoofing and the --host option
+
+Padlock Cloud frequently uses confirmation links for things like activating
+authentication tokens, confirmation for deleting an account etc. They usually
+contain some sort of unique token. For example, the link for activating an
+authentication token looks like this:
+
+```
+https://hostname:port/activate/?v=1&t=cdB6iEdL4o5PfhLey30Rrg
+```
+
+These links are sent out to a users email address and serve as a form of
+authentication. Only users that actually have control over the email account
+accociated with their Padlock Cloud account may access the correponding data.
+
+Now the `hostname` and `port` portion of the url will obviously differ based on
+the environment. By default, the app will simply use the value provided by the
+`Host` header of the incoming request. But the `Host` header can easily be
+faked and unless the server is running behind a reverse proxy that sets the it
+to the correct value, this opens the app up to a vulnerabilty we call 'link
+spoofing'. Let's say an attacker sends an authentiation request to our server
+using a targets email address, but changes the `Host` header to a server that
+he controls. The email that is sent to the target will now contain a link that
+points to the attackers server instead of our own and once the user clicks the
+link the attacker is in possession of the activation token which can in turn be
+used to activate the authentication token he already has.  There is a simple
+solution for this: Explicitly provide a hostname and port to be used for link
+generation when starting up the server. The `runserver` command provides the
+`--host` flag for this. This is a string that contains the hostname and
+optionally a port, e.g. `example.com:3000` or simply `example.com`. it is
+recommended to use this option in production environments at all times!
 
 ## Troubleshooting
 
