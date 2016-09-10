@@ -51,7 +51,6 @@ provided file should be in the [YAML format](http://yaml.org/). Here is an examp
 ```yaml
 ---
 server:
-  require_tls: true
   assets_path: assets
   port: 5555
   tls_cert: cert.crt
@@ -73,6 +72,15 @@ log:
 **NOTE**: If you are using a config file, all other flags and environment variables will be ingored.
 
 ## Security Considerations
+
+### Running the server without TLS
+
+It goes without saying that user data should **never** be transmitted over the
+internet over a non-secure connection. If no `--tls-cert` and `--tls-key`
+options are provided to the `runserver` command, the server will be addressable
+through plain http. You should make sure that in this case the server does
+**not** listen on a public port and that any reverse proxies that handle
+outgoing connections are protected via TLS.
 
 ### Link spoofing and the --host option
 

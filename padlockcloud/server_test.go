@@ -90,7 +90,7 @@ func setupServer() (*Server, string) {
 	logger.Init()
 	logger.Info.SetOutput(ioutil.Discard)
 	logger.Error.SetOutput(ioutil.Discard)
-	server := NewServer(logger, storage, sender, &ServerConfig{RequireTLS: false})
+	server := NewServer(logger, storage, sender, &ServerConfig{})
 	server.Templates = templates
 	server.Init()
 
@@ -186,7 +186,7 @@ func TestLifeCycle(t *testing.T) {
 
 // Test correct handling of various error conditions
 func TestErrorConditions(t *testing.T) {
-	server, testURL := setupServer()
+	_, testURL := setupServer()
 
 	// Trying to get an api key for a non-existing account using the PUT method should result in a 404
 	res, _ := request("PUT", testURL+"/auth/", url.Values{
@@ -215,12 +215,6 @@ func TestErrorConditions(t *testing.T) {
 	// An invalid deletion token should result in a bad request response
 	res, _ = request("GET", testURL+"/deletestore/?t=asdf", "", false, nil, ApiVersion)
 	testError(t, res, &InvalidToken{})
-
-	// In case `RequireTLS` is set to true, requests via http should be rejected with status code 403 - forbidden
-	server.Config.RequireTLS = true
-	res, _ = request("GET", testURL+"", "", false, nil, ApiVersion)
-	testError(t, res, &InsecureConnection{})
-	server.Config.RequireTLS = false
 }
 
 func TestOutdatedVersion(t *testing.T) {

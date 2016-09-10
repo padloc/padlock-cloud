@@ -130,8 +130,6 @@ func (d *DataStore) Serialize() ([]byte, error) {
 
 // Server configuration
 type ServerConfig struct {
-	// If true, all requests via plain http will be rejected. Only https requests are allowed
-	RequireTLS bool `yaml:"require_tls"`
 	// Path to assets directory; used for loading templates and such
 	AssetsPath string `yaml:"assets_path"`
 	// Port to listen on
@@ -653,12 +651,6 @@ func (server *Server) HandlePanic(w http.ResponseWriter, r *http.Request) {
 func (server *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer server.HandlePanic(w, r)
 
-	// Only accept connections via https if `RequireTLS` configuration is true
-	if server.Config.RequireTLS && r.TLS == nil {
-		server.HandleError(&InsecureConnection{r}, w, r)
-		return
-	}
-
 	if ok, version := CheckVersion(r); !ok {
 		if err := server.SendDeprecatedVersionEmail(r); err != nil {
 			server.Error.Print(err)
@@ -727,7 +719,6 @@ func (server *Server) Start() error {
 	// Start server
 	if tlsCert != "" && tlsKey != "" {
 		server.Info.Printf("Starting server with TLS on port %v", port)
-		server.Config.RequireTLS = true
 		return server.ListenAndServeTLS(tlsCert, tlsKey)
 	} else {
 		server.Info.Printf("Starting server on port %v", port)

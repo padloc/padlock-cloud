@@ -21,7 +21,6 @@ func NewSampleConfig(dir string) CliConfig {
 			NotifyErrors: "notify@padlock.io",
 		},
 		ServerConfig{
-			RequireTLS: true,
 			AssetsPath: "../assets",
 			Port:       5555,
 			TLSCert:    "",

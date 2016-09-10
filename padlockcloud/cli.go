@@ -259,12 +259,6 @@ func NewCliApp() *CliApp {
 					EnvVar:      "PC_ASSETS_PATH",
 					Destination: &config.Server.AssetsPath,
 				},
-				cli.BoolFlag{
-					Name:        "require-tls",
-					Usage:       "Reject insecure connections",
-					EnvVar:      "PC_REQUIRE_TLS",
-					Destination: &config.Server.RequireTLS,
-				},
 				cli.StringFlag{
 					Name:        "tls-cert",
 					Usage:       "Path to TLS certification file",
