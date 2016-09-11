@@ -23,7 +23,7 @@ func tokenFromRequest(r *http.Request) (string, error) {
 	token := r.URL.Query().Get("t")
 
 	if token == "" {
-		return "", &InvalidToken{token, r}
+		return "", &InvalidToken{token}
 	}
 
 	return token, nil
@@ -170,7 +170,7 @@ func (server *Server) GetHost(r *http.Request) string {
 func (server *Server) AccountFromRequest(r *http.Request) (*Account, error) {
 	email, token := credentialsFromRequest(r)
 	if email == "" || token == "" {
-		return nil, &Unauthorized{email, token, r}
+		return nil, &Unauthorized{email, token}
 	}
 	acc := &Account{Email: email}
 
@@ -178,7 +178,7 @@ func (server *Server) AccountFromRequest(r *http.Request) (*Account, error) {
 	err := server.Storage.Get(acc)
 	if err != nil {
 		if err == ErrNotFound {
-			return nil, &Unauthorized{email, token, r}
+			return nil, &Unauthorized{email, token}
 		} else {
 			return nil, err
 		}
@@ -186,7 +186,7 @@ func (server *Server) AccountFromRequest(r *http.Request) (*Account, error) {
 
 	// Check if the provide api token is valid
 	if !acc.ValidateAuthToken(token) {
-		return nil, &Unauthorized{email, token, r}
+		return nil, &Unauthorized{email, token}
 	}
 
 	// Save account info to persist last used data for auth tokens
@@ -197,20 +197,24 @@ func (server *Server) AccountFromRequest(r *http.Request) (*Account, error) {
 	return acc, nil
 }
 
+func (server *Server) PrintError(err error, r *http.Request) {
+	if _, ok := err.(*ServerError); ok {
+		server.Error.Printf("%s - %s\nRequest:\n%s\n", formatRequest(r), err, formatRequestVerbose(r))
+	} else {
+		server.Info.Printf("%s - %s", formatRequest(r), err)
+	}
+}
+
 // Global error handler. Writes a appropriate response to the provided `http.ResponseWriter` object and
 // logs / notifies of internal server errors
 func (server *Server) HandleError(e error, w http.ResponseWriter, r *http.Request) {
 	err, ok := e.(ErrorResponse)
 
 	if !ok {
-		err = &ServerError{e, r}
+		err = &ServerError{e}
 	}
 
-	if _, ok := err.(*ServerError); ok {
-		server.Error.Print(err)
-	} else {
-		server.Info.Print(err)
-	}
+	server.PrintError(e, r)
 
 	var response []byte
 	accept := r.Header.Get("Accept")
@@ -225,7 +229,7 @@ func (server *Server) HandleError(e error, w http.ResponseWriter, r *http.Reques
 		if err := server.Templates.ErrorPage.Execute(&buff, map[string]string{
 			"message": err.Message(),
 		}); err != nil {
-			server.Error.Print(&ServerError{err, r})
+			server.PrintError(&ServerError{err}, r)
 		} else {
 			response = buff.Bytes()
 		}
@@ -248,7 +252,7 @@ func (server *Server) RequestAuthToken(w http.ResponseWriter, r *http.Request, c
 
 	// Make sure email field is set
 	if email == "" {
-		return &BadRequest{r}
+		return &BadRequest{}
 	}
 
 	// If the client does not explicitly state that the server should create a new account for this email
@@ -298,7 +302,7 @@ func (server *Server) RequestAuthToken(w http.ResponseWriter, r *http.Request, c
 	// Send email with activation link
 	go func() {
 		if err := server.Sender.Send(email, "Connect to Padlock Cloud", body); err != nil {
-			server.Error.Print(&ServerError{err, r})
+			server.PrintError(&ServerError{err}, r)
 		}
 	}()
 
@@ -335,7 +339,7 @@ func (server *Server) ActivateAuthToken(w http.ResponseWriter, r *http.Request) 
 	err = server.Storage.Get(authRequest)
 	if err != nil {
 		if err == ErrNotFound {
-			return &InvalidToken{token, r}
+			return &InvalidToken{token}
 		} else {
 			return err
 		}
@@ -471,7 +475,7 @@ func (server *Server) RequestDeleteStore(w http.ResponseWriter, r *http.Request)
 	// Send email with confirmation link
 	go func() {
 		if err := server.Sender.Send(acc.Email, "Padlock Cloud Delete Request", body); err != nil {
-			server.Error.Print(&ServerError{err, r})
+			server.PrintError(&ServerError{err}, r)
 		}
 	}()
 
@@ -495,7 +499,7 @@ func (server *Server) CompleteDeleteStore(w http.ResponseWriter, r *http.Request
 	resetRequest := &DeleteStoreRequest{Token: token}
 	if err := server.Storage.Get(resetRequest); err != nil {
 		if err == ErrNotFound {
-			return &InvalidToken{token, r}
+			return &InvalidToken{token}
 		} else {
 			return err
 		}
@@ -540,7 +544,7 @@ func (server *Server) SetupRoutes() {
 		case "POST":
 			err = server.RequestAuthToken(w, r, true)
 		default:
-			err = &MethodNotAllowed{r}
+			err = &MethodNotAllowed{r.Method}
 		}
 
 		if err != nil {
@@ -555,7 +559,7 @@ func (server *Server) SetupRoutes() {
 		if r.Method == "GET" {
 			err = server.ActivateAuthToken(w, r)
 		} else {
-			err = &MethodNotAllowed{r}
+			err = &MethodNotAllowed{r.Method}
 		}
 
 		if err != nil {
@@ -575,7 +579,7 @@ func (server *Server) SetupRoutes() {
 		case "DELETE":
 			err = server.RequestDeleteStore(w, r)
 		default:
-			err = &MethodNotAllowed{r}
+			err = &MethodNotAllowed{r.Method}
 		}
 
 		if err != nil {
@@ -590,7 +594,7 @@ func (server *Server) SetupRoutes() {
 		if r.Method == "GET" {
 			err = server.CompleteDeleteStore(w, r)
 		} else {
-			err = &MethodNotAllowed{r}
+			err = &MethodNotAllowed{r.Method}
 		}
 
 		if err != nil {
@@ -600,7 +604,7 @@ func (server *Server) SetupRoutes() {
 
 	// Fall through route
 	server.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		server.HandleError(&UnsupportedEndpoint{r}, w, r)
+		server.HandleError(&UnsupportedEndpoint{r.URL.Path}, w, r)
 	})
 }
 
@@ -628,7 +632,7 @@ func (server *Server) SendDeprecatedVersionEmail(r *http.Request) error {
 		// Send email about deprecated api version
 		go func() {
 			if err := server.Sender.Send(email, "Please update your version of Padlock", body); err != nil {
-				server.Error.Print(&ServerError{err, r})
+				server.PrintError(&ServerError{err}, r)
 			}
 		}()
 	}
@@ -653,10 +657,10 @@ func (server *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if ok, version := CheckVersion(r); !ok {
 		if err := server.SendDeprecatedVersionEmail(r); err != nil {
-			server.Error.Print(&ServerError{err, r})
+			server.PrintError(&ServerError{err}, r)
 		}
 
-		server.HandleError(&UnsupportedApiVersion{version, r}, w, r)
+		server.HandleError(&UnsupportedApiVersion{version}, w, r)
 		return
 	}
 
@@ -702,7 +706,7 @@ func (server *Server) Start() error {
 		Route{"PUT", "/auth/"}:     RateQuota{PerMin(1), 0},
 		Route{"DELETE", "/store/"}: RateQuota{PerMin(1), 0},
 	}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		server.HandleError(&TooManyRequests{r}, w, r)
+		server.HandleError(&TooManyRequests{}, w, r)
 	}))
 
 	// Add CORS middleware

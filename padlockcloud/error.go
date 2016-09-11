@@ -5,7 +5,11 @@ import "net/http"
 import "net/http/httputil"
 
 func formatRequest(r *http.Request) string {
-	return fmt.Sprintf("%s %s", r.Method, r.URL)
+	ip := r.Header.Get("X-Real-IP")
+	if ip == "" {
+		ip = r.RemoteAddr
+	}
+	return fmt.Sprintf("%s %s %s", ip, r.Method, r.URL)
 }
 
 func formatRequestVerbose(r *http.Request) string {
@@ -25,7 +29,6 @@ type ErrorResponse interface {
 }
 
 type BadRequest struct {
-	request *http.Request
 }
 
 func (e *BadRequest) Code() string {
@@ -33,7 +36,7 @@ func (e *BadRequest) Code() string {
 }
 
 func (e *BadRequest) Error() string {
-	return fmt.Sprintf("%s - Request: %s", e.Code(), formatRequest(e.request))
+	return fmt.Sprintf("%s", e.Code())
 }
 
 func (e *BadRequest) Status() int {
@@ -45,8 +48,7 @@ func (e *BadRequest) Message() string {
 }
 
 type InvalidToken struct {
-	token   string
-	request *http.Request
+	token string
 }
 
 func (e *InvalidToken) Code() string {
@@ -54,7 +56,7 @@ func (e *InvalidToken) Code() string {
 }
 
 func (e *InvalidToken) Error() string {
-	return fmt.Sprintf("%s - Token: %s; Request: %s", e.Code(), e.token, formatRequest(e.request))
+	return fmt.Sprintf("%s: %s", e.Code(), e.token)
 }
 
 func (e *InvalidToken) Status() int {
@@ -66,9 +68,8 @@ func (e *InvalidToken) Message() string {
 }
 
 type Unauthorized struct {
-	email   string
-	token   string
-	request *http.Request
+	email string
+	token string
 }
 
 func (e *Unauthorized) Code() string {
@@ -76,7 +77,7 @@ func (e *Unauthorized) Code() string {
 }
 
 func (e *Unauthorized) Error() string {
-	return fmt.Sprintf("%s - Email: %s; Token: %s; Request: %s", e.Code(), e.email, e.token, formatRequest(e.request))
+	return fmt.Sprintf("%s: %s:%s", e.Code(), e.email, e.token)
 }
 
 func (e *Unauthorized) Status() int {
@@ -88,7 +89,7 @@ func (e *Unauthorized) Message() string {
 }
 
 type MethodNotAllowed struct {
-	request *http.Request
+	method string
 }
 
 func (e *MethodNotAllowed) Code() string {
@@ -96,7 +97,7 @@ func (e *MethodNotAllowed) Code() string {
 }
 
 func (e *MethodNotAllowed) Error() string {
-	return fmt.Sprintf("%s - Request: %s", e.Code(), formatRequest(e.request))
+	return fmt.Sprintf("%s: %s", e.Code(), e.method)
 }
 
 func (e *MethodNotAllowed) Status() int {
@@ -107,28 +108,8 @@ func (e *MethodNotAllowed) Message() string {
 	return http.StatusText(e.Status())
 }
 
-type InsecureConnection struct {
-	request *http.Request
-}
-
-func (e *InsecureConnection) Code() string {
-	return "insecure_connection"
-}
-
-func (e *InsecureConnection) Error() string {
-	return fmt.Sprintf("%s - Request: %s", e.Code(), formatRequest(e.request))
-}
-
-func (e *InsecureConnection) Status() int {
-	return http.StatusForbidden
-}
-
-func (e *InsecureConnection) Message() string {
-	return "Secure Connection Required"
-}
-
 type UnsupportedEndpoint struct {
-	request *http.Request
+	path string
 }
 
 func (e *UnsupportedEndpoint) Code() string {
@@ -136,7 +117,7 @@ func (e *UnsupportedEndpoint) Code() string {
 }
 
 func (e *UnsupportedEndpoint) Error() string {
-	return fmt.Sprintf("%s - Request: %s", e.Code(), formatRequest(e.request))
+	return fmt.Sprintf("%s: %s", e.Code(), e.path)
 }
 
 func (e *UnsupportedEndpoint) Status() int {
@@ -156,7 +137,7 @@ func (e *AccountNotFound) Code() string {
 }
 
 func (e *AccountNotFound) Error() string {
-	return fmt.Sprintf("%s - Email: %s", e.Code(), e.email)
+	return fmt.Sprintf("%s: %s", e.Code(), e.email)
 }
 
 func (e *AccountNotFound) Status() int {
@@ -169,7 +150,6 @@ func (e *AccountNotFound) Message() string {
 
 type UnsupportedApiVersion struct {
 	version int
-	request *http.Request
 }
 
 func (e *UnsupportedApiVersion) Code() string {
@@ -177,7 +157,7 @@ func (e *UnsupportedApiVersion) Code() string {
 }
 
 func (e *UnsupportedApiVersion) Error() string {
-	return fmt.Sprintf("%s - Version: %d; Request: %s", e.Code(), e.version, formatRequest(e.request))
+	return fmt.Sprintf("%s: %d", e.Code(), e.version)
 }
 
 func (e *UnsupportedApiVersion) Status() int {
@@ -189,7 +169,6 @@ func (e *UnsupportedApiVersion) Message() string {
 }
 
 type TooManyRequests struct {
-	request *http.Request
 }
 
 func (e *TooManyRequests) Code() string {
@@ -197,7 +176,7 @@ func (e *TooManyRequests) Code() string {
 }
 
 func (e *TooManyRequests) Error() string {
-	return fmt.Sprintf("%s - Request: %s", e.Code(), formatRequest(e.request))
+	return fmt.Sprintf("%s", e.Code())
 }
 
 func (e *TooManyRequests) Status() int {
@@ -210,11 +189,10 @@ func (e *TooManyRequests) Message() string {
 
 type ServerError struct {
 	error
-	request *http.Request
 }
 
 func (e *ServerError) Error() string {
-	return fmt.Sprintf("%s - Error: %s; Request:\n%s", e.Code(), e.error.Error(), formatRequestVerbose(e.request))
+	return fmt.Sprintf("%s: %s", e.Code(), e.error.Error())
 }
 
 func (e *ServerError) Code() string {
