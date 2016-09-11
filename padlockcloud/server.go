@@ -191,7 +191,7 @@ func (server *Server) AccountFromRequest(r *http.Request) (*Account, error) {
 
 	// Save account info to persist last used data for auth tokens
 	if err := server.Storage.Put(acc); err != nil {
-		server.Error.Print(err)
+		return nil, err
 	}
 
 	return acc, nil
@@ -225,7 +225,7 @@ func (server *Server) HandleError(e error, w http.ResponseWriter, r *http.Reques
 		if err := server.Templates.ErrorPage.Execute(&buff, map[string]string{
 			"message": err.Message(),
 		}); err != nil {
-			server.Error.Print(err)
+			server.Error.Print(&ServerError{err, r})
 		} else {
 			response = buff.Bytes()
 		}
@@ -298,7 +298,7 @@ func (server *Server) RequestAuthToken(w http.ResponseWriter, r *http.Request, c
 	// Send email with activation link
 	go func() {
 		if err := server.Sender.Send(email, "Connect to Padlock Cloud", body); err != nil {
-			server.Error.Print(err)
+			server.Error.Print(&ServerError{err, r})
 		}
 	}()
 
@@ -471,7 +471,7 @@ func (server *Server) RequestDeleteStore(w http.ResponseWriter, r *http.Request)
 	// Send email with confirmation link
 	go func() {
 		if err := server.Sender.Send(acc.Email, "Padlock Cloud Delete Request", body); err != nil {
-			server.Error.Print(err)
+			server.Error.Print(&ServerError{err, r})
 		}
 	}()
 
@@ -628,7 +628,7 @@ func (server *Server) SendDeprecatedVersionEmail(r *http.Request) error {
 		// Send email about deprecated api version
 		go func() {
 			if err := server.Sender.Send(email, "Please update your version of Padlock", body); err != nil {
-				server.Error.Print(err)
+				server.Error.Print(&ServerError{err, r})
 			}
 		}()
 	}
@@ -653,7 +653,7 @@ func (server *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if ok, version := CheckVersion(r); !ok {
 		if err := server.SendDeprecatedVersionEmail(r); err != nil {
-			server.Error.Print(err)
+			server.Error.Print(&ServerError{err, r})
 		}
 
 		server.HandleError(&UnsupportedApiVersion{version, r}, w, r)
