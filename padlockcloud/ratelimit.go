@@ -7,6 +7,7 @@ import "gopkg.in/throttled/throttled.v2/store/memstore"
 
 type RateQuota throttled.RateQuota
 
+var PerSec = throttled.PerSec
 var PerMin = throttled.PerMin
 
 type Route struct {
@@ -14,8 +15,16 @@ type Route struct {
 	Method string
 }
 
+type VaryBy struct{}
+
+func (v *VaryBy) Key(r *http.Request) string {
+	return formatRequest(r)
+}
+
 // Limits the rate of a given handler to a certain number of requests per minute
-func RateLimit(handler http.Handler, quotas map[Route]RateQuota) http.Handler {
+func RateLimit(handler http.Handler, quotas map[Route]RateQuota, deniedHandler http.Handler) http.Handler {
+	var varyBy *VaryBy
+
 	store, err := memstore.New(65536)
 	if err != nil {
 		log.Fatal(err)
@@ -29,15 +38,9 @@ func RateLimit(handler http.Handler, quotas map[Route]RateQuota) http.Handler {
 			log.Fatal(err)
 		}
 		rateLimiters[route] = (&throttled.HTTPRateLimiter{
-			RateLimiter: rateLimiter,
-			VaryBy: &throttled.VaryBy{
-				RemoteAddr: true,
-				Path:       true,
-				Method:     true,
-				// For apps running behind a reverse proxy, the RemoteAddr field is likely to not contain the
-				// actual IP, so check for the X-Real-IP header also, which needs to be set by the reverse proxy
-				Headers: []string{"X-Real-IP"},
-			},
+			RateLimiter:   rateLimiter,
+			VaryBy:        varyBy,
+			DeniedHandler: deniedHandler,
 		}).RateLimit(handler)
 	}
 

@@ -6,12 +6,10 @@ import "encoding/json"
 import "path/filepath"
 import "github.com/syndtr/goleveldb/leveldb"
 
-const defaultDbPath = "./db"
-
 // Error singletons
 var (
 	// A particular implementation of the Storable implementation is not supported
-	ErrStorableTypeNotSupported = errors.New("padlock: storable type not supported")
+	ErrUnregisteredStorable = errors.New("padlock: unregistered storable type")
 	// An object was not found
 	ErrNotFound = errors.New("padlock: not found")
 	// A query was attempted on a closed storage
@@ -48,25 +46,20 @@ type Storage interface {
 
 // Map of supported `Storable` implementations along with identifier strings that can be used for
 // internal store or file names
-var StorableTypes = map[reflect.Type]string{
-	reflect.TypeOf((*Store)(nil)).Elem():              "data",
-	reflect.TypeOf((*Account)(nil)).Elem():            "auth",
-	reflect.TypeOf((*AuthRequest)(nil)).Elem():        "act",
-	reflect.TypeOf((*DeleteStoreRequest)(nil)).Elem(): "del",
-}
+var StorableTypes = map[reflect.Type]string{}
 
-func AddStorable(t interface{}, loc string) {
+func RegisterStorable(t Storable, loc string) {
 	StorableTypes[reflect.TypeOf(t).Elem()] = loc
 }
 
 type LevelDBConfig struct {
 	// Path to directory on disc where database files should be stored
-	Path string `env:"PC_DB_PATH" cli:"db-path" yaml:"db_path"`
+	Path string `yaml:"path"`
 }
 
 // LevelDB implementation of the `Storage` interface
 type LevelDBStorage struct {
-	LevelDBConfig
+	Config *LevelDBConfig
 	// Map of `leveldb.DB` instances associated with different `Storable` types
 	stores map[reflect.Type]*leveldb.DB
 }
@@ -78,7 +71,7 @@ func (s *LevelDBStorage) Open() error {
 
 	// Create `leveldb.DB` instance for each supported `Storable` type
 	for t, loc := range StorableTypes {
-		db, err := leveldb.OpenFile(filepath.Join(s.Path, loc), nil)
+		db, err := leveldb.OpenFile(filepath.Join(s.Config.Path, loc), nil)
 		if err != nil {
 			return err
 		}
@@ -90,12 +83,9 @@ func (s *LevelDBStorage) Open() error {
 
 // Implementation of the `Storage.Close` interface method
 func (s *LevelDBStorage) Close() error {
-	var err error
-
 	// Close all existing `leveldb.DB` instances
 	for _, db := range s.stores {
-		err = db.Close()
-		if err != nil {
+		if err := db.Close(); err != nil {
 			return err
 		}
 	}
@@ -110,7 +100,7 @@ func (s *LevelDBStorage) getDB(t Storable) (*leveldb.DB, error) {
 	db := s.stores[reflect.TypeOf(t).Elem()]
 
 	if db == nil {
-		return nil, ErrStorableTypeNotSupported
+		return nil, ErrUnregisteredStorable
 	}
 
 	return db, nil
@@ -123,7 +113,7 @@ func (s *LevelDBStorage) Get(t Storable) error {
 	}
 
 	if t == nil {
-		return ErrStorableTypeNotSupported
+		return ErrUnregisteredStorable
 	}
 
 	db, err := s.getDB(t)
@@ -148,7 +138,7 @@ func (s *LevelDBStorage) Put(t Storable) error {
 	}
 
 	if t == nil {
-		return ErrStorableTypeNotSupported
+		return ErrUnregisteredStorable
 	}
 
 	db, err := s.getDB(t)
@@ -171,7 +161,7 @@ func (s *LevelDBStorage) Delete(t Storable) error {
 	}
 
 	if t == nil {
-		return ErrStorableTypeNotSupported
+		return ErrUnregisteredStorable
 	}
 
 	db, err := s.getDB(t)
@@ -219,7 +209,7 @@ func (s *MemoryStorage) Get(t Storable) error {
 	}
 
 	if t == nil {
-		return ErrStorableTypeNotSupported
+		return ErrUnregisteredStorable
 	}
 
 	tm := s.store[reflect.TypeOf(t)]
@@ -239,7 +229,7 @@ func (s *MemoryStorage) Put(t Storable) error {
 	}
 
 	if t == nil {
-		return ErrStorableTypeNotSupported
+		return ErrUnregisteredStorable
 	}
 
 	data, err := json.Marshal(t)
@@ -261,7 +251,7 @@ func (s *MemoryStorage) Delete(t Storable) error {
 	}
 
 	if t == nil {
-		return ErrStorableTypeNotSupported
+		return ErrUnregisteredStorable
 	}
 
 	ts := s.store[reflect.TypeOf(t)]
@@ -279,12 +269,12 @@ func (s *MemoryStorage) List(t Storable) ([]string, error) {
 	}
 
 	if t == nil {
-		return l, ErrStorableTypeNotSupported
+		return l, ErrUnregisteredStorable
 	}
 
 	ts := s.store[reflect.TypeOf(t)]
 	if ts == nil {
-		return l, ErrStorableTypeNotSupported
+		return l, ErrUnregisteredStorable
 	}
 
 	for key, _ := range ts {

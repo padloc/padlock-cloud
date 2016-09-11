@@ -4,41 +4,41 @@ import "fmt"
 import "net/smtp"
 
 // Sender is a interface that exposes the `Send` method for sending messages with a subject to a given
-// receiver.
+// recipient.
 type Sender interface {
-	Send(receiver string, subject string, message string) error
+	Send(recipient string, subject string, message string) error
 }
 
 type EmailConfig struct {
 	// User name used for authentication with the mail server
-	User string `env:"PC_EMAIL_USER" cli:"email-user" yaml:"email_user"`
+	User string `yaml:"user"`
 	// Mail server address
-	Server string `env:"PC_EMAIL_SERVER" cli:"email-server" yaml:"email_server"`
+	Server string `yaml:"server"`
 	// Port on which to contact the mail server
-	Port string `env:"PC_EMAIL_PORT" cli:"email-port" yaml:"email_port"`
+	Port string `yaml:"port"`
 	// Password used for authentication with the mail server
-	Password string `env:"PC_EMAIL_PASSWORD" cli:"email-password" yaml:"email_password"`
+	Password string `yaml:"password"`
 }
 
 // EmailSender implements the `Sender` interface for emails
 type EmailSender struct {
-	EmailConfig
+	Config *EmailConfig
 }
 
-// Attempts to send an email to a given receiver. Through `smpt.SendMail`
+// Attempts to send an email to a given recipient. Through `smpt.SendMail`
 func (sender *EmailSender) Send(rec string, subject string, body string) error {
 	auth := smtp.PlainAuth(
 		"",
-		sender.User,
-		sender.Password,
-		sender.Server,
+		sender.Config.User,
+		sender.Config.Password,
+		sender.Config.Server,
 	)
 
-	message := fmt.Sprintf("Subject: %s\r\nFrom: Padlock Cloud <%s>\r\n\r\n%s", subject, sender.User, body)
+	message := fmt.Sprintf("Subject: %s\r\nFrom: Padlock Cloud <%s>\r\n\r\n%s", subject, sender.Config.User, body)
 	return smtp.SendMail(
-		sender.Server+":"+sender.Port,
+		sender.Config.Server+":"+sender.Config.Port,
 		auth,
-		sender.User,
+		sender.Config.User,
 		[]string{rec},
 		[]byte(message),
 	)
@@ -46,20 +46,20 @@ func (sender *EmailSender) Send(rec string, subject string, body string) error {
 
 // Mock implementation of the `Sender` interface. Simply records arguments passed to the `Send` method
 type RecordSender struct {
-	Receiver string
-	Subject  string
-	Message  string
+	Recipient string
+	Subject   string
+	Message   string
 }
 
 func (s *RecordSender) Send(rec string, subj string, message string) error {
-	s.Receiver = rec
+	s.Recipient = rec
 	s.Subject = subj
 	s.Message = message
 	return nil
 }
 
 func (s *RecordSender) Reset() {
-	s.Receiver = ""
+	s.Recipient = ""
 	s.Subject = ""
 	s.Message = ""
 }
