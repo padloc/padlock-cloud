@@ -720,9 +720,9 @@ func (server *Server) Start() error {
 
 	// Add rate limiting middleWare
 	handler := RateLimit(server, map[Route]RateQuota{
-		Route{"POST", "/auth/"}:    RateQuota{PerMin(1), 0},
-		Route{"PUT", "/auth/"}:     RateQuota{PerMin(1), 0},
-		Route{"DELETE", "/store/"}: RateQuota{PerMin(1), 0},
+		Route{"POST", "/auth/"}:    RateQuota{PerMin(1), 5},
+		Route{"PUT", "/auth/"}:     RateQuota{PerMin(1), 5},
+		Route{"DELETE", "/store/"}: RateQuota{PerMin(1), 5},
 	}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		server.HandleError(&TooManyRequests{}, w, r)
 	}))
