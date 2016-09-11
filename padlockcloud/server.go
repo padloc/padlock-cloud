@@ -320,7 +320,7 @@ func (server *Server) RequestAuthToken(w http.ResponseWriter, r *http.Request, c
 	w.WriteHeader(http.StatusAccepted)
 	w.Write(resp)
 
-	server.Info.Printf("Auth token requested for '%s' (Conn ID: %s)\n", email, authRequest.AuthToken.Id)
+	server.Info.Printf("%s - auth_token:request - %s:%s\n", formatRequest(r), email, authRequest.AuthToken.Id)
 
 	return nil
 }
@@ -378,7 +378,7 @@ func (server *Server) ActivateAuthToken(w http.ResponseWriter, r *http.Request) 
 
 	buff.WriteTo(w)
 
-	server.Info.Printf("Auth token activated for '%s' (Conn ID: %s)\n", acc.Email, authRequest.AuthToken.Id)
+	server.Info.Printf("%s - auth_token:activate - %s:%s\n", formatRequest(r), acc.Email, authRequest.AuthToken.Id)
 
 	return nil
 }
@@ -402,7 +402,7 @@ func (server *Server) ReadStore(w http.ResponseWriter, r *http.Request) error {
 	// Return raw data in response body
 	w.Write(data.Content)
 
-	server.Info.Printf("Read from data store '%s'\n", acc.Email)
+	server.Info.Printf("%s - data_store:read - %s\n", formatRequest(r), acc.Email)
 
 	return nil
 }
@@ -435,7 +435,7 @@ func (server *Server) WriteStore(w http.ResponseWriter, r *http.Request) error {
 	// Return with NO CONTENT status code
 	w.WriteHeader(http.StatusNoContent)
 
-	server.Info.Printf("Wrote to data store '%s'\n", acc.Email)
+	server.Info.Printf("%s - data_store:write - %s\n", formatRequest(r), acc.Email)
 
 	return nil
 }
@@ -482,7 +482,7 @@ func (server *Server) RequestDeleteStore(w http.ResponseWriter, r *http.Request)
 	// Send ACCEPTED status code
 	w.WriteHeader(http.StatusAccepted)
 
-	server.Info.Printf("Requested data removal for '%s'", acc.Email)
+	server.Info.Printf("%s - data_store:request_delete - %s", formatRequest(r), acc.Email)
 
 	return nil
 }
@@ -528,7 +528,7 @@ func (server *Server) CompleteDeleteStore(w http.ResponseWriter, r *http.Request
 		return err
 	}
 
-	server.Info.Printf("Confimed data removal for '%s'", resetRequest.Account)
+	server.Info.Printf("%s - data_store:confirm_delete - %s", formatRequest(r), resetRequest.Account)
 
 	return nil
 }

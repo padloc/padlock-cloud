@@ -56,7 +56,7 @@ func (e *InvalidToken) Code() string {
 }
 
 func (e *InvalidToken) Error() string {
-	return fmt.Sprintf("%s: %s", e.Code(), e.token)
+	return fmt.Sprintf("%s - %s", e.Code(), e.token)
 }
 
 func (e *InvalidToken) Status() int {
@@ -77,7 +77,7 @@ func (e *Unauthorized) Code() string {
 }
 
 func (e *Unauthorized) Error() string {
-	return fmt.Sprintf("%s: %s:%s", e.Code(), e.email, e.token)
+	return fmt.Sprintf("%s - %s:%s", e.Code(), e.email, e.token)
 }
 
 func (e *Unauthorized) Status() int {
@@ -97,7 +97,7 @@ func (e *MethodNotAllowed) Code() string {
 }
 
 func (e *MethodNotAllowed) Error() string {
-	return fmt.Sprintf("%s: %s", e.Code(), e.method)
+	return fmt.Sprintf("%s - %s", e.Code(), e.method)
 }
 
 func (e *MethodNotAllowed) Status() int {
@@ -117,7 +117,7 @@ func (e *UnsupportedEndpoint) Code() string {
 }
 
 func (e *UnsupportedEndpoint) Error() string {
-	return fmt.Sprintf("%s: %s", e.Code(), e.path)
+	return fmt.Sprintf("%s - %s", e.Code(), e.path)
 }
 
 func (e *UnsupportedEndpoint) Status() int {
@@ -137,7 +137,7 @@ func (e *AccountNotFound) Code() string {
 }
 
 func (e *AccountNotFound) Error() string {
-	return fmt.Sprintf("%s: %s", e.Code(), e.email)
+	return fmt.Sprintf("%s - %s", e.Code(), e.email)
 }
 
 func (e *AccountNotFound) Status() int {
@@ -157,7 +157,7 @@ func (e *UnsupportedApiVersion) Code() string {
 }
 
 func (e *UnsupportedApiVersion) Error() string {
-	return fmt.Sprintf("%s: %d", e.Code(), e.version)
+	return fmt.Sprintf("%s - %d", e.Code(), e.version)
 }
 
 func (e *UnsupportedApiVersion) Status() int {
@@ -192,7 +192,7 @@ type ServerError struct {
 }
 
 func (e *ServerError) Error() string {
-	return fmt.Sprintf("%s: %s", e.Code(), e.error.Error())
+	return fmt.Sprintf("%s - %s", e.Code(), e.error.Error())
 }
 
 func (e *ServerError) Code() string {
