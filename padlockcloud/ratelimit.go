@@ -15,8 +15,16 @@ type Route struct {
 	Method string
 }
 
+type VaryBy struct{}
+
+func (v *VaryBy) Key(r *http.Request) string {
+	return formatRequest(r)
+}
+
 // Limits the rate of a given handler to a certain number of requests per minute
 func RateLimit(handler http.Handler, quotas map[Route]RateQuota, deniedHandler http.Handler) http.Handler {
+	var varyBy *VaryBy
+
 	store, err := memstore.New(65536)
 	if err != nil {
 		log.Fatal(err)
@@ -30,15 +38,8 @@ func RateLimit(handler http.Handler, quotas map[Route]RateQuota, deniedHandler h
 			log.Fatal(err)
 		}
 		rateLimiters[route] = (&throttled.HTTPRateLimiter{
-			RateLimiter: rateLimiter,
-			VaryBy: &throttled.VaryBy{
-				RemoteAddr: true,
-				Path:       true,
-				Method:     true,
-				// For apps running behind a reverse proxy, the RemoteAddr field is likely to not contain the
-				// actual IP, so check for the X-Real-IP header also, which needs to be set by the reverse proxy
-				Headers: []string{"X-Real-IP"},
-			},
+			RateLimiter:   rateLimiter,
+			VaryBy:        varyBy,
 			DeniedHandler: deniedHandler,
 		}).RateLimit(handler)
 	}

@@ -2,6 +2,7 @@ package padlockcloud
 
 import "net"
 import "net/http"
+import "net/http/httputil"
 import "io/ioutil"
 import "fmt"
 import "encoding/json"
@@ -51,6 +52,23 @@ func versionFromRequest(r *http.Request) int {
 
 	version, _ := strconv.Atoi(vString)
 	return version
+}
+
+func getIp(r *http.Request) string {
+	ip := r.Header.Get("X-Real-IP")
+	if ip == "" {
+		ip = r.RemoteAddr
+	}
+	return ip
+}
+
+func formatRequest(r *http.Request) string {
+	return fmt.Sprintf("%s %s %s", getIp(r), r.Method, r.URL)
+}
+
+func formatRequestVerbose(r *http.Request) string {
+	dump, _ := httputil.DumpRequest(r, true)
+	return string(dump)
 }
 
 func CheckVersion(r *http.Request) (bool, int) {

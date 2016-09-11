@@ -2,20 +2,6 @@ package padlockcloud
 
 import "fmt"
 import "net/http"
-import "net/http/httputil"
-
-func formatRequest(r *http.Request) string {
-	ip := r.Header.Get("X-Real-IP")
-	if ip == "" {
-		ip = r.RemoteAddr
-	}
-	return fmt.Sprintf("%s %s %s", ip, r.Method, r.URL)
-}
-
-func formatRequestVerbose(r *http.Request) string {
-	dump, _ := httputil.DumpRequest(r, true)
-	return string(dump)
-}
 
 func JsonifyErrorResponse(e ErrorResponse) []byte {
 	return []byte(fmt.Sprintf("{\"error\":\"%s\",\"message\":\"%s\"}", e.Code(), e.Message()))
