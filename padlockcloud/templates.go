@@ -25,26 +25,41 @@ func LoadTemplates(path string) (*Templates, error) {
 
 	tt := &Templates{}
 
-	tPath := func(filename string) string {
+	tp := func(filename string) string {
 		return filepath.Join(path, filename)
 	}
 
-	if tt.ActivateAuthTokenEmail, err = t.ParseFiles(tPath("activate-auth-token-email.txt")); err != nil {
+	if tt.ActivateAuthTokenEmail, err = t.ParseFiles(
+		tp("email/base.txt"),
+		tp("email/activate-auth-token.txt"),
+	); err != nil {
 		return nil, err
 	}
-	if tt.DeleteStoreEmail, err = t.ParseFiles(tPath("delete-store-email.txt")); err != nil {
+	if tt.DeleteStoreEmail, err = t.ParseFiles(
+		tp("email/base.txt"),
+		tp("email/delete-store.txt"),
+	); err != nil {
 		return nil, err
 	}
-	if tt.ActivateAuthTokenSuccess, err = ht.ParseFiles(tPath("activate-auth-token-success.html")); err != nil {
+	if tt.DeprecatedVersionEmail, err = t.ParseFiles(
+		tp("email/base.txt"),
+		tp("email/deprecated-version.txt"),
+	); err != nil {
 		return nil, err
 	}
-	if tt.DeleteStoreSuccess, err = ht.ParseFiles(tPath("delete-store-success.html")); err != nil {
+	if tt.ActivateAuthTokenSuccess, err = ht.ParseFiles(
+		tp("page/base.html"),
+		tp("page/activate-auth-token-success.html"),
+	); err != nil {
 		return nil, err
 	}
-	if tt.DeprecatedVersionEmail, err = t.ParseFiles(tPath("deprecated-version-email.txt")); err != nil {
+	if tt.DeleteStoreSuccess, err = ht.ParseFiles(
+		tp("page/base.html"),
+		tp("page/delete-store-success.html"),
+	); err != nil {
 		return nil, err
 	}
-	if tt.ErrorPage, err = ht.ParseFiles(tPath("error-page.html")); err != nil {
+	if tt.ErrorPage, err = ht.ParseFiles(tp("page/base.html"), tp("page/error.html")); err != nil {
 		return nil, err
 	}
 
