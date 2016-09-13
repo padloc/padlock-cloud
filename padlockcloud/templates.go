@@ -17,6 +17,7 @@ type Templates struct {
 	// Email template for clients using an outdated api version
 	DeprecatedVersionEmail *t.Template
 	ErrorPage              *ht.Template
+	LoginPage              *ht.Template
 }
 
 // Loads templates from given directory
@@ -60,6 +61,9 @@ func LoadTemplates(path string) (*Templates, error) {
 		return nil, err
 	}
 	if tt.ErrorPage, err = ht.ParseFiles(tp("page/base.html"), tp("page/error.html")); err != nil {
+		return nil, err
+	}
+	if tt.LoginPage, err = ht.ParseFiles(tp("page/base.html"), tp("page/login.html")); err != nil {
 		return nil, err
 	}
 

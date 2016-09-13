@@ -15,6 +15,7 @@ type ErrorResponse interface {
 }
 
 type BadRequest struct {
+	message string
 }
 
 func (e *BadRequest) Code() string {
@@ -22,7 +23,7 @@ func (e *BadRequest) Code() string {
 }
 
 func (e *BadRequest) Error() string {
-	return fmt.Sprintf("%s", e.Code())
+	return fmt.Sprintf("%s - %s", e.Code(), e.message)
 }
 
 func (e *BadRequest) Status() int {
@@ -30,7 +31,7 @@ func (e *BadRequest) Status() int {
 }
 
 func (e *BadRequest) Message() string {
-	return http.StatusText(e.Status())
+	return fmt.Sprintf("%s: %s", http.StatusText(e.Status()), e.message)
 }
 
 type InvalidToken struct {

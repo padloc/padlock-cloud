@@ -2,18 +2,65 @@ package padlockcloud
 
 import "time"
 import "encoding/json"
+import "encoding/base64"
+import "net/http"
+import "regexp"
+import "fmt"
+
+var authStringPattern = regexp.MustCompile("^AuthToken (.+):(.+)$")
 
 // A wrapper for an api key containing some meta info like the user and device name
 type AuthToken struct {
 	Email    string
 	Token    string
+	Type     string
 	Id       string
 	Created  time.Time
 	LastUsed time.Time
 }
 
+func (t *AuthToken) String() string {
+	return fmt.Sprintf(
+		"AuthToken %s:%s",
+		base64.RawURLEncoding.EncodeToString([]byte(t.Email)),
+		t.Token,
+	)
+}
+
+func AuthTokenFromString(str string) (*AuthToken, error) {
+	// Check if the Authorization header exists and is well formed
+	if !authStringPattern.MatchString(str) {
+		return nil, &BadRequest{"invalid credentials"}
+	}
+
+	// Extract email and auth token from Authorization header
+	matches := authStringPattern.FindStringSubmatch(str)
+	email := matches[1]
+	// Try to decode email in case it's in base64
+	if dec, err := base64.RawURLEncoding.DecodeString(matches[1]); err == nil {
+		email = string(dec)
+	}
+	t := &AuthToken{
+		Email: email,
+		Token: matches[2],
+	}
+	return t, nil
+}
+
+func AuthTokenFromRequest(r *http.Request) (*AuthToken, error) {
+	authString := r.Header.Get("Authorization")
+
+	if authString == "" {
+		if cookie, err := r.Cookie("auth"); err == nil {
+			authString = cookie.Value
+		}
+	}
+
+	return AuthTokenFromString(authString)
+}
+
 // Creates a new auth token for a given `email`
-func NewAuthToken(email string) (*AuthToken, error) {
+func NewAuthToken(email string, t string) (*AuthToken, error) {
 	authT, err := token()
 	if err != nil {
 		return nil, err
@@ -23,9 +70,14 @@ func NewAuthToken(email string) (*AuthToken, error) {
 		return nil, err
 	}
 
+	if t == "" {
+		t = "api"
+	}
+
 	return &AuthToken{
 		email,
 		authT,
+		t,
 		id,
 		time.Now(),
 		time.Now(),
@@ -101,9 +153,9 @@ func (ar *AuthRequest) Serialize() ([]byte, error) {
 }
 
 // Creates a new `AuthRequest` with a given `email`
-func NewAuthRequest(email string) (*AuthRequest, error) {
+func NewAuthRequest(email string, tType string) (*AuthRequest, error) {
 	// Create new auth token
-	authToken, err := NewAuthToken(email)
+	authToken, err := NewAuthToken(email, tType)
 	if err != nil {
 		return nil, err
 	}

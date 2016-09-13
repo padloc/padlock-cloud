@@ -1,0 +1,14 @@
+{{ define "main" }}
+    {{ if .submitted }}
+        <p>
+            We've sent and email to <strong>{{ .email }}</strong> with a confirmation link.
+        </p>
+    {{ else }}
+        <form action="." method="post">
+            <input name="email" placeholder="Please enter your email address">
+            <input name="type" type="hidden" value="web">
+            <input name="api_version" type="hidden" value="1">
+            <button>Send Login Link</button>
+        </form>
+    {{ end }}
+{{ end }}
