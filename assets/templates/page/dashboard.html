@@ -1,0 +1,16 @@
+{{ define "main" }}
+<section>
+    <h2>Paired Devices</h2>
+    <ul class="paired-devices">
+        {{ range .account.AuthTokens }}
+        <li>
+            <table>
+                <tr><th>Connection ID:</th><td>{{ .Id }}</td></tr>
+                <tr><th>Connected:</th><td>{{ .Created }}</td></tr>
+                <tr><th>Last Used:</th><td>{{ .LastUsed }}</td></tr>
+            </table>
+        </li>
+        {{ end }}
+    </ul>
+<section>
+{{ end }}

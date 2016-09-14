@@ -702,6 +702,9 @@ func (server *Server) SetupRoutes() {
 		}
 	})
 
+	fs := http.FileServer(http.Dir(filepath.Join(server.Config.AssetsPath, "static")))
+	server.mux.Handle("/static/", http.StripPrefix("/static/", fs))
+
 	// Fall through route
 	server.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		server.HandleError(&UnsupportedEndpoint{r.URL.Path}, w, r)
