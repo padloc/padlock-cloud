@@ -16,10 +16,24 @@ input, button {
     -webkit-appearance: none;
     -moz-appearance: none;
     border-radius: 0;
+    border: none;
+    font-size: inherit;
+    font-family: inherit;
+    padding: 10px 15px;
+}
+
+input {
+    border: solid 1px #ccc;
+    min-width: 0;
 }
 
 button {
+    background: #59c6ff;
+    color: #fff;
     cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 *:focus {
@@ -48,7 +62,7 @@ a {
     font-weight: 400;
 }
 
-a:hover {
+button:hover, a:hover {
     opacity: 0.7;
 }
 
@@ -135,17 +149,10 @@ header .spacer {
 
 main {
     margin: 80px auto;
-    padding: 0 20px;
 }
 
 header .inner, main {
     max-width: 800px;
-}
-
-ul.paired-devices li {
-    padding: 20px;
-    border: solid 1px #eee;
-    margin: 10px 0;
 }
 
 .account-email {
@@ -154,6 +161,10 @@ ul.paired-devices li {
 }
 
 @media (max-width: 500px) {
+    header .home .type {
+        display: none;
+    }
+
     section {
         padding-left: 20px;
         padding-right: 20px;

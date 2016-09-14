@@ -4,8 +4,13 @@
         <title>{{- block "title" . -}} Padlock Cloud {{ end }}</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
 
+        <link rel="shortcut icon" type="image/png" href="/static/img/fav.png"/>
+
         <link href="/static/css/fonts.css" rel="stylesheet" type="text/css">
         <link href="/static/css/base.css" rel="stylesheet" type="text/css">
+
+        {{ block "css" . }}
+        {{ end }}
     </head>
     <body>
     <header>
