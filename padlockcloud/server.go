@@ -199,7 +199,7 @@ func (server *Server) AccountFromRequest(r *http.Request) (*Account, error) {
 	return acc, nil
 }
 
-func (server *Server) PrintError(err error, r *http.Request) {
+func (server *Server) LogError(err error, r *http.Request) {
 	if _, ok := err.(*ServerError); ok {
 		server.Error.Printf("%s - %s\nRequest:\n%s\n", formatRequest(r), err, formatRequestVerbose(r))
 	} else {
@@ -211,7 +211,7 @@ func (server *Server) CheckApiVersion(r *http.Request) error {
 	version := versionFromRequest(r)
 	if version != ApiVersion {
 		if err := server.SendDeprecatedVersionEmail(r); err != nil {
-			server.PrintError(&ServerError{err}, r)
+			server.LogError(&ServerError{err}, r)
 		}
 		return &UnsupportedApiVersion{version}
 	}
@@ -228,7 +228,7 @@ func (server *Server) HandleError(e error, w http.ResponseWriter, r *http.Reques
 		err = &ServerError{e}
 	}
 
-	server.PrintError(err, r)
+	server.LogError(e, r)
 
 	var response []byte
 	accept := r.Header.Get("Accept")
@@ -243,7 +243,7 @@ func (server *Server) HandleError(e error, w http.ResponseWriter, r *http.Reques
 		if err := server.Templates.ErrorPage.Execute(&buff, map[string]string{
 			"message": err.Message(),
 		}); err != nil {
-			server.PrintError(&ServerError{err}, r)
+			server.LogError(&ServerError{err}, r)
 		} else {
 			response = buff.Bytes()
 		}
@@ -363,7 +363,7 @@ func (server *Server) RequestAuthToken(w http.ResponseWriter, r *http.Request, c
 	// Send email with activation link
 	go func() {
 		if err := server.Sender.Send(email, emailSubj, emailBody.String()); err != nil {
-			server.PrintError(&ServerError{err}, r)
+			server.LogError(&ServerError{err}, r)
 		}
 	}()
 
@@ -425,16 +425,16 @@ func (server *Server) ActivateAuthToken(w http.ResponseWriter, r *http.Request) 
 		return err
 	}
 
-	w.Header().Set("Content-Type", "text/html")
-	if err := server.Templates.ActivateAuthTokenSuccess.Execute(w, map[string]interface{}{
-		"token": authToken,
-	}); err != nil {
-		return err
-	}
-
 	server.Info.Printf("%s - auth_token:activate - %s:%s:%s\n", formatRequest(r), acc.Email, authToken.Type, authToken.Id)
 
-	return nil
+	if authToken.Type == "web" {
+		http.Redirect(w, r, "/dashboard/", http.StatusFound)
+		return nil
+	} else {
+		return server.Templates.ActivateAuthTokenSuccess.Execute(w, map[string]interface{}{
+			"token": authToken,
+		})
+	}
 }
 
 // Handler function for retrieving the data associated with a given account
@@ -541,7 +541,7 @@ func (server *Server) RequestDeleteStore(w http.ResponseWriter, r *http.Request)
 	// Send email with confirmation link
 	go func() {
 		if err := server.Sender.Send(acc.Email, "Padlock Cloud Delete Request", body); err != nil {
-			server.PrintError(&ServerError{err}, r)
+			server.LogError(&ServerError{err}, r)
 		}
 	}()
 
@@ -605,6 +605,18 @@ func (server *Server) LoginPage(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	return nil
+}
+
+func (server *Server) Dashboard(w http.ResponseWriter, r *http.Request) error {
+	acc, err := server.AccountFromRequest(r)
+	if err != nil {
+		server.LogError(err, r)
+		http.Redirect(w, r, "/auth/", http.StatusFound)
+		return nil
+	}
+	return server.Templates.Dashboard.Execute(w, map[string]interface{}{
+		"account": acc,
+	})
 }
 
 // Registeres http handlers for various routes
@@ -676,6 +688,20 @@ func (server *Server) SetupRoutes() {
 		}
 	})
 
+	server.mux.HandleFunc("/dashboard/", func(w http.ResponseWriter, r *http.Request) {
+		var err error
+
+		if r.Method == "GET" {
+			err = server.Dashboard(w, r)
+		} else {
+			err = &MethodNotAllowed{r.Method}
+		}
+
+		if err != nil {
+			server.HandleError(err, w, r)
+		}
+	})
+
 	// Fall through route
 	server.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		server.HandleError(&UnsupportedEndpoint{r.URL.Path}, w, r)
@@ -710,7 +736,7 @@ func (server *Server) SendDeprecatedVersionEmail(r *http.Request) error {
 		// Send email about deprecated api version
 		go func() {
 			if err := server.Sender.Send(email, "Please update your version of Padlock", body); err != nil {
-				server.PrintError(&ServerError{err}, r)
+				server.LogError(&ServerError{err}, r)
 			}
 		}()
 	}

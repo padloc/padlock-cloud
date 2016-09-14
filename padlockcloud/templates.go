@@ -18,6 +18,7 @@ type Templates struct {
 	DeprecatedVersionEmail *t.Template
 	ErrorPage              *ht.Template
 	LoginPage              *ht.Template
+	Dashboard              *ht.Template
 }
 
 // Loads templates from given directory
@@ -64,6 +65,9 @@ func LoadTemplates(path string) (*Templates, error) {
 		return nil, err
 	}
 	if tt.LoginPage, err = ht.ParseFiles(tp("page/base.html"), tp("page/login.html")); err != nil {
+		return nil, err
+	}
+	if tt.Dashboard, err = ht.ParseFiles(tp("page/base.html"), tp("page/dashboard.html")); err != nil {
 		return nil, err
 	}
 

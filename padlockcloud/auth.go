@@ -6,6 +6,7 @@ import "encoding/base64"
 import "net/http"
 import "regexp"
 import "fmt"
+import "errors"
 
 var authStringPattern = regexp.MustCompile("^AuthToken (.+):(.+)$")
 
@@ -30,7 +31,7 @@ func (t *AuthToken) String() string {
 func AuthTokenFromString(str string) (*AuthToken, error) {
 	// Check if the Authorization header exists and is well formed
 	if !authStringPattern.MatchString(str) {
-		return nil, &BadRequest{"invalid credentials"}
+		return nil, errors.New("invalid credentials")
 	}
 
 	// Extract email and auth token from Authorization header
