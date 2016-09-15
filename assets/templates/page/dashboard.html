@@ -8,12 +8,28 @@
         {{ range .account.AuthTokens }}
         {{ if . }}
         {{ if eq .Type "api" }}
-        <li>
+        <li{{ if .Expired }} class="expired"{{ end }}>
             <table>
                 <tr><th>Connection ID:</th><td>{{ .Id }}</td></tr>
                 <tr><th>Connected:</th><td>{{ .Created.Format "Jan 2 2006 - 15:04:05 MST" }}</td></tr>
                 <tr><th>Last Used:</th><td>{{ .LastUsed.Format "Jan 2 2006 - 15:04:05 MST" }}</td></tr>
+                {{ if not .Expired }}
+                <tr><th>Expires:</th><td>
+                    {{- if .Expires.IsZero -}}
+                    Never
+                    {{- else -}}
+                    {{ .Expires.Format "Jan 2 2006 - 15:04:05 MST" }}
+                    {{- end -}}
+                </td></tr>
+                {{ end }}
             </table>
+            {{ if not .Expired }}
+            <form action="/revoke/" method="POST">
+                <input name="id" type="hidden" value="{{ .Id }}">
+                <input name="token" type="hidden" value="{{ .Token }}">
+                <button>Revoke</button>
+            </form>
+            {{ end }}
         </li>
         {{ end }}
         {{ end }}

@@ -18,6 +18,7 @@ type AuthToken struct {
 	Id       string
 	Created  time.Time
 	LastUsed time.Time
+	Expires  time.Time
 }
 
 func (t *AuthToken) String() string {
@@ -26,6 +27,10 @@ func (t *AuthToken) String() string {
 		base64.RawURLEncoding.EncodeToString([]byte(t.Email)),
 		t.Token,
 	)
+}
+
+func (t *AuthToken) Expired() bool {
+	return !t.Expires.IsZero() && t.Expires.Before(time.Now())
 }
 
 func AuthTokenFromString(str string) (*AuthToken, error) {
@@ -75,6 +80,12 @@ func NewAuthToken(email string, t string) (*AuthToken, error) {
 		t = "api"
 	}
 
+	var expires time.Time
+
+	if t == "web" {
+		expires = time.Now().Add(time.Hour)
+	}
+
 	return &AuthToken{
 		email,
 		authT,
@@ -82,6 +93,7 @@ func NewAuthToken(email string, t string) (*AuthToken, error) {
 		id,
 		time.Now(),
 		time.Now(),
+		expires,
 	}, nil
 }
 

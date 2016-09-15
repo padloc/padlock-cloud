@@ -188,6 +188,9 @@ func (server *Server) AccountFromRequest(r *http.Request) (*Account, error) {
 
 	// Check if the provide api token is valid
 	if t := acc.AuthToken(authToken); t != nil {
+		if t.Expired() {
+			return nil, &Unauthorized{authToken.Email, authToken.Token}
+		}
 		t.LastUsed = time.Now()
 
 		// Save account info to persist last used data for auth tokens
@@ -652,18 +655,47 @@ func (server *Server) Logout(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+func (server *Server) Revoke(w http.ResponseWriter, r *http.Request) error {
+	token := r.PostFormValue("token")
+	if token == "" {
+		return &BadRequest{"No token provided"}
+	}
+
+	acc, err := server.AccountFromRequest(r)
+	if err != nil {
+		return err
+	}
+
+	t := acc.AuthToken(&AuthToken{Token: token})
+	if t == nil {
+		return &BadRequest{"No such token"}
+	}
+
+	t.Expires = time.Now().Add(-time.Minute)
+
+	if err := server.Storage.Put(acc); err != nil {
+		return err
+	}
+
+	http.Redirect(w, r, "/dashboard/", http.StatusFound)
+
+	return nil
+}
+
 // Registeres http handlers for various routes
 func (server *Server) SetupRoutes() {
 	// Endpoint for requesting api keys, only POST method is supported
 	server.mux.HandleFunc("/auth/", func(w http.ResponseWriter, r *http.Request) {
 		var err error
 		switch r.Method {
+		case "GET":
+			err = server.LoginPage(w, r)
 		case "PUT":
 			err = server.RequestAuthToken(w, r, false)
 		case "POST":
 			err = server.RequestAuthToken(w, r, true)
 		default:
-			err = server.LoginPage(w, r)
+			err = &MethodNotAllowed{r.Method}
 		}
 
 		if err != nil {
@@ -740,6 +772,20 @@ func (server *Server) SetupRoutes() {
 
 		if r.Method == "GET" {
 			err = server.Logout(w, r)
+		} else {
+			err = &MethodNotAllowed{r.Method}
+		}
+
+		if err != nil {
+			server.HandleError(err, w, r)
+		}
+	})
+
+	server.mux.HandleFunc("/revoke/", func(w http.ResponseWriter, r *http.Request) {
+		var err error
+
+		if r.Method == "POST" {
+			err = server.Revoke(w, r)
 		} else {
 			err = &MethodNotAllowed{r.Method}
 		}
