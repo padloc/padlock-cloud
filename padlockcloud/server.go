@@ -657,8 +657,9 @@ func (server *Server) Logout(w http.ResponseWriter, r *http.Request) error {
 
 func (server *Server) Revoke(w http.ResponseWriter, r *http.Request) error {
 	token := r.PostFormValue("token")
-	if token == "" {
-		return &BadRequest{"No token provided"}
+	id := r.PostFormValue("id")
+	if token == "" && id == "" {
+		return &BadRequest{"No token or id provided"}
 	}
 
 	acc, err := server.AccountFromRequest(r)
@@ -666,7 +667,7 @@ func (server *Server) Revoke(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	t := acc.AuthToken(&AuthToken{Token: token})
+	t := acc.AuthToken(&AuthToken{Token: token, Id: id})
 	if t == nil {
 		return &BadRequest{"No such token"}
 	}

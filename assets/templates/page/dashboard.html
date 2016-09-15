@@ -26,7 +26,6 @@
             {{ if not .Expired }}
             <form action="/revoke/" method="POST">
                 <input name="id" type="hidden" value="{{ .Id }}">
-                <input name="token" type="hidden" value="{{ .Token }}">
                 <button>Revoke</button>
             </form>
             {{ end }}
