@@ -54,25 +54,46 @@ func (e *InvalidToken) Message() string {
 	return "Invalid Token"
 }
 
-type Unauthorized struct {
+type InvalidAuthToken struct {
 	email string
 	token string
 }
 
-func (e *Unauthorized) Code() string {
-	return "unauthorized"
+func (e *InvalidAuthToken) Code() string {
+	return "invalid_auth_token"
 }
 
-func (e *Unauthorized) Error() string {
+func (e *InvalidAuthToken) Error() string {
 	return fmt.Sprintf("%s - %s:%s", e.Code(), e.email, e.token)
 }
 
-func (e *Unauthorized) Status() int {
+func (e *InvalidAuthToken) Status() int {
 	return http.StatusUnauthorized
 }
 
-func (e *Unauthorized) Message() string {
-	return http.StatusText(e.Status())
+func (e *InvalidAuthToken) Message() string {
+	return fmt.Sprintf("%s - %s", http.StatusText(e.Status()), "No valid authorization token provided")
+}
+
+type ExpiredAuthToken struct {
+	email string
+	token string
+}
+
+func (e *ExpiredAuthToken) Code() string {
+	return "expired_auth_token"
+}
+
+func (e *ExpiredAuthToken) Error() string {
+	return fmt.Sprintf("%s - %s:%s", e.Code(), e.email, e.token)
+}
+
+func (e *ExpiredAuthToken) Status() int {
+	return http.StatusUnauthorized
+}
+
+func (e *ExpiredAuthToken) Message() string {
+	return fmt.Sprintf("%s - %s", http.StatusText(e.Status()), "The provided authorization token has expired")
 }
 
 type MethodNotAllowed struct {

@@ -166,13 +166,13 @@ func (server *Server) GetHost(r *http.Request) string {
 }
 
 // Retreives Account object from a http.Request object by evaluating the Authorization header and
-// cross-checking it with api keys of existing accounts. Returns an `Unauthorized` error
+// cross-checking it with api keys of existing accounts. Returns an `InvalidAuthToken` error
 // if no valid Authorization header is provided or if the provided email:api_key pair does not match
 // any of the accounts in the database.
 func (server *Server) AccountFromRequest(r *http.Request) (*Account, error) {
 	authToken, err := AuthTokenFromRequest(r)
 	if err != nil {
-		return nil, &Unauthorized{}
+		return nil, &InvalidAuthToken{}
 	}
 
 	acc := &Account{Email: authToken.Email}
@@ -180,7 +180,7 @@ func (server *Server) AccountFromRequest(r *http.Request) (*Account, error) {
 	// Fetch account for the given email address
 	if err := server.Storage.Get(acc); err != nil {
 		if err == ErrNotFound {
-			return nil, &Unauthorized{authToken.Email, authToken.Token}
+			return nil, &InvalidAuthToken{authToken.Email, authToken.Token}
 		} else {
 			return nil, err
 		}
@@ -189,7 +189,7 @@ func (server *Server) AccountFromRequest(r *http.Request) (*Account, error) {
 	// Check if the provide api token is valid
 	if t := acc.AuthToken(authToken); t != nil {
 		if t.Expired() {
-			return nil, &Unauthorized{authToken.Email, authToken.Token}
+			return nil, &ExpiredAuthToken{authToken.Email, authToken.Token}
 		}
 		t.LastUsed = time.Now()
 
@@ -198,7 +198,7 @@ func (server *Server) AccountFromRequest(r *http.Request) (*Account, error) {
 			return nil, err
 		}
 	} else {
-		return nil, &Unauthorized{authToken.Email, authToken.Token}
+		return nil, &InvalidAuthToken{authToken.Email, authToken.Token}
 	}
 
 	return acc, nil
