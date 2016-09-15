@@ -179,7 +179,7 @@ type ServerError struct {
 }
 
 func (e *ServerError) Error() string {
-	return fmt.Sprintf("%s - %s", e.Code(), e.error.Error())
+	return fmt.Sprintf("%s - %v", e.Code(), e.error)
 }
 
 func (e *ServerError) Code() string {

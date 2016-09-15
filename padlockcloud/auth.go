@@ -116,18 +116,36 @@ func (a *Account) AddAuthToken(token *AuthToken) {
 	a.AuthTokens = append(a.AuthTokens, token)
 }
 
-// Checks if a given api key is valid for this account
-func (a *Account) ValidateAuthToken(token string) bool {
-	// Check if the account contains any AuthToken with that matches
-	// the given key
-	for _, authToken := range a.AuthTokens {
-		if authToken.Token == token {
-			authToken.LastUsed = time.Now()
-			return true
+// Returns the matching AuthToken instance by comparing Token field, Id or both
+// If either Id or Token field is empty, only the other one will compared. If
+// both are empty, nil is returned
+func (a *Account) findAuthToken(at *AuthToken) (int, *AuthToken) {
+	if at.Token == "" && at.Id == "" {
+		return -1, nil
+	}
+	for i, t := range a.AuthTokens {
+		if t != nil &&
+			(at.Token == "" || t.Token == at.Token) &&
+			(at.Id == "" || t.Id == at.Id) {
+			return i, t
+			fmt.Println(at, i, t)
 		}
 	}
+	return -1, nil
+}
 
-	return false
+func (a *Account) AuthToken(at *AuthToken) *AuthToken {
+	_, t := a.findAuthToken(at)
+	return t
+}
+
+func (a *Account) RemoveAuthToken(t *AuthToken) {
+	if i, _ := a.findAuthToken(t); i != -1 {
+		s := a.AuthTokens
+		s[i] = s[len(s)-1]
+		s[len(s)-1] = nil
+		a.AuthTokens = s[:len(s)-1]
+	}
 }
 
 // AuthRequest represents an api key - activation token pair used to activate a given api key

@@ -187,13 +187,15 @@ func (server *Server) AccountFromRequest(r *http.Request) (*Account, error) {
 	}
 
 	// Check if the provide api token is valid
-	if !acc.ValidateAuthToken(authToken.Token) {
-		return nil, &Unauthorized{authToken.Email, authToken.Token}
-	}
+	if t := acc.AuthToken(authToken); t != nil {
+		t.LastUsed = time.Now()
 
-	// Save account info to persist last used data for auth tokens
-	if err := server.Storage.Put(acc); err != nil {
-		return nil, err
+		// Save account info to persist last used data for auth tokens
+		if err := server.Storage.Put(acc); err != nil {
+			return nil, err
+		}
+	} else {
+		return nil, &Unauthorized{authToken.Email, authToken.Token}
 	}
 
 	return acc, nil
@@ -201,9 +203,9 @@ func (server *Server) AccountFromRequest(r *http.Request) (*Account, error) {
 
 func (server *Server) LogError(err error, r *http.Request) {
 	if _, ok := err.(*ServerError); ok {
-		server.Error.Printf("%s - %s\nRequest:\n%s\n", formatRequest(r), err, formatRequestVerbose(r))
+		server.Error.Printf("%s - %v\nRequest:\n%s\n", formatRequest(r), err, formatRequestVerbose(r))
 	} else {
-		server.Info.Printf("%s - %s", formatRequest(r), err)
+		server.Info.Printf("%s - %v", formatRequest(r), err)
 	}
 }
 
@@ -228,7 +230,7 @@ func (server *Server) HandleError(e error, w http.ResponseWriter, r *http.Reques
 		err = &ServerError{e}
 	}
 
-	server.LogError(e, r)
+	server.LogError(err, r)
 
 	var response []byte
 	accept := r.Header.Get("Accept")
@@ -367,10 +369,10 @@ func (server *Server) RequestAuthToken(w http.ResponseWriter, r *http.Request, c
 		}
 	}()
 
+	server.Info.Printf("%s - auth_token:request - %s:%s:%s\n", formatRequest(r), email, tType, authRequest.AuthToken.Id)
+
 	w.WriteHeader(http.StatusAccepted)
 	w.Write(response)
-
-	server.Info.Printf("%s - auth_token:request - %s:%s:%s\n", formatRequest(r), email, tType, authRequest.AuthToken.Id)
 
 	return nil
 }
@@ -429,12 +431,17 @@ func (server *Server) ActivateAuthToken(w http.ResponseWriter, r *http.Request) 
 
 	if authToken.Type == "web" {
 		http.Redirect(w, r, "/dashboard/", http.StatusFound)
-		return nil
 	} else {
-		return server.Templates.ActivateAuthTokenSuccess.Execute(w, map[string]interface{}{
+		var b bytes.Buffer
+		if err := server.Templates.ActivateAuthTokenSuccess.Execute(&b, map[string]interface{}{
 			"token": authToken,
-		})
+		}); err != nil {
+			return err
+		}
+		b.WriteTo(w)
 	}
+
+	return nil
 }
 
 // Handler function for retrieving the data associated with a given account
@@ -457,10 +464,10 @@ func (server *Server) ReadStore(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
+	server.Info.Printf("%s - data_store:read - %s\n", formatRequest(r), acc.Email)
+
 	// Return raw data in response body
 	w.Write(data.Content)
-
-	server.Info.Printf("%s - data_store:read - %s\n", formatRequest(r), acc.Email)
 
 	return nil
 }
@@ -494,10 +501,10 @@ func (server *Server) WriteStore(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
+	server.Info.Printf("%s - data_store:write - %s\n", formatRequest(r), acc.Email)
+
 	// Return with NO CONTENT status code
 	w.WriteHeader(http.StatusNoContent)
-
-	server.Info.Printf("%s - data_store:write - %s\n", formatRequest(r), acc.Email)
 
 	return nil
 }
@@ -527,12 +534,11 @@ func (server *Server) RequestDeleteStore(w http.ResponseWriter, r *http.Request)
 
 	// Render confirmation email
 	var buff bytes.Buffer
-	err = server.Templates.DeleteStoreEmail.Execute(&buff, map[string]string{
+	if err := server.Templates.DeleteStoreEmail.Execute(&buff, map[string]string{
 		"email": acc.Email,
 		"delete_link": fmt.Sprintf("%s://%s/deletestore/?v=%d&t=%s", schemeFromRequest(r),
 			server.GetHost(r), ApiVersion, deleteRequest.Token),
-	})
-	if err != nil {
+	}); err != nil {
 		return err
 	}
 
@@ -545,10 +551,10 @@ func (server *Server) RequestDeleteStore(w http.ResponseWriter, r *http.Request)
 		}
 	}()
 
+	server.Info.Printf("%s - data_store:request_delete - %s", formatRequest(r), acc.Email)
+
 	// Send ACCEPTED status code
 	w.WriteHeader(http.StatusAccepted)
-
-	server.Info.Printf("%s - data_store:request_delete - %s", formatRequest(r), acc.Email)
 
 	return nil
 }
@@ -580,14 +586,11 @@ func (server *Server) CompleteDeleteStore(w http.ResponseWriter, r *http.Request
 
 	// Render success page
 	var buff bytes.Buffer
-	err = server.Templates.DeleteStoreSuccess.Execute(&buff, map[string]string{
+	if err := server.Templates.DeleteStoreSuccess.Execute(&buff, map[string]string{
 		"email": string(resetRequest.Account),
-	})
-	if err != nil {
+	}); err != nil {
 		return err
 	}
-
-	buff.WriteTo(w)
 
 	// Delete the request token
 	if err := server.Storage.Delete(resetRequest); err != nil {
@@ -596,13 +599,18 @@ func (server *Server) CompleteDeleteStore(w http.ResponseWriter, r *http.Request
 
 	server.Info.Printf("%s - data_store:confirm_delete - %s", formatRequest(r), resetRequest.Account)
 
+	buff.WriteTo(w)
+
 	return nil
 }
 
 func (server *Server) LoginPage(w http.ResponseWriter, r *http.Request) error {
-	if err := server.Templates.LoginPage.Execute(w, map[string]string{}); err != nil {
+	var b bytes.Buffer
+	if err := server.Templates.LoginPage.Execute(&b, map[string]string{}); err != nil {
 		return err
 	}
+
+	b.WriteTo(w)
 
 	return nil
 }
@@ -614,9 +622,34 @@ func (server *Server) Dashboard(w http.ResponseWriter, r *http.Request) error {
 		http.Redirect(w, r, "/auth/", http.StatusFound)
 		return nil
 	}
-	return server.Templates.Dashboard.Execute(w, map[string]interface{}{
+
+	var b bytes.Buffer
+	if err := server.Templates.Dashboard.Execute(&b, map[string]interface{}{
 		"account": acc,
+	}); err != nil {
+		return err
+	}
+
+	b.WriteTo(w)
+	return nil
+}
+
+func (server *Server) Logout(w http.ResponseWriter, r *http.Request) error {
+	if acc, err := server.AccountFromRequest(r); err == nil {
+		authToken, _ := AuthTokenFromRequest(r)
+		acc.RemoveAuthToken(authToken)
+		if err := server.Storage.Put(acc); err != nil {
+			return err
+		}
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:   "auth",
+		Value:  "",
+		MaxAge: -1,
+		Path:   "/",
 	})
+	http.Redirect(w, r, "/auth/", http.StatusFound)
+	return nil
 }
 
 // Registeres http handlers for various routes
@@ -693,6 +726,20 @@ func (server *Server) SetupRoutes() {
 
 		if r.Method == "GET" {
 			err = server.Dashboard(w, r)
+		} else {
+			err = &MethodNotAllowed{r.Method}
+		}
+
+		if err != nil {
+			server.HandleError(err, w, r)
+		}
+	})
+
+	server.mux.HandleFunc("/logout/", func(w http.ResponseWriter, r *http.Request) {
+		var err error
+
+		if r.Method == "GET" {
+			err = server.Logout(w, r)
 		} else {
 			err = &MethodNotAllowed{r.Method}
 		}
