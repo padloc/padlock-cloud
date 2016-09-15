@@ -232,7 +232,7 @@ func (server *Server) HandleError(e error, w http.ResponseWriter, r *http.Reques
 		err = &ServerError{e}
 	}
 
-	server.PrintError(e, r)
+	server.PrintError(err, r)
 
 	var response []byte
 	accept := r.Header.Get("Accept")
