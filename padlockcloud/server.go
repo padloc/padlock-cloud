@@ -266,11 +266,12 @@ func (server *Server) HandleError(e error, w http.ResponseWriter, r *http.Reques
 // The token can later be used to activate the api key. An email is sent to the corresponding
 // email address with an activation url. Expects `email` and `device_name` parameters through either
 // multipart/form-data or application/x-www-urlencoded parameters
-func (server *Server) RequestAuthToken(w http.ResponseWriter, r *http.Request, create bool) error {
+func (server *Server) RequestAuthToken(w http.ResponseWriter, r *http.Request) error {
 	if err := server.CheckApiVersion(r); err != nil {
 		return err
 	}
 
+	create := r.Method == "POST"
 	email := r.PostFormValue("email")
 	tType := r.PostFormValue("type")
 	if tType == "" {
@@ -683,119 +684,68 @@ func (server *Server) Revoke(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+type HandlerFunc func(w http.ResponseWriter, r *http.Request) error
+
+// Registers handlers mapped by method for a given path
+func (server *Server) Route(path string, handlers map[string]HandlerFunc) {
+	server.mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
+		var err error
+
+		if handler := handlers[r.Method]; handler != nil {
+			err = handler(w, r)
+		} else {
+			err = &MethodNotAllowed{r.Method}
+		}
+
+		if err != nil {
+			server.HandleError(err, w, r)
+		}
+	})
+}
+
 // Registeres http handlers for various routes
 func (server *Server) SetupRoutes() {
-	// Endpoint for requesting api keys, only POST method is supported
-	server.mux.HandleFunc("/auth/", func(w http.ResponseWriter, r *http.Request) {
-		var err error
-		switch r.Method {
-		case "GET":
-			err = server.LoginPage(w, r)
-		case "PUT":
-			err = server.RequestAuthToken(w, r, false)
-		case "POST":
-			err = server.RequestAuthToken(w, r, true)
-		default:
-			err = &MethodNotAllowed{r.Method}
-		}
-
-		if err != nil {
-			server.HandleError(err, w, r)
-		}
+	// Endpoint for logging in / requesting api keys
+	server.Route("/auth/", map[string]HandlerFunc{
+		"GET":  HandlerFunc(server.LoginPage),
+		"PUT":  HandlerFunc(server.RequestAuthToken),
+		"POST": HandlerFunc(server.RequestAuthToken),
 	})
 
-	// Endpoint for requesting api keys, only POST method is supported
-	server.mux.HandleFunc("/activate/", func(w http.ResponseWriter, r *http.Request) {
-		var err error
-
-		if r.Method == "GET" {
-			err = server.ActivateAuthToken(w, r)
-		} else {
-			err = &MethodNotAllowed{r.Method}
-		}
-
-		if err != nil {
-			server.HandleError(err, w, r)
-		}
+	// Endpoint for activating auth tokens
+	server.Route("/activate/", map[string]HandlerFunc{
+		"GET": HandlerFunc(server.ActivateAuthToken),
 	})
 
-	// Endpoint for reading, writing and deleting store data
-	server.mux.HandleFunc("/store/", func(w http.ResponseWriter, r *http.Request) {
-		var err error
-
-		switch r.Method {
-		case "GET", "HEAD":
-			err = server.ReadStore(w, r)
-		case "PUT":
-			err = server.WriteStore(w, r)
-		case "DELETE":
-			err = server.RequestDeleteStore(w, r)
-		default:
-			err = &MethodNotAllowed{r.Method}
-		}
-
-		if err != nil {
-			server.HandleError(err, w, r)
-		}
+	// Endpoint for reading / writing and deleting a store
+	server.Route("/store/", map[string]HandlerFunc{
+		"GET":    HandlerFunc(server.ReadStore),
+		"HEAD":   HandlerFunc(server.ReadStore),
+		"PUT":    HandlerFunc(server.WriteStore),
+		"DELETE": HandlerFunc(server.RequestDeleteStore),
 	})
 
-	// Endpoint for requesting a data reset. Only GET supported
-	server.mux.HandleFunc("/deletestore/", func(w http.ResponseWriter, r *http.Request) {
-		var err error
-
-		if r.Method == "GET" {
-			err = server.CompleteDeleteStore(w, r)
-		} else {
-			err = &MethodNotAllowed{r.Method}
-		}
-
-		if err != nil {
-			server.HandleError(err, w, r)
-		}
+	// Confirmation endpoint for deleting a store
+	server.Route("/deletestore/", map[string]HandlerFunc{
+		"GET": HandlerFunc(server.CompleteDeleteStore),
 	})
 
-	server.mux.HandleFunc("/dashboard/", func(w http.ResponseWriter, r *http.Request) {
-		var err error
-
-		if r.Method == "GET" {
-			err = server.Dashboard(w, r)
-		} else {
-			err = &MethodNotAllowed{r.Method}
-		}
-
-		if err != nil {
-			server.HandleError(err, w, r)
-		}
+	// Dashboard for managing data, auth tokens etc.
+	server.Route("/dashboard/", map[string]HandlerFunc{
+		"GET": HandlerFunc(server.Dashboard),
 	})
 
-	server.mux.HandleFunc("/logout/", func(w http.ResponseWriter, r *http.Request) {
-		var err error
-
-		if r.Method == "GET" {
-			err = server.Logout(w, r)
-		} else {
-			err = &MethodNotAllowed{r.Method}
-		}
-
-		if err != nil {
-			server.HandleError(err, w, r)
-		}
+	// Endpoint for logging out
+	server.Route("/logout/", map[string]HandlerFunc{
+		"GET": HandlerFunc(server.Logout),
 	})
 
-	server.mux.HandleFunc("/revoke/", func(w http.ResponseWriter, r *http.Request) {
-		var err error
-
-		if r.Method == "POST" {
-			err = server.Revoke(w, r)
-		} else {
-			err = &MethodNotAllowed{r.Method}
-		}
-
-		if err != nil {
-			server.HandleError(err, w, r)
-		}
+	// Endpoint for revoking auth tokens
+	server.Route("/revoke/", map[string]HandlerFunc{
+		"POST": HandlerFunc(server.Revoke),
 	})
 
+	// Serve up static files
 	fs := http.FileServer(http.Dir(filepath.Join(server.Config.AssetsPath, "static")))
 	server.mux.Handle("/static/", http.StripPrefix("/static/", fs))
 
