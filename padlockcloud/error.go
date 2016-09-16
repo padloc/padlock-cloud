@@ -157,7 +157,8 @@ func (e *AccountNotFound) Message() string {
 }
 
 type UnsupportedApiVersion struct {
-	version int
+	found    int
+	expected int
 }
 
 func (e *UnsupportedApiVersion) Code() string {
@@ -165,7 +166,7 @@ func (e *UnsupportedApiVersion) Code() string {
 }
 
 func (e *UnsupportedApiVersion) Error() string {
-	return fmt.Sprintf("%s - %d", e.Code(), e.version)
+	return fmt.Sprintf("%s - %d!=%d", e.Code(), e.found, e.expected)
 }
 
 func (e *UnsupportedApiVersion) Status() int {
@@ -173,7 +174,7 @@ func (e *UnsupportedApiVersion) Status() int {
 }
 
 func (e *UnsupportedApiVersion) Message() string {
-	return fmt.Sprintf("The api version you are using (%d) is not supported. Please use version %d", e.version, ApiVersion)
+	return fmt.Sprintf("The api version you are using (%d) is not supported. Please use version %d", e.found, e.expected)
 }
 
 type TooManyRequests struct {

@@ -212,13 +212,17 @@ func (server *Server) LogError(err error, r *http.Request) {
 	}
 }
 
-func (server *Server) CheckApiVersion(r *http.Request) error {
+func (server *Server) CheckApiVersion(r *http.Request, v int) error {
+	if v == 0 {
+		return nil
+	}
+
 	version := versionFromRequest(r)
-	if version != ApiVersion {
+	if version != v {
 		if err := server.SendDeprecatedVersionEmail(r); err != nil {
 			server.LogError(&ServerError{err}, r)
 		}
-		return &UnsupportedApiVersion{version}
+		return &UnsupportedApiVersion{version, v}
 	}
 
 	return nil
@@ -267,10 +271,6 @@ func (server *Server) HandleError(e error, w http.ResponseWriter, r *http.Reques
 // email address with an activation url. Expects `email` and `device_name` parameters through either
 // multipart/form-data or application/x-www-urlencoded parameters
 func (server *Server) RequestAuthToken(w http.ResponseWriter, r *http.Request) error {
-	if err := server.CheckApiVersion(r); err != nil {
-		return err
-	}
-
 	create := r.Method == "POST"
 	email := r.PostFormValue("email")
 	tType := r.PostFormValue("type")
@@ -450,10 +450,6 @@ func (server *Server) ActivateAuthToken(w http.ResponseWriter, r *http.Request) 
 
 // Handler function for retrieving the data associated with a given account
 func (server *Server) ReadStore(w http.ResponseWriter, r *http.Request) error {
-	if err := server.CheckApiVersion(r); err != nil {
-		return err
-	}
-
 	// Fetch account based on provided credentials
 	acc, err := server.AccountFromRequest(r)
 	if err != nil {
@@ -482,10 +478,6 @@ func (server *Server) ReadStore(w http.ResponseWriter, r *http.Request) error {
 // decryption/parsing, consolidate the data with any existing local data and then reupload the full,
 // encrypted data set
 func (server *Server) WriteStore(w http.ResponseWriter, r *http.Request) error {
-	if err := server.CheckApiVersion(r); err != nil {
-		return err
-	}
-
 	// Fetch account based on provided credentials
 	acc, err := server.AccountFromRequest(r)
 	if err != nil {
@@ -515,10 +507,6 @@ func (server *Server) WriteStore(w http.ResponseWriter, r *http.Request) error {
 
 // Handler function for requesting a data reset for a given account
 func (server *Server) RequestDeleteStore(w http.ResponseWriter, r *http.Request) error {
-	if err := server.CheckApiVersion(r); err != nil {
-		return err
-	}
-
 	// Fetch account based on provided credentials
 	acc, err := server.AccountFromRequest(r)
 	if err != nil {
@@ -687,14 +675,16 @@ func (server *Server) Revoke(w http.ResponseWriter, r *http.Request) error {
 type HandlerFunc func(w http.ResponseWriter, r *http.Request) error
 
 // Registers handlers mapped by method for a given path
-func (server *Server) Route(path string, handlers map[string]HandlerFunc) {
+func (server *Server) Route(path string, handlers map[string]HandlerFunc, version int) {
 	server.mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
 		var err error
 
-		if handler := handlers[r.Method]; handler != nil {
-			err = handler(w, r)
-		} else {
-			err = &MethodNotAllowed{r.Method}
+		if err = server.CheckApiVersion(r, version); err == nil {
+			if handler := handlers[r.Method]; handler != nil {
+				err = handler(w, r)
+			} else {
+				err = &MethodNotAllowed{r.Method}
+			}
 		}
 
 		if err != nil {
@@ -710,12 +700,12 @@ func (server *Server) SetupRoutes() {
 		"GET":  HandlerFunc(server.LoginPage),
 		"PUT":  HandlerFunc(server.RequestAuthToken),
 		"POST": HandlerFunc(server.RequestAuthToken),
-	})
+	}, ApiVersion)
 
 	// Endpoint for activating auth tokens
 	server.Route("/activate/", map[string]HandlerFunc{
 		"GET": HandlerFunc(server.ActivateAuthToken),
-	})
+	}, 0)
 
 	// Endpoint for reading / writing and deleting a store
 	server.Route("/store/", map[string]HandlerFunc{
@@ -723,27 +713,27 @@ func (server *Server) SetupRoutes() {
 		"HEAD":   HandlerFunc(server.ReadStore),
 		"PUT":    HandlerFunc(server.WriteStore),
 		"DELETE": HandlerFunc(server.RequestDeleteStore),
-	})
+	}, ApiVersion)
 
 	// Confirmation endpoint for deleting a store
 	server.Route("/deletestore/", map[string]HandlerFunc{
 		"GET": HandlerFunc(server.CompleteDeleteStore),
-	})
+	}, 0)
 
 	// Dashboard for managing data, auth tokens etc.
 	server.Route("/dashboard/", map[string]HandlerFunc{
 		"GET": HandlerFunc(server.Dashboard),
-	})
+	}, 0)
 
 	// Endpoint for logging out
 	server.Route("/logout/", map[string]HandlerFunc{
 		"GET": HandlerFunc(server.Logout),
-	})
+	}, 0)
 
 	// Endpoint for revoking auth tokens
 	server.Route("/revoke/", map[string]HandlerFunc{
 		"POST": HandlerFunc(server.Revoke),
-	})
+	}, 0)
 
 	// Serve up static files
 	fs := http.FileServer(http.Dir(filepath.Join(server.Config.AssetsPath, "static")))
