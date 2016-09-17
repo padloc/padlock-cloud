@@ -19,6 +19,7 @@ type Templates struct {
 	ErrorPage              *ht.Template
 	LoginPage              *ht.Template
 	Dashboard              *ht.Template
+	DeleteStore            *ht.Template
 }
 
 // Loads templates from given directory
@@ -68,6 +69,9 @@ func LoadTemplates(path string) (*Templates, error) {
 		return nil, err
 	}
 	if tt.Dashboard, err = ht.ParseFiles(tp("page/base.html"), tp("page/dashboard.html")); err != nil {
+		return nil, err
+	}
+	if tt.DeleteStore, err = ht.ParseFiles(tp("page/base.html"), tp("page/delete-store.html")); err != nil {
 		return nil, err
 	}
 

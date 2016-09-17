@@ -611,7 +611,7 @@ func (server *Server) Dashboard(w http.ResponseWriter, r *http.Request) error {
 	acc, err := server.AccountFromRequest(r)
 	if err != nil {
 		server.LogError(err, r)
-		http.Redirect(w, r, "/auth/", http.StatusFound)
+		http.Redirect(w, r, "/login/", http.StatusFound)
 		return nil
 	}
 
@@ -640,7 +640,7 @@ func (server *Server) Logout(w http.ResponseWriter, r *http.Request) error {
 		MaxAge: -1,
 		Path:   "/",
 	})
-	http.Redirect(w, r, "/auth/", http.StatusFound)
+	http.Redirect(w, r, "/login/", http.StatusFound)
 	return nil
 }
 
@@ -697,10 +697,15 @@ func (server *Server) Route(path string, handlers map[string]HandlerFunc, versio
 func (server *Server) SetupRoutes() {
 	// Endpoint for logging in / requesting api keys
 	server.Route("/auth/", map[string]HandlerFunc{
-		"GET":  HandlerFunc(server.LoginPage),
 		"PUT":  HandlerFunc(server.RequestAuthToken),
 		"POST": HandlerFunc(server.RequestAuthToken),
 	}, ApiVersion)
+
+	// Endpoint for logging in / requesting api keys
+	server.Route("/login/", map[string]HandlerFunc{
+		"GET":  HandlerFunc(server.LoginPage),
+		"POST": HandlerFunc(server.RequestAuthToken),
+	}, 0)
 
 	// Endpoint for activating auth tokens
 	server.Route("/activate/", map[string]HandlerFunc{
