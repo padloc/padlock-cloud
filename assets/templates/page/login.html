@@ -16,9 +16,9 @@
             magic login link!
         </p>
         <form action="." method="post" class="login-form">
-            <input name="type" type="hidden" value="web">
-            <input name="api_version" type="hidden" value="1">
-            <input name="email" placeholder="Enter Your Email">
+            <input name="type" type="hidden" value="web" required>
+            <input name="api_version" type="hidden" value="1" required>
+            <input name="email" type="email" required placeholder="Enter Your Email">
             <button>Send Login Link</button>
         </form>
         {{ end }}

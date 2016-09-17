@@ -12,22 +12,25 @@ body, input, button {
     -webkit-font-smoothing: antialiased;
 }
 
-input, button {
+input:not([type="checkbox"]), button {
     -webkit-appearance: none;
     -moz-appearance: none;
     border-radius: 0;
-    border: none;
     font-size: inherit;
     font-family: inherit;
     padding: 10px 15px;
-}
-
-input {
+    background: #fff;
     border: solid 1px #ccc;
     min-width: 0;
 }
 
+input[type="checkbox"] {
+    vertical-align: middle;
+    cursor: pointer;
+}
+
 button {
+    border: none;
     background: #59c6ff;
     color: #fff;
     cursor: pointer;
