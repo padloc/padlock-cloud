@@ -3,6 +3,12 @@
 {{ end }}
 {{ define "main" }}
 <section>
+    <h2>Manage Account</h2>
+    <p>
+        <a href="/store/delete/">Reset Data</a>
+    </p>
+</section>
+<section>
     <h2>Paired Devices</h2>
     <ul class="paired-devices">
         {{ range .account.AuthTokens }}

@@ -505,6 +505,35 @@ func (server *Server) WriteStore(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+func (server *Server) DeleteStore(w http.ResponseWriter, r *http.Request) error {
+	acc, err := server.AccountFromRequest(r)
+	if err != nil {
+		server.LogError(err, r)
+		http.Redirect(w, r, "/login/", http.StatusFound)
+		return nil
+	}
+
+	deleted := false
+
+	if r.Method == "POST" {
+		if err := server.Storage.Delete(&DataStore{Account: acc}); err != nil {
+			return err
+		}
+		deleted = true
+	}
+
+	var b bytes.Buffer
+	if err := server.Templates.DeleteStore.Execute(&b, map[string]interface{}{
+		"account": acc,
+		"deleted": deleted,
+	}); err != nil {
+		return err
+	}
+
+	b.WriteTo(w)
+	return nil
+}
+
 // Handler function for requesting a data reset for a given account
 func (server *Server) RequestDeleteStore(w http.ResponseWriter, r *http.Request) error {
 	// Fetch account based on provided credentials
@@ -719,6 +748,11 @@ func (server *Server) SetupRoutes() {
 		"PUT":    HandlerFunc(server.WriteStore),
 		"DELETE": HandlerFunc(server.RequestDeleteStore),
 	}, ApiVersion)
+
+	server.Route("/store/delete/", map[string]HandlerFunc{
+		"GET":  HandlerFunc(server.DeleteStore),
+		"POST": HandlerFunc(server.DeleteStore),
+	}, 0)
 
 	// Confirmation endpoint for deleting a store
 	server.Route("/deletestore/", map[string]HandlerFunc{

@@ -1,0 +1,27 @@
+{{ define "main" }}
+<section>
+    <h1>Reset Data</h1>
+    {{ if .deleted }}
+    <p>
+        Your data was deleted successfully!
+    </p>
+    {{ else }}
+    <p>
+        Are you sure you want to reset all data for the account <strong>{{ .account.Email }}</strong>?
+        Data stored locally on your devices will not be affected.
+        <strong>WARNING: This action can not be undone!</strong>
+    </p>
+    <form action="." method="POST">
+        <p>
+            <label>
+                <input type="checkbox" required>
+                <span>Yes I'm sure</span>
+            </label>
+        <p>
+        <p>
+            <button>Reset Data</button>
+        </p>
+    </form>
+    {{ end }}
+</section>
+{{ end }}
