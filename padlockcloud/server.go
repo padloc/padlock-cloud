@@ -14,6 +14,7 @@ import "strconv"
 import "path/filepath"
 import "strings"
 import "gopkg.in/tylerb/graceful.v1"
+import "github.com/gorilla/csrf"
 
 const (
 	ApiVersion = 1
@@ -142,6 +143,8 @@ type ServerConfig struct {
 	TLSKey string `yaml:"tls_key"`
 	// Explicit host to use in place of http.Request::Host when generating urls and such
 	Host string `yaml:"host"`
+	// Secret used for authenticating cookies
+	Secret []byte `yaml:"secret"`
 }
 
 // The Server type holds all the contextual data and logic used for running a Padlock Cloud instances
@@ -524,8 +527,9 @@ func (server *Server) DeleteStore(w http.ResponseWriter, r *http.Request) error 
 
 	var b bytes.Buffer
 	if err := server.Templates.DeleteStore.Execute(&b, map[string]interface{}{
-		"account": acc,
-		"deleted": deleted,
+		"account":        acc,
+		"deleted":        deleted,
+		csrf.TemplateTag: csrf.TemplateField(r),
 	}); err != nil {
 		return err
 	}
@@ -627,7 +631,9 @@ func (server *Server) CompleteDeleteStore(w http.ResponseWriter, r *http.Request
 
 func (server *Server) LoginPage(w http.ResponseWriter, r *http.Request) error {
 	var b bytes.Buffer
-	if err := server.Templates.LoginPage.Execute(&b, map[string]string{}); err != nil {
+	if err := server.Templates.LoginPage.Execute(&b, map[string]interface{}{
+		csrf.TemplateTag: csrf.TemplateField(r),
+	}); err != nil {
 		return err
 	}
 
@@ -646,7 +652,8 @@ func (server *Server) Dashboard(w http.ResponseWriter, r *http.Request) error {
 
 	var b bytes.Buffer
 	if err := server.Templates.Dashboard.Execute(&b, map[string]interface{}{
-		"account": acc,
+		"account":        acc,
+		csrf.TemplateTag: csrf.TemplateField(r),
 	}); err != nil {
 		return err
 	}
@@ -701,11 +708,18 @@ func (server *Server) Revoke(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+func (server *Server) CSRF(h http.Handler) http.Handler {
+	errorHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		server.HandleError(&InvalidCsrfToken{csrf.FailureReason(r)}, w, r)
+	})
+	return csrf.Protect(server.Config.Secret, csrf.Path("/"), csrf.Secure(false), csrf.ErrorHandler(errorHandler))(h)
+}
+
 type HandlerFunc func(w http.ResponseWriter, r *http.Request) error
 
 // Registers handlers mapped by method for a given path
-func (server *Server) Route(path string, handlers map[string]HandlerFunc, version int) {
-	server.mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
+func (server *Server) Route(path string, handlers map[string]HandlerFunc, version int, protect bool) {
+	var handler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var err error
 
 		if err = server.CheckApiVersion(r, version); err == nil {
@@ -720,6 +734,12 @@ func (server *Server) Route(path string, handlers map[string]HandlerFunc, versio
 			server.HandleError(err, w, r)
 		}
 	})
+
+	if protect {
+		handler = server.CSRF(handler)
+	}
+
+	server.mux.Handle(path, handler)
 }
 
 // Registeres http handlers for various routes
@@ -728,18 +748,18 @@ func (server *Server) SetupRoutes() {
 	server.Route("/auth/", map[string]HandlerFunc{
 		"PUT":  HandlerFunc(server.RequestAuthToken),
 		"POST": HandlerFunc(server.RequestAuthToken),
-	}, ApiVersion)
+	}, ApiVersion, false)
 
 	// Endpoint for logging in / requesting api keys
 	server.Route("/login/", map[string]HandlerFunc{
 		"GET":  HandlerFunc(server.LoginPage),
 		"POST": HandlerFunc(server.RequestAuthToken),
-	}, 0)
+	}, 0, true)
 
 	// Endpoint for activating auth tokens
 	server.Route("/activate/", map[string]HandlerFunc{
 		"GET": HandlerFunc(server.ActivateAuthToken),
-	}, 0)
+	}, 0, false)
 
 	// Endpoint for reading / writing and deleting a store
 	server.Route("/store/", map[string]HandlerFunc{
@@ -747,32 +767,32 @@ func (server *Server) SetupRoutes() {
 		"HEAD":   HandlerFunc(server.ReadStore),
 		"PUT":    HandlerFunc(server.WriteStore),
 		"DELETE": HandlerFunc(server.RequestDeleteStore),
-	}, ApiVersion)
+	}, ApiVersion, false)
 
 	server.Route("/store/delete/", map[string]HandlerFunc{
 		"GET":  HandlerFunc(server.DeleteStore),
 		"POST": HandlerFunc(server.DeleteStore),
-	}, 0)
+	}, 0, true)
 
 	// Confirmation endpoint for deleting a store
 	server.Route("/deletestore/", map[string]HandlerFunc{
 		"GET": HandlerFunc(server.CompleteDeleteStore),
-	}, 0)
+	}, 0, false)
 
 	// Dashboard for managing data, auth tokens etc.
 	server.Route("/dashboard/", map[string]HandlerFunc{
 		"GET": HandlerFunc(server.Dashboard),
-	}, 0)
+	}, 0, true)
 
 	// Endpoint for logging out
 	server.Route("/logout/", map[string]HandlerFunc{
 		"GET": HandlerFunc(server.Logout),
-	}, 0)
+	}, 0, false)
 
 	// Endpoint for revoking auth tokens
 	server.Route("/revoke/", map[string]HandlerFunc{
 		"POST": HandlerFunc(server.Revoke),
-	}, 0)
+	}, 0, true)
 
 	// Serve up static files
 	fs := http.FileServer(http.Dir(filepath.Join(server.Config.AssetsPath, "static")))
@@ -820,28 +840,33 @@ func (server *Server) SendDeprecatedVersionEmail(r *http.Request) error {
 	return nil
 }
 
-func (server *Server) HandlePanic(w http.ResponseWriter, r *http.Request) {
-	if e := recover(); e != nil {
-		err, ok := e.(error)
-		if !ok {
-			err = errors.New(fmt.Sprintf("%v", e))
-		}
-		server.HandleError(err, w, r)
-	}
-}
+func (server *Server) HandlePanic(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if e := recover(); e != nil {
+				err, ok := e.(error)
+				if !ok {
+					err = errors.New(fmt.Sprintf("%v", e))
+				}
+				server.HandleError(err, w, r)
+			}
+		}()
 
-// Implements `http.Handler.ServeHTTP` interface method. Handles panic recovery, Delegates
-// requests to embedded `http.ServeMux`
-func (server *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	defer server.HandlePanic(w, r)
-
-	// Delegate requests to embedded `http.ServeMux`
-	server.mux.ServeHTTP(w, r)
+		h.ServeHTTP(w, r)
+	})
 }
 
 // Initialize Server with dependencies and configuration
 func (server *Server) Init() error {
 	var err error
+
+	if server.Config.Secret == nil {
+		if key, err := randomBytes(32); err != nil {
+			return err
+		} else {
+			server.Config.Secret = key
+		}
+	}
 
 	server.SetupRoutes()
 
@@ -871,8 +896,10 @@ func (server *Server) Start() error {
 	}
 	defer server.CleanUp()
 
+	var handler http.Handler = server.mux
+
 	// Add rate limiting middleWare
-	handler := RateLimit(server, map[Route]RateQuota{
+	handler = RateLimit(handler, map[Route]RateQuota{
 		Route{"POST", "/auth/"}:    RateQuota{PerMin(1), 5},
 		Route{"PUT", "/auth/"}:     RateQuota{PerMin(1), 5},
 		Route{"DELETE", "/store/"}: RateQuota{PerMin(1), 5},
@@ -882,6 +909,9 @@ func (server *Server) Start() error {
 
 	// Add CORS middleware
 	handler = Cors(handler)
+
+	// Add panic recovery
+	handler = server.HandlePanic(handler)
 
 	server.Handler = handler
 

@@ -96,6 +96,26 @@ func (e *ExpiredAuthToken) Message() string {
 	return fmt.Sprintf("%s - %s", http.StatusText(e.Status()), "The provided authorization token has expired")
 }
 
+type InvalidCsrfToken struct {
+	reason error
+}
+
+func (e *InvalidCsrfToken) Code() string {
+	return "invalid_csrf_token"
+}
+
+func (e *InvalidCsrfToken) Error() string {
+	return fmt.Sprintf("%s - %s", e.Code(), e.reason)
+}
+
+func (e *InvalidCsrfToken) Status() int {
+	return http.StatusForbidden
+}
+
+func (e *InvalidCsrfToken) Message() string {
+	return fmt.Sprintf("%s - %s", http.StatusText(e.Status()), "Invalid CSRF Token")
+}
+
 type MethodNotAllowed struct {
 	method string
 }

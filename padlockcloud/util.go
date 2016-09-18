@@ -10,9 +10,17 @@ const tokenPattern = `[a-zA-Z0-9\-_]{22}`
 var gopath = os.Getenv("GOPATH")
 var DefaultAssetsPath = filepath.Join(gopath, "src/github.com/maklesoft/padlock-cloud/assets")
 
+func randomBytes(n int) ([]byte, error) {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
 func randomBase64(nBytes int) (string, error) {
-	b := make([]byte, nBytes)
-	_, err := rand.Read(b)
+	b, err := randomBytes(nBytes)
+
 	if err != nil {
 		return "", err
 	}

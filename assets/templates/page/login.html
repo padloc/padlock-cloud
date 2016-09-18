@@ -19,6 +19,7 @@
             <input name="type" type="hidden" value="web" required>
             <input name="api_version" type="hidden" value="1" required>
             <input name="email" type="email" required placeholder="Enter Your Email">
+            {{ .csrfField }}
             <button>Send Login Link</button>
         </form>
         {{ end }}
