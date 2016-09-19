@@ -19,8 +19,29 @@ type AuthToken struct {
 	Created  time.Time
 	LastUsed time.Time
 	Expires  time.Time
+	account  *Account
 }
 
+// Returns the account associated with this auth token
+func (t *AuthToken) Account() *Account {
+	return t.account
+}
+
+// Validates the auth token against account `a`, i.e. looks for the corresponding
+// token in the accounts `AuthTokens` slice. If found, the token is considered valid
+// and it's value is updated with the value of the corresponding auth token in `a.AuthTokens`
+// and the `account` field is set to `a`
+func (t *AuthToken) Validate(a *Account) bool {
+	if _, at := a.findAuthToken(t); at != nil {
+		*t = *at
+		t.account = a
+		return true
+	}
+
+	return false
+}
+
+// Returns a string representation of the auth token in the form "AuthToken base64(t.Email):t.Token"
 func (t *AuthToken) String() string {
 	return fmt.Sprintf(
 		"AuthToken %s:%s",
@@ -29,10 +50,12 @@ func (t *AuthToken) String() string {
 	)
 }
 
+// Returns true if `t` is expires, false otherwise
 func (t *AuthToken) Expired() bool {
 	return !t.Expires.IsZero() && t.Expires.Before(time.Now())
 }
 
+// Creates an auth token from it's string representation of the form "AuthToken base64(t.Email):t.Token"
 func AuthTokenFromString(str string) (*AuthToken, error) {
 	// Check if the Authorization header exists and is well formed
 	if !authStringPattern.MatchString(str) {
@@ -53,6 +76,8 @@ func AuthTokenFromString(str string) (*AuthToken, error) {
 	return t, nil
 }
 
+// Creates an auth token from a given request by parsing the `Authorization` header
+// and `auth` cookie
 func AuthTokenFromRequest(r *http.Request) (*AuthToken, error) {
 	authString := r.Header.Get("Authorization")
 
@@ -94,6 +119,7 @@ func NewAuthToken(email string, t string) (*AuthToken, error) {
 		time.Now(),
 		time.Now(),
 		expires,
+		nil,
 	}, nil
 }
 
@@ -146,11 +172,15 @@ func (a *Account) findAuthToken(at *AuthToken) (int, *AuthToken) {
 	return -1, nil
 }
 
-func (a *Account) AuthToken(at *AuthToken) *AuthToken {
-	_, t := a.findAuthToken(at)
-	return t
+// Updates the correspoding auth token in the accounts `AuthTokens` slice with the
+// value of `t`
+func (a *Account) UpdateAuthToken(t *AuthToken) {
+	if _, at := a.findAuthToken(t); at != nil {
+		*at = *t
+	}
 }
 
+// Removes the corresponding auth token from the accounts `AuthTokens` slice
 func (a *Account) RemoveAuthToken(t *AuthToken) {
 	if i, _ := a.findAuthToken(t); i != -1 {
 		s := a.AuthTokens

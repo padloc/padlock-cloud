@@ -158,6 +158,7 @@ type Server struct {
 	Sender    Sender
 	Templates *Templates
 	Config    *ServerConfig
+	Secure    bool
 }
 
 func (server *Server) GetHost(r *http.Request) string {
@@ -172,39 +173,47 @@ func (server *Server) GetHost(r *http.Request) string {
 // cross-checking it with api keys of existing accounts. Returns an `InvalidAuthToken` error
 // if no valid Authorization header is provided or if the provided email:api_key pair does not match
 // any of the accounts in the database.
-func (server *Server) AccountFromRequest(r *http.Request) (*Account, error) {
+func (server *Server) Authenticate(r *http.Request) (*AuthToken, error) {
 	authToken, err := AuthTokenFromRequest(r)
 	if err != nil {
 		return nil, &InvalidAuthToken{}
 	}
+
+	invalidErr := &InvalidAuthToken{authToken.Email, authToken.Token}
 
 	acc := &Account{Email: authToken.Email}
 
 	// Fetch account for the given email address
 	if err := server.Storage.Get(acc); err != nil {
 		if err == ErrNotFound {
-			return nil, &InvalidAuthToken{authToken.Email, authToken.Token}
+			return nil, invalidErr
 		} else {
 			return nil, err
 		}
 	}
 
-	// Check if the provide api token is valid
-	if t := acc.AuthToken(authToken); t != nil {
-		if t.Expired() {
-			return nil, &ExpiredAuthToken{authToken.Email, authToken.Token}
-		}
-		t.LastUsed = time.Now()
-
-		// Save account info to persist last used data for auth tokens
-		if err := server.Storage.Put(acc); err != nil {
-			return nil, err
-		}
-	} else {
-		return nil, &InvalidAuthToken{authToken.Email, authToken.Token}
+	// Find the fully populated auth token struct on account. If not found, the value will be nil
+	// and we know that the provided token is not valid
+	if !authToken.Validate(acc) {
+		return nil, invalidErr
 	}
 
-	return acc, nil
+	// Check if the token is expired
+	if authToken.Expired() {
+		return nil, &ExpiredAuthToken{authToken.Email, authToken.Token}
+	}
+
+	// If everything checks out, update the `LastUsed` field with the current time
+	authToken.LastUsed = time.Now()
+
+	acc.UpdateAuthToken(authToken)
+
+	// Save account info to persist last used data for auth tokens
+	if err := server.Storage.Put(acc); err != nil {
+		return nil, err
+	}
+
+	return authToken, nil
 }
 
 func (server *Server) LogError(err error, r *http.Request) {
@@ -215,7 +224,7 @@ func (server *Server) LogError(err error, r *http.Request) {
 	}
 }
 
-func (server *Server) CheckApiVersion(r *http.Request, v int) error {
+func (server *Server) CheckEndpointVersion(r *http.Request, v int) error {
 	if v == 0 {
 		return nil
 	}
@@ -273,7 +282,7 @@ func (server *Server) HandleError(e error, w http.ResponseWriter, r *http.Reques
 // The token can later be used to activate the api key. An email is sent to the corresponding
 // email address with an activation url. Expects `email` and `device_name` parameters through either
 // multipart/form-data or application/x-www-urlencoded parameters
-func (server *Server) RequestAuthToken(w http.ResponseWriter, r *http.Request) error {
+func (server *Server) RequestAuthToken(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
 	create := r.Method == "POST"
 	email := r.PostFormValue("email")
 	tType := r.PostFormValue("type")
@@ -385,7 +394,7 @@ func (server *Server) RequestAuthToken(w http.ResponseWriter, r *http.Request) e
 }
 
 // Hander function for activating a given api key
-func (server *Server) ActivateAuthToken(w http.ResponseWriter, r *http.Request) error {
+func (server *Server) ActivateAuthToken(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
 	// Extract activation token from url
 	token, err := tokenFromRequest(r)
 	if err != nil {
@@ -452,12 +461,8 @@ func (server *Server) ActivateAuthToken(w http.ResponseWriter, r *http.Request) 
 }
 
 // Handler function for retrieving the data associated with a given account
-func (server *Server) ReadStore(w http.ResponseWriter, r *http.Request) error {
-	// Fetch account based on provided credentials
-	acc, err := server.AccountFromRequest(r)
-	if err != nil {
-		return err
-	}
+func (server *Server) ReadStore(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
+	acc := auth.Account()
 
 	// Retrieve data from database. If not database entry is found, the `Content` field simply stays empty.
 	// This is not considered an error. Instead we simply return an empty response body. Clients should
@@ -480,12 +485,8 @@ func (server *Server) ReadStore(w http.ResponseWriter, r *http.Request) error {
 // Instead, clients should retrieve existing data through the `ReadStore` endpoint first, perform any necessary
 // decryption/parsing, consolidate the data with any existing local data and then reupload the full,
 // encrypted data set
-func (server *Server) WriteStore(w http.ResponseWriter, r *http.Request) error {
-	// Fetch account based on provided credentials
-	acc, err := server.AccountFromRequest(r)
-	if err != nil {
-		return err
-	}
+func (server *Server) WriteStore(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
+	acc := auth.Account()
 
 	// Read data from request body into `DataStore` instance
 	data := &DataStore{Account: acc}
@@ -508,13 +509,8 @@ func (server *Server) WriteStore(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func (server *Server) DeleteStore(w http.ResponseWriter, r *http.Request) error {
-	acc, err := server.AccountFromRequest(r)
-	if err != nil {
-		server.LogError(err, r)
-		http.Redirect(w, r, "/login/", http.StatusFound)
-		return nil
-	}
+func (server *Server) DeleteStore(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
+	acc := auth.Account()
 
 	deleted := false
 
@@ -539,12 +535,8 @@ func (server *Server) DeleteStore(w http.ResponseWriter, r *http.Request) error 
 }
 
 // Handler function for requesting a data reset for a given account
-func (server *Server) RequestDeleteStore(w http.ResponseWriter, r *http.Request) error {
-	// Fetch account based on provided credentials
-	acc, err := server.AccountFromRequest(r)
-	if err != nil {
-		return err
-	}
+func (server *Server) RequestDeleteStore(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
+	acc := auth.Account()
 
 	// Create DeleteStoreRequest
 	deleteRequest, err := NewDeleteStoreRequest(acc.Email)
@@ -585,7 +577,7 @@ func (server *Server) RequestDeleteStore(w http.ResponseWriter, r *http.Request)
 }
 
 // Handler function for updating the data associated with a given account
-func (server *Server) CompleteDeleteStore(w http.ResponseWriter, r *http.Request) error {
+func (server *Server) CompleteDeleteStore(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
 	// Extract confirmation token from url
 	token, err := tokenFromRequest(r)
 	if err != nil {
@@ -629,11 +621,9 @@ func (server *Server) CompleteDeleteStore(w http.ResponseWriter, r *http.Request
 	return nil
 }
 
-func (server *Server) LoginPage(w http.ResponseWriter, r *http.Request) error {
+func (server *Server) LoginPage(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
 	var b bytes.Buffer
-	if err := server.Templates.LoginPage.Execute(&b, map[string]interface{}{
-		csrf.TemplateTag: csrf.TemplateField(r),
-	}); err != nil {
+	if err := server.Templates.LoginPage.Execute(&b, nil); err != nil {
 		return err
 	}
 
@@ -642,13 +632,8 @@ func (server *Server) LoginPage(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func (server *Server) Dashboard(w http.ResponseWriter, r *http.Request) error {
-	acc, err := server.AccountFromRequest(r)
-	if err != nil {
-		server.LogError(err, r)
-		http.Redirect(w, r, "/login/", http.StatusFound)
-		return nil
-	}
+func (server *Server) Dashboard(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
+	acc := auth.Account()
 
 	var b bytes.Buffer
 	if err := server.Templates.Dashboard.Execute(&b, map[string]interface{}{
@@ -662,13 +647,12 @@ func (server *Server) Dashboard(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func (server *Server) Logout(w http.ResponseWriter, r *http.Request) error {
-	if acc, err := server.AccountFromRequest(r); err == nil {
-		authToken, _ := AuthTokenFromRequest(r)
-		acc.RemoveAuthToken(authToken)
-		if err := server.Storage.Put(acc); err != nil {
-			return err
-		}
+func (server *Server) Logout(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
+	acc := auth.Account()
+
+	acc.RemoveAuthToken(auth)
+	if err := server.Storage.Put(acc); err != nil {
+		return err
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name:   "auth",
@@ -680,24 +664,23 @@ func (server *Server) Logout(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func (server *Server) Revoke(w http.ResponseWriter, r *http.Request) error {
+func (server *Server) Revoke(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
 	token := r.PostFormValue("token")
 	id := r.PostFormValue("id")
 	if token == "" && id == "" {
 		return &BadRequest{"No token or id provided"}
 	}
 
-	acc, err := server.AccountFromRequest(r)
-	if err != nil {
-		return err
-	}
+	acc := auth.Account()
 
-	t := acc.AuthToken(&AuthToken{Token: token, Id: id})
-	if t == nil {
+	t := &AuthToken{Token: token, Id: id}
+	if !t.Validate(acc) {
 		return &BadRequest{"No such token"}
 	}
 
 	t.Expires = time.Now().Add(-time.Minute)
+
+	acc.UpdateAuthToken(t)
 
 	if err := server.Storage.Put(acc); err != nil {
 		return err
@@ -712,87 +695,168 @@ func (server *Server) CSRF(h http.Handler) http.Handler {
 	errorHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		server.HandleError(&InvalidCsrfToken{csrf.FailureReason(r)}, w, r)
 	})
-	return csrf.Protect(server.Config.Secret, csrf.Path("/"), csrf.Secure(false), csrf.ErrorHandler(errorHandler))(h)
+	return csrf.Protect(
+		server.Config.Secret,
+		csrf.Path("/"),
+		csrf.Secure(server.Secure),
+		csrf.ErrorHandler(errorHandler),
+	)(h)
 }
 
-type HandlerFunc func(w http.ResponseWriter, r *http.Request) error
+type MethodFuncs map[string]func(w http.ResponseWriter, r *http.Request, auth *AuthToken) error
+
+type Endpoint struct {
+	Path     string
+	Handlers MethodFuncs
+	Version  int
+	AuthType string
+}
 
 // Registers handlers mapped by method for a given path
-func (server *Server) Route(path string, handlers map[string]HandlerFunc, version int, protect bool) {
-	var handler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var err error
+func (server *Server) Route(endpoint *Endpoint) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := func() error {
+			fn := endpoint.Handlers[r.Method]
 
-		if err = server.CheckApiVersion(r, version); err == nil {
-			if handler := handlers[r.Method]; handler != nil {
-				err = handler(w, r)
-			} else {
-				err = &MethodNotAllowed{r.Method}
+			// If no function for this method was found, return MethodNotAllowed error
+			if fn == nil {
+				return &MethodNotAllowed{r.Method}
 			}
-		}
 
-		if err != nil {
+			// Check correct endpoint version
+			if err := server.CheckEndpointVersion(r, endpoint.Version); err != nil {
+				return err
+			}
+
+			// Get auth token from request
+			auth, authErr := server.Authenticate(r)
+
+			// Endpoint requires authentation but no auth token could be aquired
+			if endpoint.AuthType != "" && authErr != nil {
+				// If this endpoint requires web authentication, simply redirect to login page
+				if endpoint.AuthType == "web" {
+					http.Redirect(w, r, "/login/", http.StatusFound)
+					return nil
+				}
+
+				return authErr
+			}
+
+			// Make sure auth token has the right type
+			if endpoint.AuthType != "" && auth.Type != endpoint.AuthType {
+				return &InvalidAuthToken{auth.Email, auth.Token}
+			}
+
+			// Wrap the handler function in a http.HandlerFunc; Capture error in `e` variable for
+			// later use. We need to do this because the csrf middleware only works with a http.Handler
+			var e error
+			var h http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				e = fn(w, r, auth)
+			})
+
+			// If auth type is "web", wrap handler in csrf middleware
+			if auth != nil && auth.Type == "web" {
+				h = server.CSRF(h)
+			}
+
+			// Execute handler. If our original handler function returns an error, it will
+			// be captures in the `e` variable
+			h.ServeHTTP(w, r)
+
+			return e
+		}(); err != nil {
 			server.HandleError(err, w, r)
 		}
 	})
 
-	if protect {
-		handler = server.CSRF(handler)
-	}
-
-	server.mux.Handle(path, handler)
+	server.mux.Handle(endpoint.Path, handler)
 }
 
 // Registeres http handlers for various routes
 func (server *Server) SetupRoutes() {
 	// Endpoint for logging in / requesting api keys
-	server.Route("/auth/", map[string]HandlerFunc{
-		"PUT":  HandlerFunc(server.RequestAuthToken),
-		"POST": HandlerFunc(server.RequestAuthToken),
-	}, ApiVersion, false)
+	server.Route(&Endpoint{
+		Path: "/auth/",
+		Handlers: MethodFuncs{
+			"PUT":  server.RequestAuthToken,
+			"POST": server.RequestAuthToken,
+		},
+		Version: ApiVersion,
+	})
 
 	// Endpoint for logging in / requesting api keys
-	server.Route("/login/", map[string]HandlerFunc{
-		"GET":  HandlerFunc(server.LoginPage),
-		"POST": HandlerFunc(server.RequestAuthToken),
-	}, 0, true)
+	server.Route(&Endpoint{
+		Path: "/login/",
+		Handlers: MethodFuncs{
+			"GET":  server.LoginPage,
+			"POST": server.RequestAuthToken,
+		},
+	})
 
 	// Endpoint for activating auth tokens
-	server.Route("/activate/", map[string]HandlerFunc{
-		"GET": HandlerFunc(server.ActivateAuthToken),
-	}, 0, false)
+	server.Route(&Endpoint{
+		Path: "/activate/",
+		Handlers: MethodFuncs{
+			"GET": server.ActivateAuthToken,
+		},
+	})
 
 	// Endpoint for reading / writing and deleting a store
-	server.Route("/store/", map[string]HandlerFunc{
-		"GET":    HandlerFunc(server.ReadStore),
-		"HEAD":   HandlerFunc(server.ReadStore),
-		"PUT":    HandlerFunc(server.WriteStore),
-		"DELETE": HandlerFunc(server.RequestDeleteStore),
-	}, ApiVersion, false)
+	server.Route(&Endpoint{
+		Path: "/store/",
+		Handlers: MethodFuncs{
+			"GET":    server.ReadStore,
+			"HEAD":   server.ReadStore,
+			"PUT":    server.WriteStore,
+			"DELETE": server.RequestDeleteStore,
+		},
+		Version:  ApiVersion,
+		AuthType: "api",
+	})
 
-	server.Route("/store/delete/", map[string]HandlerFunc{
-		"GET":  HandlerFunc(server.DeleteStore),
-		"POST": HandlerFunc(server.DeleteStore),
-	}, 0, true)
+	server.Route(&Endpoint{
+		Path: "/store/delete/",
+		Handlers: MethodFuncs{
+			"GET":  server.DeleteStore,
+			"POST": server.DeleteStore,
+		},
+		AuthType: "web",
+	})
 
 	// Confirmation endpoint for deleting a store
-	server.Route("/deletestore/", map[string]HandlerFunc{
-		"GET": HandlerFunc(server.CompleteDeleteStore),
-	}, 0, false)
+	server.Route(&Endpoint{
+		Path: "/deletestore/",
+		Handlers: MethodFuncs{
+			"GET": server.CompleteDeleteStore,
+		},
+	})
 
 	// Dashboard for managing data, auth tokens etc.
-	server.Route("/dashboard/", map[string]HandlerFunc{
-		"GET": HandlerFunc(server.Dashboard),
-	}, 0, true)
+	server.Route(&Endpoint{
+		Path: "/dashboard/",
+		Handlers: MethodFuncs{
+			"GET": server.Dashboard,
+		},
+		AuthType: "web",
+	})
 
 	// Endpoint for logging out
-	server.Route("/logout/", map[string]HandlerFunc{
-		"GET": HandlerFunc(server.Logout),
-	}, 0, false)
+	server.Route(&Endpoint{
+		Path: "/logout/",
+		Handlers: MethodFuncs{
+			"GET": server.Logout,
+		},
+		AuthType: "web",
+	})
 
 	// Endpoint for revoking auth tokens
-	server.Route("/revoke/", map[string]HandlerFunc{
-		"POST": HandlerFunc(server.Revoke),
-	}, 0, true)
+	server.Route(&Endpoint{
+		Path: "/revoke/",
+		Handlers: MethodFuncs{
+			"POST": server.Revoke,
+		},
+		AuthType: "web",
+	})
 
 	// Serve up static files
 	fs := http.FileServer(http.Dir(filepath.Join(server.Config.AssetsPath, "static")))
@@ -924,6 +988,7 @@ func (server *Server) Start() error {
 	// Start server
 	if tlsCert != "" && tlsKey != "" {
 		server.Info.Printf("Starting server with TLS on port %v", port)
+		server.Secure = true
 		return server.ListenAndServeTLS(tlsCert, tlsKey)
 	} else {
 		server.Info.Printf("Starting server on port %v", port)
@@ -945,6 +1010,7 @@ func NewServer(log *Log, storage Storage, sender Sender, config *ServerConfig) *
 		sender,
 		nil,
 		config,
+		false,
 	}
 
 	// Hook up logger for http.Server
