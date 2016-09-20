@@ -217,10 +217,11 @@ func (server *Server) Authenticate(r *http.Request) (*AuthToken, error) {
 }
 
 func (server *Server) LogError(err error, r *http.Request) {
-	if _, ok := err.(*ServerError); ok {
-		server.Error.Printf("%s - %v\nRequest:\n%s\n", formatRequest(r), err, formatRequestVerbose(r))
-	} else {
-		server.Info.Printf("%s - %v", formatRequest(r), err)
+	switch e := err.(type) {
+	case *ServerError, *InvalidCsrfToken:
+		server.Error.Printf("%s - %v\nRequest:\n%s\n", formatRequest(r), e, formatRequestVerbose(r))
+	default:
+		server.Info.Printf("%s - %v", formatRequest(r), e)
 	}
 }
 
