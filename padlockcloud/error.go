@@ -34,26 +34,6 @@ func (e *BadRequest) Message() string {
 	return fmt.Sprintf("%s: %s", http.StatusText(e.Status()), e.message)
 }
 
-type InvalidToken struct {
-	token string
-}
-
-func (e *InvalidToken) Code() string {
-	return "invalid_token"
-}
-
-func (e *InvalidToken) Error() string {
-	return fmt.Sprintf("%s - %s", e.Code(), e.token)
-}
-
-func (e *InvalidToken) Status() int {
-	return http.StatusBadRequest
-}
-
-func (e *InvalidToken) Message() string {
-	return "Invalid Token"
-}
-
 type InvalidAuthToken struct {
 	email string
 	token string

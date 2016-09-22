@@ -20,17 +20,6 @@ const (
 	ApiVersion = 1
 )
 
-// Extracts a uuid-formated token from a given url
-func tokenFromRequest(r *http.Request) (string, error) {
-	token := r.URL.Query().Get("t")
-
-	if token == "" {
-		return "", &InvalidToken{token}
-	}
-
-	return token, nil
-}
-
 // Returns the appropriate protocol based on whether a request was made via https or not
 func schemeFromRequest(r *http.Request) string {
 	if r.TLS != nil {
@@ -363,10 +352,10 @@ func (server *Server) RequestAuthToken(w http.ResponseWriter, r *http.Request, a
 
 // Hander function for activating a given api key
 func (server *Server) ActivateAuthToken(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
-	// Extract activation token from url
-	token, err := tokenFromRequest(r)
-	if err != nil {
-		return err
+	token := r.URL.Query().Get("t")
+
+	if token == "" {
+		return &BadRequest{"no activation token provided"}
 	}
 
 	// Let's check if an unactivate api key exists for this token. If not,
@@ -374,7 +363,7 @@ func (server *Server) ActivateAuthToken(w http.ResponseWriter, r *http.Request, 
 	authRequest := &AuthRequest{Token: token}
 	if err := server.Storage.Get(authRequest); err != nil {
 		if err == ErrNotFound {
-			return &InvalidToken{token}
+			return &BadRequest{"invalid activation token"}
 		} else {
 			return err
 		}
