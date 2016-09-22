@@ -76,39 +76,6 @@ func formatRequestVerbose(r *http.Request) string {
 	return string(dump)
 }
 
-// Represents a request for reseting the data associated with a given account. `RequestReset.Token` is used
-// for validating the request through a separate channel (e.g. email)
-type DeleteStoreRequest struct {
-	Token   string
-	Account string
-	Created time.Time
-}
-
-// Implementation of the `Storable.Key` interface method
-func (rr *DeleteStoreRequest) Key() []byte {
-	return []byte(rr.Token)
-}
-
-// Implementation of the `Storable.Deserialize` interface method
-func (rr *DeleteStoreRequest) Deserialize(data []byte) error {
-	return json.Unmarshal(data, rr)
-}
-
-// Implementation of the `Storable.Serialize` interface method
-func (rr *DeleteStoreRequest) Serialize() ([]byte, error) {
-	return json.Marshal(rr)
-}
-
-// Creates a new `DeleteStoreRequest` with a given `email`
-func NewDeleteStoreRequest(email string) (*DeleteStoreRequest, error) {
-	// Generate a new delete token
-	token, err := token()
-	if err != nil {
-		return nil, err
-	}
-	return &DeleteStoreRequest{token, email, time.Now()}, nil
-}
-
 // DataStore represents the data associated to a given account
 type DataStore struct {
 	Account *Account
@@ -548,14 +515,17 @@ func (server *Server) DeleteStore(w http.ResponseWriter, r *http.Request, auth *
 func (server *Server) RequestDeleteStore(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
 	acc := auth.Account()
 
-	// Create DeleteStoreRequest
-	deleteRequest, err := NewDeleteStoreRequest(acc.Email)
+	// Create AuthRequest
+	authRequest, err := NewAuthRequest(acc.Email, "web")
 	if err != nil {
 		return err
 	}
 
-	// Save token/email pair in database to we can verify it later
-	if err := server.Storage.Put(deleteRequest); err != nil {
+	// After logging in, redirect to delete store page
+	authRequest.Redirect = "/deletestore/"
+
+	// Save authrequest
+	if err := server.Storage.Put(authRequest); err != nil {
 		return err
 	}
 
@@ -563,8 +533,8 @@ func (server *Server) RequestDeleteStore(w http.ResponseWriter, r *http.Request,
 	var buff bytes.Buffer
 	if err := server.Templates.DeleteStoreEmail.Execute(&buff, map[string]string{
 		"email": acc.Email,
-		"delete_link": fmt.Sprintf("%s://%s/deletestore/?v=%d&t=%s", schemeFromRequest(r),
-			server.GetHost(r), ApiVersion, deleteRequest.Token),
+		"delete_link": fmt.Sprintf("%s://%s/activate/?v=%d&t=%s", schemeFromRequest(r),
+			server.GetHost(r), ApiVersion, authRequest.Token),
 	}); err != nil {
 		return err
 	}
@@ -582,51 +552,6 @@ func (server *Server) RequestDeleteStore(w http.ResponseWriter, r *http.Request,
 
 	// Send ACCEPTED status code
 	w.WriteHeader(http.StatusAccepted)
-
-	return nil
-}
-
-// Handler function for updating the data associated with a given account
-func (server *Server) CompleteDeleteStore(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
-	// Extract confirmation token from url
-	token, err := tokenFromRequest(r)
-	if err != nil {
-		return err
-	}
-
-	// Fetch reset request from database
-	resetRequest := &DeleteStoreRequest{Token: token}
-	if err := server.Storage.Get(resetRequest); err != nil {
-		if err == ErrNotFound {
-			return &InvalidToken{token}
-		} else {
-			return err
-		}
-	}
-
-	// If the corresponding delete request was found in the database, we consider the data reset request
-	// as verified so we can proceed with deleting the data for the corresponding account
-	dataStore := &DataStore{Account: &Account{Email: resetRequest.Account}}
-	if err := server.Storage.Delete(dataStore); err != nil {
-		return err
-	}
-
-	// Render success page
-	var buff bytes.Buffer
-	if err := server.Templates.DeleteStoreSuccess.Execute(&buff, map[string]string{
-		"email": string(resetRequest.Account),
-	}); err != nil {
-		return err
-	}
-
-	// Delete the request token
-	if err := server.Storage.Delete(resetRequest); err != nil {
-		return err
-	}
-
-	server.Info.Printf("%s - data_store:confirm_delete - %s", formatRequest(r), resetRequest.Account)
-
-	buff.WriteTo(w)
 
 	return nil
 }
@@ -829,20 +754,12 @@ func (server *Server) SetupRoutes() {
 	})
 
 	server.Route(&Endpoint{
-		Path: "/store/delete/",
+		Path: "/deletestore/",
 		Handlers: MethodFuncs{
 			"GET":  server.DeleteStore,
 			"POST": server.DeleteStore,
 		},
 		AuthType: "web",
-	})
-
-	// Confirmation endpoint for deleting a store
-	server.Route(&Endpoint{
-		Path: "/deletestore/",
-		Handlers: MethodFuncs{
-			"GET": server.CompleteDeleteStore,
-		},
 	})
 
 	// Dashboard for managing data, auth tokens etc.
@@ -1038,5 +955,4 @@ func NewServer(log *Log, storage Storage, sender Sender, config *ServerConfig) *
 
 func init() {
 	RegisterStorable(&DataStore{}, "data-stores")
-	RegisterStorable(&DeleteStoreRequest{}, "delete-requests")
 }
