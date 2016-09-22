@@ -784,7 +784,14 @@ func (server *Server) SetupRoutes() {
 
 	// Fall through route
 	server.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		server.HandleError(&UnsupportedEndpoint{r.URL.Path}, w, r)
+		accept := r.Header.Get("Accept")
+		// If accept header contains "html", assume that the request comes from a browser and redirect
+		// to dashboard
+		if strings.Contains(accept, "html") {
+			http.Redirect(w, r, "/dashboard/", http.StatusFound)
+		} else {
+			server.HandleError(&UnsupportedEndpoint{r.URL.Path}, w, r)
+		}
 	})
 }
 
