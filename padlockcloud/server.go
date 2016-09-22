@@ -159,6 +159,7 @@ type Server struct {
 	Templates *Templates
 	Config    *ServerConfig
 	Secure    bool
+	endpoints map[string]*Endpoint
 }
 
 func (server *Server) GetHost(r *http.Request) string {
@@ -287,6 +288,7 @@ func (server *Server) RequestAuthToken(w http.ResponseWriter, r *http.Request, a
 	create := r.Method == "POST"
 	email := r.PostFormValue("email")
 	tType := r.PostFormValue("type")
+	redirect := r.PostFormValue("redirect")
 	if tType == "" {
 		tType = "api"
 	}
@@ -298,6 +300,10 @@ func (server *Server) RequestAuthToken(w http.ResponseWriter, r *http.Request, a
 
 	if tType != "api" && tType != "web" {
 		return &BadRequest{"unsupported auth token type"}
+	}
+
+	if redirect != "" && server.endpoints[redirect] == nil {
+		return &BadRequest{"invalid redirect path"}
 	}
 
 	// If the client does not explicitly state that the server should create a new account for this email
@@ -324,6 +330,8 @@ func (server *Server) RequestAuthToken(w http.ResponseWriter, r *http.Request, a
 	if err != nil {
 		return err
 	}
+
+	authRequest.Redirect = redirect
 
 	// Save key-token pair to database for activating it later in a separate request
 	err = server.Storage.Put(authRequest)
@@ -429,6 +437,8 @@ func (server *Server) ActivateAuthToken(w http.ResponseWriter, r *http.Request, 
 		return err
 	}
 
+	redirect := authRequest.Redirect
+
 	if authToken.Type == "web" {
 		http.SetCookie(w, &http.Cookie{
 			Name:     "auth",
@@ -437,7 +447,14 @@ func (server *Server) ActivateAuthToken(w http.ResponseWriter, r *http.Request, 
 			Path:     "/",
 			Secure:   server.Secure,
 		})
-		http.Redirect(w, r, "/dashboard/", http.StatusFound)
+
+		if redirect == "" {
+			redirect = "/dashboard/"
+		}
+	}
+
+	if redirect != "" {
+		http.Redirect(w, r, redirect, http.StatusFound)
 	} else {
 		var b bytes.Buffer
 		if err := server.Templates.ActivateAuthTokenSuccess.Execute(&b, map[string]interface{}{
@@ -765,6 +782,8 @@ func (server *Server) Route(endpoint *Endpoint) {
 	})
 
 	server.mux.Handle(endpoint.Path, handler)
+
+	server.endpoints[endpoint.Path] = endpoint
 }
 
 // Registeres http handlers for various routes
@@ -1006,6 +1025,7 @@ func NewServer(log *Log, storage Storage, sender Sender, config *ServerConfig) *
 		nil,
 		config,
 		false,
+		make(map[string]*Endpoint),
 	}
 
 	// Hook up logger for http.Server

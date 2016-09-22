@@ -196,6 +196,7 @@ type AuthRequest struct {
 	Token     string
 	AuthToken *AuthToken
 	Created   time.Time
+	Redirect  string
 }
 
 // Implementation of the `Storable.Key` interface method
@@ -227,7 +228,7 @@ func NewAuthRequest(email string, tType string) (*AuthRequest, error) {
 		return nil, err
 	}
 
-	return &AuthRequest{actToken, authToken, time.Now()}, nil
+	return &AuthRequest{actToken, authToken, time.Now(), ""}, nil
 }
 
 func init() {
