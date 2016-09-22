@@ -756,7 +756,7 @@ func (server *Server) Route(endpoint *Endpoint) {
 			})
 
 			// If auth type is "web", wrap handler in csrf middleware
-			if auth != nil && auth.Type == "web" {
+			if endpoint.AuthType != "" && auth != nil && auth.Type == "web" {
 				h = server.CSRF(h)
 			}
 
