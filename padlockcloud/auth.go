@@ -194,7 +194,7 @@ func (a *Account) RemoveAuthToken(t *AuthToken) {
 // `AuthRequest.Token` is used to activate the AuthToken through a separate channel (e.g. email)
 type AuthRequest struct {
 	Token     string
-	AuthToken AuthToken
+	AuthToken *AuthToken
 	Created   time.Time
 }
 
@@ -227,7 +227,7 @@ func NewAuthRequest(email string, tType string) (*AuthRequest, error) {
 		return nil, err
 	}
 
-	return &AuthRequest{actToken, *authToken, time.Now()}, nil
+	return &AuthRequest{actToken, authToken, time.Now()}, nil
 }
 
 func init() {

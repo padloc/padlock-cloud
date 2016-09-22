@@ -359,14 +359,6 @@ func (server *Server) RequestAuthToken(w http.ResponseWriter, r *http.Request, a
 		response = buff.Bytes()
 		emailSubj = "Log in to Padlock Cloud"
 
-		http.SetCookie(w, &http.Cookie{
-			Name:     "auth",
-			Value:    authRequest.AuthToken.String(),
-			Domain:   server.GetHost(r),
-			HttpOnly: true,
-			Path:     "/",
-		})
-
 		w.Header().Set("Content-Type", "text/html")
 	}
 
@@ -415,13 +407,6 @@ func (server *Server) ActivateAuthToken(w http.ResponseWriter, r *http.Request, 
 
 	authToken := authRequest.AuthToken
 
-	// Make sure that this is the same browser that the login was requested with
-	if authToken.Type == "web" {
-		if t, err := AuthTokenFromRequest(r); err != nil || t.Token != authToken.Token {
-			return &InvalidToken{token}
-		}
-	}
-
 	// Create account instance with the given email address.
 	acc := &Account{Email: authToken.Email}
 
@@ -432,7 +417,7 @@ func (server *Server) ActivateAuthToken(w http.ResponseWriter, r *http.Request, 
 	}
 
 	// Add the new key to the account
-	acc.AddAuthToken(&authToken)
+	acc.AddAuthToken(authToken)
 
 	// Save the changes
 	if err := server.Storage.Put(acc); err != nil {
@@ -444,9 +429,14 @@ func (server *Server) ActivateAuthToken(w http.ResponseWriter, r *http.Request, 
 		return err
 	}
 
-	server.Info.Printf("%s - auth_token:activate - %s:%s:%s\n", formatRequest(r), acc.Email, authToken.Type, authToken.Id)
-
 	if authToken.Type == "web" {
+		http.SetCookie(w, &http.Cookie{
+			Name:     "auth",
+			Value:    authToken.String(),
+			HttpOnly: true,
+			Path:     "/",
+			Secure:   server.Secure,
+		})
 		http.Redirect(w, r, "/dashboard/", http.StatusFound)
 	} else {
 		var b bytes.Buffer
@@ -457,6 +447,8 @@ func (server *Server) ActivateAuthToken(w http.ResponseWriter, r *http.Request, 
 		}
 		b.WriteTo(w)
 	}
+
+	server.Info.Printf("%s - auth_token:activate - %s:%s:%s\n", formatRequest(r), acc.Email, authToken.Type, authToken.Id)
 
 	return nil
 }
@@ -656,10 +648,12 @@ func (server *Server) Logout(w http.ResponseWriter, r *http.Request, auth *AuthT
 		return err
 	}
 	http.SetCookie(w, &http.Cookie{
-		Name:   "auth",
-		Value:  "",
-		MaxAge: -1,
-		Path:   "/",
+		Name:     "auth",
+		Value:    "",
+		MaxAge:   -1,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   server.Secure,
 	})
 	http.Redirect(w, r, "/login/", http.StatusFound)
 	return nil
