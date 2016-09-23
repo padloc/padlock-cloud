@@ -4,6 +4,7 @@ import "fmt"
 import "path/filepath"
 import "io/ioutil"
 import "errors"
+import "encoding/base64"
 import "gopkg.in/yaml.v2"
 import "gopkg.in/urfave/cli.v1"
 
@@ -146,6 +147,23 @@ func (cliApp *CliApp) DeleteAccount(context *cli.Context) error {
 	defer cliApp.Storage.Close()
 
 	return cliApp.Storage.Delete(acc)
+}
+
+func genSecret() (string, error) {
+	b, err := randomBytes(32)
+	if err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(b), nil
+}
+
+func (cliApp *CliApp) GenSecret(context *cli.Context) error {
+	s, err := genSecret()
+	if err != nil {
+		return err
+	}
+	fmt.Println(s)
+	return nil
 }
 
 func NewCliApp() *CliApp {
@@ -309,6 +327,11 @@ func NewCliApp() *CliApp {
 					Action: cliApp.DeleteAccount,
 				},
 			},
+		},
+		{
+			Name:   "gensecret",
+			Usage:  "Generate random 32 byte secret",
+			Action: cliApp.GenSecret,
 		},
 	}
 

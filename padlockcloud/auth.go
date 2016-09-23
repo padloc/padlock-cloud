@@ -8,7 +8,7 @@ import "regexp"
 import "fmt"
 import "errors"
 
-var authStringPattern = regexp.MustCompile("^AuthToken (.+):(.+)$")
+var authStringPattern = regexp.MustCompile("^(?:AuthToken|ApiKey) (.+):(.+)$")
 
 // A wrapper for an api key containing some meta info like the user and device name
 type AuthToken struct {
@@ -32,7 +32,7 @@ func (t *AuthToken) Account() *Account {
 // and it's value is updated with the value of the corresponding auth token in `a.AuthTokens`
 // and the `account` field is set to `a`
 func (t *AuthToken) Validate(a *Account) bool {
-	if _, at := a.findAuthToken(t); at != nil {
+	if _, at := a.findAuthToken(t); at != nil && at.Token == t.Token {
 		*t = *at
 		t.account = a
 		return true

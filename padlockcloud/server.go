@@ -6,6 +6,7 @@ import "net/http/httputil"
 import "io/ioutil"
 import "fmt"
 import "encoding/json"
+import "encoding/base64"
 import "regexp"
 import "errors"
 import "bytes"
@@ -100,7 +101,7 @@ type ServerConfig struct {
 	// Explicit host to use in place of http.Request::Host when generating urls and such
 	Host string `yaml:"host"`
 	// Secret used for authenticating cookies
-	Secret []byte `yaml:"secret"`
+	Secret string `yaml:"secret"`
 }
 
 // The Server type holds all the contextual data and logic used for running a Padlock Cloud instances
@@ -115,6 +116,7 @@ type Server struct {
 	Templates *Templates
 	Config    *ServerConfig
 	Secure    bool
+	secret    []byte
 	endpoints map[string]*Endpoint
 }
 
@@ -217,7 +219,6 @@ func (server *Server) HandleError(e error, w http.ResponseWriter, r *http.Reques
 		response = JsonifyErrorResponse(err)
 	} else if strings.Contains(accept, "text/html") {
 		w.Header().Set("Content-Type", "text/html")
-		// Render success page
 		var buff bytes.Buffer
 		if err := server.Templates.ErrorPage.Execute(&buff, map[string]string{
 			"message": err.Message(),
@@ -622,7 +623,7 @@ func (server *Server) CSRF(h http.Handler) http.Handler {
 		server.HandleError(&InvalidCsrfToken{csrf.FailureReason(r)}, w, r)
 	})
 	return csrf.Protect(
-		server.Config.Secret,
+		server.secret,
 		csrf.Path("/"),
 		csrf.Secure(server.Secure),
 		csrf.ErrorHandler(errorHandler),
@@ -851,11 +852,17 @@ func (server *Server) HandlePanic(h http.Handler) http.Handler {
 func (server *Server) Init() error {
 	var err error
 
-	if server.Config.Secret == nil {
+	if server.Config.Secret != "" {
+		if s, err := base64.StdEncoding.DecodeString(server.Config.Secret); err != nil {
+			server.secret = s
+		} else {
+			return err
+		}
+	} else {
 		if key, err := randomBytes(32); err != nil {
 			return err
 		} else {
-			server.Config.Secret = key
+			server.secret = key
 		}
 	}
 
@@ -926,19 +933,16 @@ func (server *Server) Start() error {
 // Instantiates and initializes a new Server and returns a reference to it
 func NewServer(log *Log, storage Storage, sender Sender, config *ServerConfig) *Server {
 	server := &Server{
-		&graceful.Server{
+		Server: &graceful.Server{
 			Server:  &http.Server{},
 			Timeout: time.Second * 10,
 		},
-		log,
-		http.NewServeMux(),
-		nil,
-		storage,
-		sender,
-		nil,
-		config,
-		false,
-		make(map[string]*Endpoint),
+		Log:       log,
+		mux:       http.NewServeMux(),
+		Storage:   storage,
+		Sender:    sender,
+		Config:    config,
+		endpoints: make(map[string]*Endpoint),
 	}
 
 	// Hook up logger for http.Server
