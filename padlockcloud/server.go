@@ -520,9 +520,9 @@ func (server *Server) RequestDeleteStore(w http.ResponseWriter, r *http.Request,
 
 	// Render confirmation email
 	var buff bytes.Buffer
-	if err := server.Templates.DeleteStoreEmail.Execute(&buff, map[string]string{
+	if err := server.Templates.ActivateAuthTokenEmail.Execute(&buff, map[string]string{
 		"email": acc.Email,
-		"delete_link": fmt.Sprintf("%s://%s/activate/?v=%d&t=%s", schemeFromRequest(r),
+		"activation_link": fmt.Sprintf("%s://%s/activate/?v=%d&t=%s", schemeFromRequest(r),
 			server.GetHost(r), ApiVersion, authRequest.Token),
 	}); err != nil {
 		return err

@@ -8,8 +8,6 @@ import ht "html/template"
 type Templates struct {
 	// Email template for api key activation email
 	ActivateAuthTokenEmail *t.Template
-	// Email template for deletion confirmation email
-	DeleteStoreEmail *t.Template
 	// Template for success page for activating an auth token
 	ActivateAuthTokenSuccess *ht.Template
 	// Template for success page for deleting account data
@@ -35,12 +33,6 @@ func LoadTemplates(path string) (*Templates, error) {
 	if tt.ActivateAuthTokenEmail, err = t.ParseFiles(
 		tp("email/base.txt"),
 		tp("email/activate-auth-token.txt"),
-	); err != nil {
-		return nil, err
-	}
-	if tt.DeleteStoreEmail, err = t.ParseFiles(
-		tp("email/base.txt"),
-		tp("email/delete-store.txt"),
 	); err != nil {
 		return nil, err
 	}

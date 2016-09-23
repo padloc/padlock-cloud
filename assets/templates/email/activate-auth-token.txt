@@ -1,6 +1,6 @@
 {{ define "main" -}}
 {{ if eq .token.Type "web" -}}
-You are receiving this email because you requested to log into your Padlock Cloud account {{ .email }} through your browser. Just click the link below to log in!
+You are receiving this email because you requested to log into your Padlock Cloud account {{ .token.Email }} through your browser. Just click the link below to log in!
 
 Click to log in: {{ .activation_link }}
 {{- else -}}
