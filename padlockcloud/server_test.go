@@ -5,6 +5,7 @@ import "fmt"
 import "text/template"
 import htmlTemplate "html/template"
 import "net/http"
+import "net/http/cookiejar"
 import "net/http/httptest"
 import "net/url"
 import "log"
@@ -18,6 +19,8 @@ const (
 	testEmail = "martin@padlock.io"
 	testData  = "Hello World!"
 )
+
+var testClient *http.Client
 
 // Helper function for creating (optionally authenticated) requests
 func request(method string, url string, body string, asForm bool, authToken *AuthToken, version int) (*http.Response, error) {
@@ -34,9 +37,10 @@ func request(method string, url string, body string, asForm bool, authToken *Aut
 	}
 
 	if authToken != nil {
-		req.Header.Add("Authorization", fmt.Sprintf("AuthToken %s:%s", authToken.Email, authToken.Token))
+		req.Header.Add("Authorization", authToken.String())
 	}
-	return http.DefaultClient.Do(req)
+
+	return testClient.Do(req)
 }
 
 // Helper function for checking a `http.Response` object for an expected status code and response body
@@ -78,12 +82,13 @@ func setupServer() (*Server, string) {
 	storage := &MemoryStorage{}
 	sender := &RecordSender{}
 	templates := &Templates{
-		template.Must(template.New("").Parse("{{ .email }}, {{ .activation_link }}")),
-		template.Must(template.New("").Parse("{{ .email }}, {{ .delete_link }}")),
+		template.Must(template.New("").Parse("{{ .token.Email }}, {{ .activation_link }}")),
 		htmlTemplate.Must(htmlTemplate.New("").Parse("")),
-		htmlTemplate.Must(htmlTemplate.New("").Parse("{{ .email }}")),
 		template.Must(template.New("").Parse("")),
 		htmlTemplate.Must(htmlTemplate.New("").Parse("<html>{{ .message }}</html>")),
+		htmlTemplate.Must(htmlTemplate.New("").Parse("login")),
+		htmlTemplate.Must(htmlTemplate.New("").Parse("dashboard")),
+		htmlTemplate.Must(htmlTemplate.New("").Parse("deletestore")),
 	}
 
 	logger := &Log{Config: &LogConfig{}}
@@ -94,7 +99,7 @@ func setupServer() (*Server, string) {
 	server.Templates = templates
 	server.Init()
 
-	testServer := httptest.NewServer(server)
+	testServer := httptest.NewServer(server.HandlePanic(server.mux))
 
 	return server, testServer.URL
 }
@@ -106,7 +111,7 @@ func setupServer() (*Server, string) {
 // - Putting data
 // - Requesting a data reset
 // - Confirming a data reset
-func TestLifeCycle(t *testing.T) {
+func TestApiLifeCycle(t *testing.T) {
 	server, testURL := setupServer()
 	sender := server.Sender.(*RecordSender)
 
@@ -115,7 +120,7 @@ func TestLifeCycle(t *testing.T) {
 		"email": {testEmail},
 	}.Encode(), true, nil, ApiVersion)
 
-	// Response status code should be "ACCEPTED", response body should be the RFC4122-compliant auth token
+	// Response status code should be "ACCEPTED", response body should be the json-encoded auth token
 	tokenJSON := testResponse(t, res, http.StatusAccepted, "")
 
 	authToken := &AuthToken{}
@@ -140,7 +145,7 @@ func TestLifeCycle(t *testing.T) {
 	link := regexp.MustCompile(linkPattern).FindString(sender.Message)
 
 	// 'visit' activation link
-	res, _ = http.Get(link)
+	res, _ = request("GET", link, "", false, nil, 0)
 	testResponse(t, res, http.StatusOK, "")
 
 	// Get data request authenticated with obtained api key should return with status code 200 - OK and
@@ -163,25 +168,21 @@ func TestLifeCycle(t *testing.T) {
 
 	// Activation message should be sent to the correct email
 	if sender.Recipient != testEmail {
-		t.Errorf("Expected confirm delete message to be sent to %s, instead got %s", testEmail, sender.Recipient)
+		t.Fatalf("Expected confirm delete message to be sent to %s, instead got %s", testEmail, sender.Recipient)
 	}
 
 	// Confirmation message should contain a valid confirmation link
-	linkPattern = fmt.Sprintf("%s/deletestore/\\?v=%d&t=%s", testURL, ApiVersion, tokenPattern)
+	linkPattern = fmt.Sprintf("%s/activate/\\?v=%d&t=%s", testURL, ApiVersion, tokenPattern)
 	msgPattern = fmt.Sprintf("%s, %s", testEmail, linkPattern)
 	match, _ = regexp.MatchString(msgPattern, sender.Message)
 	if !match {
-		t.Errorf("Expected activation message to match \"%s\", got \"%s\"", msgPattern, sender.Message)
+		t.Fatalf("Expected activation message to match \"%s\", got \"%s\"", msgPattern, sender.Message)
 	}
 	link = regexp.MustCompile(linkPattern).FindString(sender.Message)
 
-	// 'visit' confirmation link
-	res, _ = http.Get(link)
-	testResponse(t, res, http.StatusOK, fmt.Sprintf("^%s$", testEmail))
-
-	// After data reset, data should be an empty string
-	res, _ = request("GET", testURL+"/store/", "", false, authToken, ApiVersion)
-	testResponse(t, res, http.StatusOK, "^$")
+	// 'visit' link, should log in and redirect to delete store form
+	res, _ = request("GET", link, "", false, nil, 0)
+	testResponse(t, res, http.StatusOK, fmt.Sprintf("^deletestore$"))
 }
 
 // Test correct handling of various error conditions
@@ -198,7 +199,7 @@ func TestErrorConditions(t *testing.T) {
 
 	// A request without a valid authorization header should return with status code 401 - Unauthorized
 	res, _ = request("GET", testURL+"/store/", "", false, nil, ApiVersion)
-	testError(t, res, &Unauthorized{})
+	testError(t, res, &InvalidAuthToken{})
 
 	// Requests with unsupported HTTP methods should return with 405 - method not allowed
 	res, _ = request("POST", testURL+"/store/", "", false, nil, ApiVersion)
@@ -210,39 +211,29 @@ func TestErrorConditions(t *testing.T) {
 
 	// An invalid activation token should result in a bad request response
 	res, _ = request("GET", testURL+"/activate/?t=asdf", "", false, nil, ApiVersion)
-	testError(t, res, &InvalidToken{})
-
-	// An invalid deletion token should result in a bad request response
-	res, _ = request("GET", testURL+"/deletestore/?t=asdf", "", false, nil, ApiVersion)
-	testError(t, res, &InvalidToken{})
+	testError(t, res, &BadRequest{"invalid activation token"})
 }
 
 func TestOutdatedVersion(t *testing.T) {
 	server, testURL := setupServer()
 	sender := server.Sender.(*RecordSender)
 
-	e := &UnsupportedApiVersion{}
-
 	sender.Reset()
 	token, _ := token()
-	res, _ := request("GET", testURL+"/", "", false, &AuthToken{Email: testEmail, Token: token}, 0)
-	testError(t, res, e)
+	req, _ := http.NewRequest("GET", testURL+"/", nil)
+	req.Header.Add("Accept", "application/json")
+	req.Header.Add("Authorization", fmt.Sprintf("ApiKey %s:%s", testEmail, token))
+	res, _ := testClient.Do(req)
+	testError(t, res, &UnsupportedEndpoint{})
 	if sender.Recipient != testEmail {
 		t.Errorf("Expected outdated message to be sent to %s, instead got %s", testEmail, sender.Recipient)
 	}
 
 	sender.Reset()
-	res, _ = request("POST", testURL+"/auth", url.Values{
+	res, _ = request("POST", testURL+"/auth/", url.Values{
 		"email": {testEmail},
 	}.Encode(), true, nil, 0)
-	testError(t, res, e)
-	if sender.Recipient != testEmail {
-		t.Errorf("Expected outdated message to be sent to %s, instead got %s", testEmail, sender.Recipient)
-	}
-
-	sender.Reset()
-	res, _ = request("DELETE", testURL+"/"+testEmail, "", false, nil, 0)
-	testError(t, res, e)
+	testError(t, res, &UnsupportedApiVersion{0, ApiVersion})
 	if sender.Recipient != testEmail {
 		t.Errorf("Expected outdated message to be sent to %s, instead got %s", testEmail, sender.Recipient)
 	}
@@ -273,7 +264,7 @@ func TestErrorFormat(t *testing.T) {
 		if format != "" {
 			req.Header.Add("Accept", format)
 		}
-		res, _ := http.DefaultClient.Do(req)
+		res, _ := testClient.Do(req)
 		defer res.Body.Close()
 		body, _ := ioutil.ReadAll(res.Body)
 		if !bytes.Equal(body, expected) {
@@ -285,4 +276,14 @@ func TestErrorFormat(t *testing.T) {
 	testErr("application/json", JsonifyErrorResponse(e))
 	testErr("text/html", []byte(fmt.Sprintf("<html>%s</html>", e.Message())))
 	testErr("", []byte(e.Message()))
+}
+
+func init() {
+	jar, _ := cookiejar.New(nil)
+	testClient = &http.Client{
+		// CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		// 	return http.ErrUseLastResponse
+		// },
+		Jar: jar,
+	}
 }

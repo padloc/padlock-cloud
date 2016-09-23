@@ -22,10 +22,12 @@ func TestLoadTemplates(t *testing.T) {
 	}
 
 	if templates.ActivateAuthTokenEmail == nil ||
-		templates.DeleteStoreEmail == nil ||
 		templates.ActivateAuthTokenSuccess == nil ||
-		templates.DeleteStoreSuccess == nil ||
-		templates.DeprecatedVersionEmail == nil {
+		templates.DeprecatedVersionEmail == nil ||
+		templates.ErrorPage == nil ||
+		templates.LoginPage == nil ||
+		templates.Dashboard == nil ||
+		templates.DeleteStore == nil {
 		t.Fatal("All templates should be initialized and not nil")
 	}
 }

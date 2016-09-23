@@ -521,8 +521,8 @@ func (server *Server) RequestDeleteStore(w http.ResponseWriter, r *http.Request,
 
 	// Render confirmation email
 	var buff bytes.Buffer
-	if err := server.Templates.ActivateAuthTokenEmail.Execute(&buff, map[string]string{
-		"email": acc.Email,
+	if err := server.Templates.ActivateAuthTokenEmail.Execute(&buff, map[string]interface{}{
+		"token": authRequest.AuthToken,
 		"activation_link": fmt.Sprintf("%s://%s/activate/?v=%d&t=%s", schemeFromRequest(r),
 			server.GetHost(r), ApiVersion, authRequest.Token),
 	}); err != nil {
@@ -785,6 +785,8 @@ func (server *Server) SetupRoutes() {
 
 	// Fall through route
 	server.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// Older clients might still be using the deprecated 'ApiKey email:token' authentication
+		// scheme. Send users of these clients a deprecated-version-email
 		if strings.Contains(r.Header.Get("Authorization"), "ApiKey") {
 			server.SendDeprecatedVersionEmail(r)
 		}

@@ -10,8 +10,6 @@ type Templates struct {
 	ActivateAuthTokenEmail *t.Template
 	// Template for success page for activating an auth token
 	ActivateAuthTokenSuccess *ht.Template
-	// Template for success page for deleting account data
-	DeleteStoreSuccess *ht.Template
 	// Email template for clients using an outdated api version
 	DeprecatedVersionEmail *t.Template
 	ErrorPage              *ht.Template
@@ -45,12 +43,6 @@ func LoadTemplates(path string) (*Templates, error) {
 	if tt.ActivateAuthTokenSuccess, err = ht.ParseFiles(
 		tp("page/base.html"),
 		tp("page/activate-auth-token-success.html"),
-	); err != nil {
-		return nil, err
-	}
-	if tt.DeleteStoreSuccess, err = ht.ParseFiles(
-		tp("page/base.html"),
-		tp("page/delete-store-success.html"),
 	); err != nil {
 		return nil, err
 	}
