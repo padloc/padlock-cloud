@@ -86,7 +86,7 @@ func setupServer() (*Server, string) {
 		htmlTemplate.Must(htmlTemplate.New("").Parse("")),
 		template.Must(template.New("").Parse("")),
 		htmlTemplate.Must(htmlTemplate.New("").Parse("<html>{{ .message }}</html>")),
-		htmlTemplate.Must(htmlTemplate.New("").Parse("login")),
+		htmlTemplate.Must(htmlTemplate.New("").Parse("login,{{ .email }},{{ .submitted }}")),
 		htmlTemplate.Must(htmlTemplate.New("").Parse("dashboard")),
 		htmlTemplate.Must(htmlTemplate.New("").Parse("deletestore")),
 	}
@@ -183,6 +183,52 @@ func TestApiLifeCycle(t *testing.T) {
 	// 'visit' link, should log in and redirect to delete store form
 	res, _ = request("GET", link, "", false, nil, 0)
 	testResponse(t, res, http.StatusOK, fmt.Sprintf("^deletestore$"))
+}
+
+func TestWebLogin(t *testing.T) {
+	server, testURL := setupServer()
+	sender := server.Sender.(*RecordSender)
+
+	// If not logged in, should redirect to login page
+	res, _ := request("GET", testURL+"/dashboard/", "", true, nil, 0)
+	testResponse(t, res, http.StatusOK, "^login,,$")
+
+	// Post request for api key
+	res, _ = request("POST", testURL+"/auth/", url.Values{
+		"email": {testEmail},
+		"type":  {"web"},
+	}.Encode(), true, nil, ApiVersion)
+	testResponse(t, res, http.StatusAccepted, fmt.Sprintf("^login,%s,true$", testEmail))
+
+	// Activation message should be sent to the correct email
+	if sender.Recipient != testEmail {
+		t.Errorf("Expected activation message to be sent to %s, instead got %s", testEmail, sender.Recipient)
+	}
+
+	// Activation message should contain a valid activation link
+	linkPattern := fmt.Sprintf("%s/activate/\\?v=%d&t=%s", testURL, ApiVersion, tokenPattern)
+	msgPattern := fmt.Sprintf("%s, %s", testEmail, linkPattern)
+	match, _ := regexp.MatchString(msgPattern, sender.Message)
+	if !match {
+		t.Errorf("Expected activation message to match \"%s\", got \"%s\"", msgPattern, sender.Message)
+	}
+	link := regexp.MustCompile(linkPattern).FindString(sender.Message)
+
+	// 'visit' activation link
+	res, _ = request("GET", link, "", false, nil, 0)
+	testResponse(t, res, http.StatusOK, "")
+
+	// We should be logged in now, so dashboard should render
+	res, _ = request("GET", testURL+"/dashboard/", "", true, nil, 0)
+	testResponse(t, res, http.StatusOK, "^dashboard$")
+
+	// Log out
+	res, _ = request("GET", testURL+"/logout/", "", true, nil, 0)
+	testResponse(t, res, http.StatusOK, "")
+
+	// If not logged in, should redirect to login page
+	res, _ = request("GET", testURL+"/dashboard/", "", true, nil, 0)
+	testResponse(t, res, http.StatusOK, "^login,,$")
 }
 
 // Test correct handling of various error conditions
