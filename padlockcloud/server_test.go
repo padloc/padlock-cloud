@@ -20,13 +20,62 @@ const (
 	testData  = "Hello World!"
 )
 
-var testClient *http.Client
+var (
+	server  *Server
+	client  *http.Client
+	storage *MemoryStorage
+	sender  *RecordSender
+	host    string
+)
+
+func init() {
+	storage = &MemoryStorage{}
+	sender = &RecordSender{}
+	templates := &Templates{
+		template.Must(template.New("").Parse("{{ .token.Email }}, {{ .activation_link }}")),
+		htmlTemplate.Must(htmlTemplate.New("").Parse("")),
+		template.Must(template.New("").Parse("")),
+		htmlTemplate.Must(htmlTemplate.New("").Parse("<html>{{ .message }}</html>")),
+		htmlTemplate.Must(htmlTemplate.New("").Parse("login,{{ .email }},{{ .submitted }}")),
+		htmlTemplate.Must(htmlTemplate.New("").Parse("dashboard")),
+		htmlTemplate.Must(htmlTemplate.New("").Parse("deletestore")),
+	}
+
+	logger := &Log{Config: &LogConfig{}}
+	logger.Init()
+	logger.Info.SetOutput(ioutil.Discard)
+	logger.Error.SetOutput(ioutil.Discard)
+	server = NewServer(logger, storage, sender, &ServerConfig{})
+	server.Templates = templates
+	server.Init()
+
+	testServer := httptest.NewServer(server.HandlePanic(server.mux))
+
+	host = testServer.URL
+
+	jar, _ := cookiejar.New(nil)
+	client = &http.Client{
+		// CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		// 	return http.ErrUseLastResponse
+		// },
+		Jar: jar,
+	}
+}
+
+func resetStorage() {
+	storage.Open()
+}
+
+func resetCookies() {
+	jar, _ := cookiejar.New(nil)
+	client.Jar = jar
+}
 
 // Helper function for creating (optionally authenticated) requests
-func request(method string, url string, body string, asForm bool, authToken *AuthToken, version int) (*http.Response, error) {
+func request(method string, url string, body string, authToken *AuthToken, version int) (*http.Response, error) {
 	req, _ := http.NewRequest(method, url, bytes.NewBuffer([]byte(body)))
 
-	if asForm {
+	if method == "POST" || method == "PUT" {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
 
@@ -40,7 +89,7 @@ func request(method string, url string, body string, asForm bool, authToken *Aut
 		req.Header.Add("Authorization", authToken.String())
 	}
 
-	return testClient.Do(req)
+	return client.Do(req)
 }
 
 // Helper function for checking a `http.Response` object for an expected status code and response body
@@ -78,32 +127,6 @@ func testError(t *testing.T, res *http.Response, e ErrorResponse) {
 	testResponse(t, res, e.Status(), regexp.QuoteMeta(string(JsonifyErrorResponse(e))))
 }
 
-func setupServer() (*Server, string) {
-	storage := &MemoryStorage{}
-	sender := &RecordSender{}
-	templates := &Templates{
-		template.Must(template.New("").Parse("{{ .token.Email }}, {{ .activation_link }}")),
-		htmlTemplate.Must(htmlTemplate.New("").Parse("")),
-		template.Must(template.New("").Parse("")),
-		htmlTemplate.Must(htmlTemplate.New("").Parse("<html>{{ .message }}</html>")),
-		htmlTemplate.Must(htmlTemplate.New("").Parse("login,{{ .email }},{{ .submitted }}")),
-		htmlTemplate.Must(htmlTemplate.New("").Parse("dashboard")),
-		htmlTemplate.Must(htmlTemplate.New("").Parse("deletestore")),
-	}
-
-	logger := &Log{Config: &LogConfig{}}
-	logger.Init()
-	logger.Info.SetOutput(ioutil.Discard)
-	logger.Error.SetOutput(ioutil.Discard)
-	server := NewServer(logger, storage, sender, &ServerConfig{})
-	server.Templates = templates
-	server.Init()
-
-	testServer := httptest.NewServer(server.HandlePanic(server.mux))
-
-	return server, testServer.URL
-}
-
 // Full lifecycle test including
 // - Requesting an api key
 // - Activating an api key
@@ -112,13 +135,12 @@ func setupServer() (*Server, string) {
 // - Requesting a data reset
 // - Confirming a data reset
 func TestApiLifeCycle(t *testing.T) {
-	server, testURL := setupServer()
-	sender := server.Sender.(*RecordSender)
+	resetCookies()
 
 	// Post request for api key
-	res, _ := request("POST", testURL+"/auth/", url.Values{
+	res, _ := request("POST", host+"/auth/", url.Values{
 		"email": {testEmail},
-	}.Encode(), true, nil, ApiVersion)
+	}.Encode(), nil, ApiVersion)
 
 	// Response status code should be "ACCEPTED", response body should be the json-encoded auth token
 	tokenJSON := testResponse(t, res, http.StatusAccepted, "")
@@ -136,7 +158,7 @@ func TestApiLifeCycle(t *testing.T) {
 	}
 
 	// Activation message should contain a valid activation link
-	linkPattern := fmt.Sprintf("%s/activate/\\?v=%d&t=%s", testURL, ApiVersion, tokenPattern)
+	linkPattern := fmt.Sprintf("%s/activate/\\?v=%d&t=%s", host, ApiVersion, tokenPattern)
 	msgPattern := fmt.Sprintf("%s, %s", testEmail, linkPattern)
 	match, _ := regexp.MatchString(msgPattern, sender.Message)
 	if !match {
@@ -145,25 +167,25 @@ func TestApiLifeCycle(t *testing.T) {
 	link := regexp.MustCompile(linkPattern).FindString(sender.Message)
 
 	// 'visit' activation link
-	res, _ = request("GET", link, "", false, nil, 0)
+	res, _ = request("GET", link, "", nil, 0)
 	testResponse(t, res, http.StatusOK, "")
 
 	// Get data request authenticated with obtained api key should return with status code 200 - OK and
 	// empty response body (since we haven't written any data yet)
-	res, _ = request("GET", testURL+"/store/", "", false, authToken, ApiVersion)
+	res, _ = request("GET", host+"/store/", "", authToken, ApiVersion)
 	testResponse(t, res, http.StatusOK, "^$")
 
 	// Put request should return with status code 204 - NO CONTENT
-	res, _ = request("PUT", testURL+"/store/", testData, false, authToken, ApiVersion)
+	res, _ = request("PUT", host+"/store/", testData, authToken, ApiVersion)
 	testResponse(t, res, http.StatusNoContent, "")
 
 	// Now get data request should return the data previously saved through PUT
-	res, _ = request("GET", testURL+"/store/", "", false, authToken, ApiVersion)
+	res, _ = request("GET", host+"/store/", "", authToken, ApiVersion)
 	testResponse(t, res, http.StatusOK, fmt.Sprintf("^%s$", testData))
 
 	// Send data reset request. Response should have status code 202 - ACCEPTED
 	sender.Reset()
-	res, _ = request("DELETE", testURL+"/store/", "", false, authToken, ApiVersion)
+	res, _ = request("DELETE", host+"/store/", "", authToken, ApiVersion)
 	testResponse(t, res, http.StatusAccepted, "")
 
 	// Activation message should be sent to the correct email
@@ -172,7 +194,7 @@ func TestApiLifeCycle(t *testing.T) {
 	}
 
 	// Confirmation message should contain a valid confirmation link
-	linkPattern = fmt.Sprintf("%s/activate/\\?v=%d&t=%s", testURL, ApiVersion, tokenPattern)
+	linkPattern = fmt.Sprintf("%s/activate/\\?v=%d&t=%s", host, ApiVersion, tokenPattern)
 	msgPattern = fmt.Sprintf("%s, %s", testEmail, linkPattern)
 	match, _ = regexp.MatchString(msgPattern, sender.Message)
 	if !match {
@@ -181,23 +203,22 @@ func TestApiLifeCycle(t *testing.T) {
 	link = regexp.MustCompile(linkPattern).FindString(sender.Message)
 
 	// 'visit' link, should log in and redirect to delete store form
-	res, _ = request("GET", link, "", false, nil, 0)
+	res, _ = request("GET", link, "", nil, 0)
 	testResponse(t, res, http.StatusOK, fmt.Sprintf("^deletestore$"))
 }
 
-func TestWebLogin(t *testing.T) {
-	server, testURL := setupServer()
-	sender := server.Sender.(*RecordSender)
+func TestWeb(t *testing.T) {
+	resetCookies()
 
 	// If not logged in, should redirect to login page
-	res, _ := request("GET", testURL+"/dashboard/", "", true, nil, 0)
+	res, _ := request("GET", host+"/dashboard/", "", nil, 0)
 	testResponse(t, res, http.StatusOK, "^login,,$")
 
 	// Post request for api key
-	res, _ = request("POST", testURL+"/auth/", url.Values{
+	res, _ = request("POST", host+"/auth/", url.Values{
 		"email": {testEmail},
 		"type":  {"web"},
-	}.Encode(), true, nil, ApiVersion)
+	}.Encode(), nil, ApiVersion)
 	testResponse(t, res, http.StatusAccepted, fmt.Sprintf("^login,%s,true$", testEmail))
 
 	// Activation message should be sent to the correct email
@@ -206,7 +227,7 @@ func TestWebLogin(t *testing.T) {
 	}
 
 	// Activation message should contain a valid activation link
-	linkPattern := fmt.Sprintf("%s/activate/\\?v=%d&t=%s", testURL, ApiVersion, tokenPattern)
+	linkPattern := fmt.Sprintf("%s/activate/\\?v=%d&t=%s", host, ApiVersion, tokenPattern)
 	msgPattern := fmt.Sprintf("%s, %s", testEmail, linkPattern)
 	match, _ := regexp.MatchString(msgPattern, sender.Message)
 	if !match {
@@ -215,70 +236,90 @@ func TestWebLogin(t *testing.T) {
 	link := regexp.MustCompile(linkPattern).FindString(sender.Message)
 
 	// 'visit' activation link
-	res, _ = request("GET", link, "", false, nil, 0)
+	res, _ = request("GET", link, "", nil, 0)
 	testResponse(t, res, http.StatusOK, "")
 
 	// We should be logged in now, so dashboard should render
-	res, _ = request("GET", testURL+"/dashboard/", "", true, nil, 0)
+	res, _ = request("GET", host+"/dashboard/", "", nil, 0)
 	testResponse(t, res, http.StatusOK, "^dashboard$")
 
 	// Log out
-	res, _ = request("GET", testURL+"/logout/", "", true, nil, 0)
+	res, _ = request("GET", host+"/logout/", "", nil, 0)
 	testResponse(t, res, http.StatusOK, "")
 
 	// If not logged in, should redirect to login page
-	res, _ = request("GET", testURL+"/dashboard/", "", true, nil, 0)
+	res, _ = request("GET", host+"/dashboard/", "", nil, 0)
 	testResponse(t, res, http.StatusOK, "^login,,$")
 }
 
+// TODO: Test authentication
+//
+// func TestCsrfProtection() {
+//
+// 	acc := &Account{Email: testEmail}
+// 	t := NewAuthToken(testEmail, "web")
+// 	acc.AddAuthToken(t)
+// 	server.Put(acc)
+//
+// 	client.Jar.SetCookies(testUrl, []*http.Cookie{
+// 		{
+// 			Name:  "auth",
+// 			Value: t.String(),
+// 		},
+// 	})
+//
+// }
+
+// TODO: Test revoke api key
+
+// TODO: Test reset data
+
 // Test correct handling of various error conditions
 func TestErrorConditions(t *testing.T) {
-	_, testURL := setupServer()
 
 	// Trying to get an api key for a non-existing account using the PUT method should result in a 404
-	res, _ := request("PUT", testURL+"/auth/", url.Values{
+	res, _ := request("PUT", host+"/auth/", url.Values{
 		"email": {"hello@world.com"},
-	}.Encode(), true, nil, ApiVersion)
+	}.Encode(), nil, ApiVersion)
 
 	// No account with this email exists yet and we have not specified 'create=true' in our request
 	testError(t, res, &AccountNotFound{})
 
 	// A request without a valid authorization header should return with status code 401 - Unauthorized
-	res, _ = request("GET", testURL+"/store/", "", false, nil, ApiVersion)
+	res, _ = request("GET", host+"/store/", "", nil, ApiVersion)
 	testError(t, res, &InvalidAuthToken{})
 
 	// Requests with unsupported HTTP methods should return with 405 - method not allowed
-	res, _ = request("POST", testURL+"/store/", "", false, nil, ApiVersion)
+	res, _ = request("POST", host+"/store/", "", nil, ApiVersion)
 	testError(t, res, &MethodNotAllowed{})
 
 	// Requests to unsupported paths should return with 404 - not found
-	res, _ = request("GET", testURL+"/invalidpath", "", false, nil, ApiVersion)
+	res, _ = request("GET", host+"/invalidpath", "", nil, ApiVersion)
 	testError(t, res, &UnsupportedEndpoint{})
 
 	// An invalid activation token should result in a bad request response
-	res, _ = request("GET", testURL+"/activate/?t=asdf", "", false, nil, ApiVersion)
+	res, _ = request("GET", host+"/activate/?t=asdf", "", nil, ApiVersion)
 	testError(t, res, &BadRequest{"invalid activation token"})
 }
 
 func TestOutdatedVersion(t *testing.T) {
-	server, testURL := setupServer()
 	sender := server.Sender.(*RecordSender)
 
 	sender.Reset()
 	token, _ := token()
-	req, _ := http.NewRequest("GET", testURL+"/", nil)
+	req, _ := http.NewRequest("GET", host+"/", nil)
 	req.Header.Add("Accept", "application/json")
 	req.Header.Add("Authorization", fmt.Sprintf("ApiKey %s:%s", testEmail, token))
-	res, _ := testClient.Do(req)
+	res, _ := client.Do(req)
 	testError(t, res, &UnsupportedEndpoint{})
 	if sender.Recipient != testEmail {
 		t.Errorf("Expected outdated message to be sent to %s, instead got %s", testEmail, sender.Recipient)
 	}
 
 	sender.Reset()
-	res, _ = request("POST", testURL+"/auth/", url.Values{
+	res, _ = request("POST", host+"/auth/", url.Values{
 		"email": {testEmail},
-	}.Encode(), true, nil, 0)
+	}.Encode(), nil, 0)
 	testError(t, res, &UnsupportedApiVersion{0, ApiVersion})
 	if sender.Recipient != testEmail {
 		t.Errorf("Expected outdated message to be sent to %s, instead got %s", testEmail, sender.Recipient)
@@ -286,31 +327,29 @@ func TestOutdatedVersion(t *testing.T) {
 }
 
 func TestPanicRecovery(t *testing.T) {
-	server, testURL := setupServer()
 
 	// Make sure the server recovers properly from runtime panics in handler functions
 	server.mux.HandleFunc("/panic/", func(w http.ResponseWriter, r *http.Request) {
 		panic("Everyone panic!!!")
 	})
-	res, _ := request("GET", testURL+"/panic/", "", false, nil, 1)
+	res, _ := request("GET", host+"/panic/", "", nil, 1)
 	testError(t, res, &ServerError{})
 	server.mux.HandleFunc("/panic2/", func(w http.ResponseWriter, r *http.Request) {
 		panic(errors.New("Everyone panic!!!"))
 	})
-	res, _ = request("GET", testURL+"/panic2/", "", false, nil, 1)
+	res, _ = request("GET", host+"/panic2/", "", nil, 1)
 	testError(t, res, &ServerError{})
 }
 
 func TestErrorFormat(t *testing.T) {
-	_, testURL := setupServer()
 
 	e := &UnsupportedEndpoint{}
 	testErr := func(format string, expected []byte) {
-		req, _ := http.NewRequest("GET", fmt.Sprintf("%s/invalidpath/?v=%d", testURL, ApiVersion), nil)
+		req, _ := http.NewRequest("GET", fmt.Sprintf("%s/invalidpath/?v=%d", host, ApiVersion), nil)
 		if format != "" {
 			req.Header.Add("Accept", format)
 		}
-		res, _ := testClient.Do(req)
+		res, _ := client.Do(req)
 		defer res.Body.Close()
 		body, _ := ioutil.ReadAll(res.Body)
 		if !bytes.Equal(body, expected) {
@@ -322,14 +361,4 @@ func TestErrorFormat(t *testing.T) {
 	testErr("application/json", JsonifyErrorResponse(e))
 	testErr("text/html", []byte(fmt.Sprintf("<html>%s</html>", e.Message())))
 	testErr("", []byte(e.Message()))
-}
-
-func init() {
-	jar, _ := cookiejar.New(nil)
-	testClient = &http.Client{
-		// CheckRedirect: func(req *http.Request, via []*http.Request) error {
-		// 	return http.ErrUseLastResponse
-		// },
-		Jar: jar,
-	}
 }
