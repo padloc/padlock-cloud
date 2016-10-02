@@ -301,18 +301,6 @@ func TestAuthentication(t *testing.T) {
 		},
 	})
 
-	t.Run("type=api (PUT)", func(t *testing.T) {
-		resetAll()
-
-		// Using the PUT method for an account that hasn't been created yet should result in a 404
-		if res, err = request("PUT", host+"/auth/", url.Values{
-			"email": {testEmail},
-		}.Encode(), ApiVersion); err != nil {
-			t.Fatal(err)
-		}
-		testResponse(t, res, http.StatusNotFound, "")
-	})
-
 	t.Run("unauthenticated", func(t *testing.T) {
 		resetAll()
 		at = nil
@@ -503,61 +491,78 @@ func TestCsrfProtection(t *testing.T) {
 	testResponse(t, res, http.StatusOK, "")
 }
 
-// Full lifecycle test including
-// - Requesting an api key
-// - Activating an api key
-// - Getting data
-// - Putting data
-// - Requesting a data reset
-// - Confirming a data reset
-func TestApiLifeCycle(t *testing.T) {
+func TestStore(t *testing.T) {
 	var res *http.Response
+	var err error
 
+	resetAll()
 	followRedirects(true)
 
-	resetCookies()
-	resetStorage()
+	t.Run("read(unauthenticated)", func(t *testing.T) {
+		// Get data request authenticated with obtained api key should return with status code 200 - OK and
+		// empty response body (since we haven't written any data yet)
+		if res, err = request("GET", host+"/store/", "", ApiVersion); err != nil {
+			t.Fatal(err)
+		}
+		testError(t, res, &InvalidAuthToken{})
+	})
 
 	if _, err := loginApi(testEmail); err != nil {
 		t.Fatal(err)
 	}
 
-	// Get data request authenticated with obtained api key should return with status code 200 - OK and
-	// empty response body (since we haven't written any data yet)
-	res, _ = request("GET", host+"/store/", "", ApiVersion)
-	testResponse(t, res, http.StatusOK, "^$")
+	t.Run("read(empty)", func(t *testing.T) {
+		// Get data request authenticated with obtained api key should return with status code 200 - OK and
+		// empty response body (since we haven't written any data yet)
+		if res, err = request("GET", host+"/store/", "", ApiVersion); err != nil {
+			t.Fatal(err)
+		}
+		testResponse(t, res, http.StatusOK, "^$")
+	})
 
-	// Put request should return with status code 204 - NO CONTENT
-	res, _ = request("PUT", host+"/store/", testData, ApiVersion)
-	testResponse(t, res, http.StatusNoContent, "")
+	t.Run("write", func(t *testing.T) {
+		// Put request should return with status code 204 - NO CONTENT
+		if res, err = request("PUT", host+"/store/", testData, ApiVersion); err != nil {
+			t.Fatal(err)
+		}
+		testResponse(t, res, http.StatusNoContent, "")
+	})
 
-	// Now get data request should return the data previously saved through PUT
-	res, _ = request("GET", host+"/store/", "", ApiVersion)
-	testResponse(t, res, http.StatusOK, fmt.Sprintf("^%s$", testData))
+	t.Run("read(non-empty)", func(t *testing.T) {
+		// Now get data request should return the data previously saved through PUT
+		if res, err = request("GET", host+"/store/", "", ApiVersion); err != nil {
+			t.Fatal(err)
+		}
+		testResponse(t, res, http.StatusOK, fmt.Sprintf("^%s$", testData))
+	})
 
-	// Send data reset request. Response should have status code 202 - ACCEPTED
-	sender.Reset()
-	res, _ = request("DELETE", host+"/store/", "", ApiVersion)
-	testResponse(t, res, http.StatusAccepted, "")
+	t.Run("request delete", func(t *testing.T) {
+		// Send data reset request. Response should have status code 202 - ACCEPTED
+		if res, err = request("DELETE", host+"/store/", "", ApiVersion); err != nil {
+			t.Fatal(err)
+		}
+		testResponse(t, res, http.StatusAccepted, "")
 
-	// Activation message should be sent to the correct email
-	if sender.Recipient != testEmail {
-		t.Fatalf("Expected confirm delete message to be sent to %s, instead got %s", testEmail, sender.Recipient)
-	}
+		// Activation message should be sent to the correct email
+		if sender.Recipient != testEmail {
+			t.Fatalf("Expected confirm delete message to be sent to %s, instead got %s", testEmail, sender.Recipient)
+		}
 
-	link, err := extractActivationLink()
-	if err != nil {
-		t.Fatal(err)
-	}
+		link, err := extractActivationLink()
+		if err != nil {
+			t.Fatal(err)
+		}
 
-	// 'visit' link, should log in and redirect to delete store form
-	res, _ = request("GET", link, "", 0)
-	testResponse(t, res, http.StatusOK, fmt.Sprintf("^deletestore$"))
+		// 'visit' link, should log in and redirect to delete store form
+		if res, err = request("GET", link, "", 0); err != nil {
+			t.Fatal(err)
+		}
+		testResponse(t, res, http.StatusOK, fmt.Sprintf("^deletestore$"))
+	})
 }
 
 func TestWeb(t *testing.T) {
-	resetCookies()
-	resetStorage()
+	resetAll()
 	followRedirects(true)
 
 	// If not logged in, should redirect to login page
@@ -587,8 +592,7 @@ func TestWeb(t *testing.T) {
 
 // Test correct handling of various error conditions
 func TestErrorConditions(t *testing.T) {
-	resetCookies()
-	resetStorage()
+	resetAll()
 
 	// Trying to get an api key for a non-existing account using the PUT method should result in a 404
 	res, _ := request("PUT", host+"/auth/", url.Values{
