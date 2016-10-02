@@ -620,9 +620,10 @@ func TestErrorConditions(t *testing.T) {
 }
 
 func TestOutdatedVersion(t *testing.T) {
-	sender := server.Sender.(*RecordSender)
+	resetAll()
 
-	sender.Reset()
+	// The root path is a special case in that the only way to figure out if the client is using
+	// and older api version is if the Authorization header is using the 'ApiKey' authentication scheme
 	token, _ := token()
 	req, _ := http.NewRequest("GET", host+"/", nil)
 	req.Header.Add("Accept", "application/json")
@@ -633,8 +634,25 @@ func TestOutdatedVersion(t *testing.T) {
 		t.Errorf("Expected outdated message to be sent to %s, instead got %s", testEmail, sender.Recipient)
 	}
 
-	sender.Reset()
+	resetAll()
+
+	// When doing an auth request, the email form field should be used for sending the notification since
+	// the user is not authenticated
 	res, _ = request("POST", host+"/auth/", url.Values{
+		"email": {testEmail},
+	}.Encode(), 0)
+	testError(t, res, &UnsupportedApiVersion{0, ApiVersion})
+	if sender.Recipient != testEmail {
+		t.Errorf("Expected outdated message to be sent to %s, instead got %s", testEmail, sender.Recipient)
+	}
+
+	resetAll()
+
+	loginApi(testEmail)
+
+	// When doing an auth request, the email form field should be used for sending the notification since
+	// the user is not authenticated
+	res, _ = request("GET", host+"/store/", url.Values{
 		"email": {testEmail},
 	}.Encode(), 0)
 	testError(t, res, &UnsupportedApiVersion{0, ApiVersion})
