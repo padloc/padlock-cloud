@@ -305,7 +305,7 @@ func TestAuthentication(t *testing.T) {
 		resetAll()
 
 		// Trying to get an api key for a non-existing account using the PUT method should result in a 404
-		if res, _ := request("PUT", host+"/auth/", url.Values{
+		if res, err = request("PUT", host+"/auth/", url.Values{
 			"email": {"hello@world.com"},
 		}.Encode(), ApiVersion); err != nil {
 			t.Fatal(err)
@@ -580,7 +580,7 @@ func TestStore(t *testing.T) {
 	})
 }
 
-func TestWeb(t *testing.T) {
+func TestDashboard(t *testing.T) {
 	resetAll()
 	followRedirects(true)
 
@@ -595,13 +595,26 @@ func TestWeb(t *testing.T) {
 	// We should be logged in now, so dashboard should render
 	res, _ = request("GET", host+"/dashboard/", "", 0)
 	testResponse(t, res, http.StatusOK, "^dashboard$")
+}
+
+func TestLogout(t *testing.T) {
+	var res *http.Response
+	var err error
+
+	if _, err = loginWeb(testEmail, ""); err != nil {
+		t.Fatal(err)
+	}
 
 	// Log out
-	res, _ = request("GET", host+"/logout/", "", 0)
+	if res, err = request("GET", host+"/logout/", "", 0); err != nil {
+		t.Fatal(err)
+	}
 	testResponse(t, res, http.StatusOK, "")
 
 	// If not logged in, should redirect to login page
-	res, _ = request("GET", host+"/dashboard/", "", 0)
+	if res, err = request("GET", host+"/dashboard/", "", 0); err != nil {
+		t.Fatal(err)
+	}
 	testResponse(t, res, http.StatusOK, "^login,,$")
 }
 
@@ -611,14 +624,20 @@ func TestWeb(t *testing.T) {
 
 func TestMethodNotAllowed(t *testing.T) {
 	// Requests with unsupported HTTP methods should return with 405 - method not allowed
-	res, _ = request("POST", host+"/store/", "", ApiVersion)
-	testError(t, res, &MethodNotAllowed{})
+	if res, err := request("POST", host+"/store/", "", ApiVersion); err != nil {
+		t.Fatal(err)
+	} else {
+		testError(t, res, &MethodNotAllowed{})
+	}
 }
 
 func TestUnsupportedEndpoint(t *testing.T) {
 	// Requests to unsupported paths should return with 404 - not found
-	res, _ = request("GET", host+"/invalidpath", "", ApiVersion)
-	testError(t, res, &UnsupportedEndpoint{})
+	if res, err := request("GET", host+"/invalidpath", "", ApiVersion); err != nil {
+		t.Fatal(err)
+	} else {
+		testError(t, res, &UnsupportedEndpoint{})
+	}
 }
 
 func TestOutdatedVersion(t *testing.T) {
@@ -664,7 +683,6 @@ func TestOutdatedVersion(t *testing.T) {
 }
 
 func TestPanicRecovery(t *testing.T) {
-
 	// Make sure the server recovers properly from runtime panics in handler functions
 	server.mux.HandleFunc("/panic/", func(w http.ResponseWriter, r *http.Request) {
 		panic("Everyone panic!!!")
@@ -679,7 +697,6 @@ func TestPanicRecovery(t *testing.T) {
 }
 
 func TestErrorFormat(t *testing.T) {
-
 	e := &UnsupportedEndpoint{}
 	testErr := func(format string, expected []byte) {
 		req, _ := http.NewRequest("GET", fmt.Sprintf("%s/invalidpath/?v=%d", host, ApiVersion), nil)
