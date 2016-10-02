@@ -59,6 +59,15 @@ func init() {
 	client = &http.Client{
 		Jar: jar,
 	}
+
+	authMaxAge = func(authType string) time.Duration {
+		switch authType {
+		case "web":
+			return time.Millisecond * 10
+		default:
+			return time.Duration(0)
+		}
+	}
 }
 
 func resetStorage() {
@@ -303,6 +312,7 @@ func TestAuthentication(t *testing.T) {
 		resetAll()
 		at = nil
 
+		// Request should go through for route not requiring authentication
 		if res, err = request("GET", host+"/authtestnoauth/", "", 0); err != nil {
 			t.Fatal(err)
 		}
@@ -312,6 +322,7 @@ func TestAuthentication(t *testing.T) {
 			t.Error("Auth token to be passed to handler even though none was expected")
 		}
 
+		// Not logged in so we should be redirected to the login page
 		if res, err = request("GET", host+"/authtestweb/", "", 0); err != nil {
 			t.Fatal(err)
 		}
@@ -320,6 +331,7 @@ func TestAuthentication(t *testing.T) {
 			t.Error("Expected to be redirected to login page")
 		}
 
+		// Not authenticated so we should get a 401
 		if res, err = request("GET", host+"/authtestapi/", "", 0); err != nil {
 			t.Fatal(err)
 		}
@@ -334,12 +346,14 @@ func TestAuthentication(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		// Test route without authentication
+		// Route without authentication should always go through
 		if res, err = request("GET", host+"/authtestnoauth/", "", 0); err != nil {
 			t.Fatal(err)
 		}
 		testResponse(t, res, http.StatusOK, "")
 
+		// Even though no authentication is required for this route, an auth token should still be
+		// passed to the handler
 		if at == nil {
 			t.Error("No auth token passed to handler")
 		}
@@ -352,11 +366,13 @@ func TestAuthentication(t *testing.T) {
 			t.Errorf("Wrong account. Expected %s, got %s", testEmail, at.Email)
 		}
 
+		// We're authenticated but with the wrong token type. Should get a 401
 		if res, err = request("GET", host+"/authtestweb/", "", 0); err != nil {
 			t.Fatal(err)
 		}
 		testError(t, res, &InvalidAuthToken{})
 
+		// We're authenticated so the request should go through
 		if res, err = request("GET", host+"/authtestapi/", "", 0); err != nil {
 			t.Fatal(err)
 		}
@@ -365,6 +381,7 @@ func TestAuthentication(t *testing.T) {
 
 	t.Run("type=web", func(t *testing.T) {
 		resetAll()
+		at = nil
 
 		if res, err = loginWeb(testEmail, ""); err != nil {
 			t.Fatal(err)
@@ -382,6 +399,8 @@ func TestAuthentication(t *testing.T) {
 		}
 		testResponse(t, res, http.StatusOK, "")
 
+		// Even though no authentication is required for this route, an auth token should still be
+		// passed to the handler
 		if at == nil {
 			t.Error("No auth token passed to handler")
 		}
@@ -394,15 +413,27 @@ func TestAuthentication(t *testing.T) {
 			t.Errorf("Wrong account. Expected %s, got %s", testEmail, at.Email)
 		}
 
+		// We're logged in, but with the wrong auth type. should get a 401
+		if res, err = request("GET", host+"/authtestapi/", "", 0); err != nil {
+			t.Fatal(err)
+		}
+		testError(t, res, &InvalidAuthToken{})
+
+		// We're logged in so the request should go through
 		if res, err = request("GET", host+"/authtestweb/", "", 0); err != nil {
 			t.Fatal(err)
 		}
 		testResponse(t, res, http.StatusOK, "")
 
-		if res, err = request("GET", host+"/authtestapi/", "", 0); err != nil {
+		// Make sure auth token expires
+		time.Sleep(authMaxAge("web"))
+		if res, err = request("GET", host+"/authtestweb/", "", 0); err != nil {
 			t.Fatal(err)
 		}
-		testError(t, res, &InvalidAuthToken{})
+		testResponse(t, res, http.StatusFound, "")
+		if res.Header.Get("Location") != "/login/" {
+			t.Error("Expected to be redirected to login page")
+		}
 
 		// Redirect to other supported endpoints is also allowed
 		if res, err = loginWeb(testEmail, "/deletestore/"); err != nil {

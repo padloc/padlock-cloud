@@ -9,6 +9,14 @@ import "fmt"
 import "errors"
 
 var authStringPattern = regexp.MustCompile("^(?:AuthToken|ApiKey) (.+):(.+)$")
+var authMaxAge = func(authType string) time.Duration {
+	switch authType {
+	case "web":
+		return time.Hour
+	default:
+		return time.Duration(0)
+	}
+}
 
 // A wrapper for an api key containing some meta info like the user and device name
 type AuthToken struct {
@@ -107,19 +115,18 @@ func NewAuthToken(email string, t string) (*AuthToken, error) {
 
 	var expires time.Time
 
-	if t == "web" {
-		expires = time.Now().Add(time.Hour)
+	if maxAge := authMaxAge(t); maxAge != 0 {
+		expires = time.Now().Add(maxAge)
 	}
 
 	return &AuthToken{
-		email,
-		authT,
-		t,
-		id,
-		time.Now(),
-		time.Now(),
-		expires,
-		nil,
+		Email:    email,
+		Token:    authT,
+		Type:     t,
+		Id:       id,
+		Created:  time.Now(),
+		LastUsed: time.Now(),
+		Expires:  expires,
 	}, nil
 }
 
