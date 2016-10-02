@@ -22,11 +22,12 @@ const (
 )
 
 var (
-	server  *Server
-	client  *http.Client
-	storage *MemoryStorage
-	sender  *RecordSender
-	host    string
+	server    *Server
+	client    *http.Client
+	storage   *MemoryStorage
+	sender    *RecordSender
+	host      string
+	authToken *AuthToken
 )
 
 func init() {
@@ -56,9 +57,6 @@ func init() {
 
 	jar, _ := cookiejar.New(nil)
 	client = &http.Client{
-		// CheckRedirect: func(req *http.Request, via []*http.Request) error {
-		// 	return http.ErrUseLastResponse
-		// },
 		Jar: jar,
 	}
 }
@@ -76,6 +74,7 @@ func resetAll() {
 	resetCookies()
 	resetStorage()
 	sender.Reset()
+	authToken = nil
 }
 
 func followRedirects(follow bool) {
@@ -89,7 +88,7 @@ func followRedirects(follow bool) {
 }
 
 // Helper function for creating (optionally authenticated) requests
-func request(method string, url string, body string, authToken *AuthToken, version int) (*http.Response, error) {
+func request(method string, url string, body string, version int) (*http.Response, error) {
 	req, err := http.NewRequest(method, url, bytes.NewBuffer([]byte(body)))
 	if err != nil {
 		return nil, err
@@ -143,13 +142,10 @@ func validateResponse(res *http.Response, code int, body string) ([]byte, error)
 	return resBody, nil
 }
 
-func testResponse(t *testing.T, res *http.Response, code int, body string) bool {
+func testResponse(t *testing.T, res *http.Response, code int, body string) {
 	if _, err := validateResponse(res, code, body); err != nil {
 		t.Error(err)
-		return false
 	}
-
-	return true
 }
 
 func testError(t *testing.T, res *http.Response, e ErrorResponse) {
@@ -174,42 +170,106 @@ func extractActivationLink() (string, error) {
 	return link, nil
 }
 
-func TestAuthApi(t *testing.T) {
+func loginApi(email string) (*http.Response, error) {
 	var res *http.Response
-	followRedirects(false)
-	resetAll()
+	var err error
 
-	// Using the PUT method for an account that hasn't been created yet should result in a 404
-	res, _ = request("PUT", host+"/auth/", url.Values{
-		"email": {testEmail},
-	}.Encode(), nil, ApiVersion)
-	testResponse(t, res, http.StatusNotFound, "")
-
-	// POST means creating a new account is allowed
-	res, _ = request("POST", host+"/auth/", url.Values{
-		"email": {testEmail},
+	if res, err = request("POST", host+"/auth/", url.Values{
+		"email": {email},
 		"type":  {"api"},
-	}.Encode(), nil, ApiVersion)
-	responseBody, err := validateResponse(res, http.StatusAccepted, "")
-	if err != nil {
-		t.Fatal(err)
+	}.Encode(), ApiVersion); err != nil {
+		return nil, err
 	}
 
-	authToken := &AuthToken{}
+	responseBody, err := validateResponse(res, http.StatusAccepted, "")
+	if err != nil {
+		return res, err
+	}
+
+	authToken = &AuthToken{}
 	// Response status code should be "ACCEPTED", response body should be the json-encoded auth token
 	if err := json.Unmarshal(responseBody, authToken); err != nil {
-		t.Fatalf("Expected response to be JSON representation of api key, got %s", responseBody)
+		return res, fmt.Errorf("Failed to parse api key from response: %s", responseBody)
 	}
 
 	link, err := extractActivationLink()
 	if err != nil {
-		t.Fatal(err)
+		return res, err
 	}
 
 	// 'visit' activation link
-	res, _ = request("GET", link, "", nil, 0)
+	if res, err = request("GET", link, "", 0); err != nil {
+		return res, err
+	}
 
-	testResponse(t, res, http.StatusOK, fmt.Sprintf("^%s$", testEmail))
+	_, err = validateResponse(res, http.StatusOK, fmt.Sprintf("^%s$", testEmail))
+	return res, err
+}
+
+func loginWeb(email string, redirect string) (*http.Response, error) {
+	var res *http.Response
+	var err error
+
+	if res, err = request("POST", host+"/auth/", url.Values{
+		"email":    {email},
+		"type":     {"web"},
+		"redirect": {redirect},
+	}.Encode(), ApiVersion); err != nil {
+		return nil, err
+	}
+
+	if _, err := validateResponse(res, http.StatusAccepted, ""); err != nil {
+		return res, err
+	}
+
+	link, err := extractActivationLink()
+	if err != nil {
+		return res, err
+	}
+
+	// 'visit' activation link
+	if res, err = request("GET", link, "", 0); err != nil {
+		return res, err
+	}
+
+	u, _ := url.Parse(host)
+	var authCookie *http.Cookie
+	for _, c := range client.Jar.Cookies(u) {
+		if c.Name == "auth" {
+			authCookie = c
+			break
+		}
+	}
+
+	if authCookie == nil {
+		return res, errors.New("Expected cookie of name 'auth' to be set")
+	}
+
+	if authToken, err = AuthTokenFromString(authCookie.Value); err != nil {
+		return res, fmt.Errorf("Failed to parse auth token from cookie. Error: %v", err)
+	}
+
+	return res, nil
+}
+
+func TestAuthApi(t *testing.T) {
+	var res *http.Response
+	var err error
+
+	followRedirects(false)
+	resetAll()
+
+	// Using the PUT method for an account that hasn't been created yet should result in a 404
+	if res, err = request("PUT", host+"/auth/", url.Values{
+		"email": {testEmail},
+	}.Encode(), ApiVersion); err != nil {
+		t.Fatal(err)
+	}
+	testResponse(t, res, http.StatusNotFound, "")
+
+	if _, err = loginApi(testEmail); err != nil {
+		t.Fatal(err)
+	}
 
 	acc := &Account{Email: testEmail}
 	storage.Get(acc)
@@ -229,76 +289,69 @@ func TestAuthApi(t *testing.T) {
 }
 
 func TestWebLogin(t *testing.T) {
-	login := func(redirect string) (*AuthToken, *http.Response) {
-		// POST means creating a new account is allowed
-		res, _ := request("POST", host+"/auth/", url.Values{
-			"email":    {testEmail},
-			"type":     {"web"},
-			"redirect": {redirect},
-		}.Encode(), nil, ApiVersion)
-		if _, err := validateResponse(res, http.StatusAccepted, ""); err != nil {
-			return nil, res
-		}
+	var res *http.Response
+	var err error
 
-		link, err := extractActivationLink()
-		if err != nil {
-			t.Fatal(err)
-		}
+	followRedirects(false)
+	resetAll()
 
-		// 'visit' activation link
-		res, _ = request("GET", link, "", nil, 0)
+	if res, err = loginWeb(testEmail, ""); err != nil {
+		t.Fatal(err)
+	}
 
-		u, _ := url.Parse(host)
-		cookies := client.Jar.Cookies(u)
-		if len(cookies) != 1 || cookies[0].Name != "auth" {
-			t.Fatalf("Expected cookie of name 'auth' to be set")
-		}
+	acc := &Account{Email: testEmail}
+	storage.Get(acc)
 
-		authToken, err := AuthTokenFromString(cookies[0].Value)
-		if err != nil {
-			t.Fatalf("Failed to parse auth token from cookie. Error: %v", err)
-		}
+	if !authToken.Validate(acc) {
+		t.Error("Token should be activated")
+	}
 
-		acc := &Account{Email: testEmail}
-		storage.Get(acc)
+	if authToken.Type != "web" {
+		t.Errorf("Wrong token type. Expected 'web', got '%s'", authToken.Type)
+	}
 
-		if !authToken.Validate(acc) {
-			t.Error("Token should be activated")
-		}
-
-		if authToken.Type != "web" {
-			t.Errorf("Wrong token type. Expected 'web', got '%s'", authToken.Type)
-		}
-
-		// For now, api auth tokens don't expire
-		if !authToken.Expires.Before(time.Now().Add(time.Hour)) {
-			t.Errorf("Web auth tokens should expire after at most an hour")
-		}
-
-		return authToken, res
+	// For now, api auth tokens don't expire
+	if !authToken.Expires.Before(time.Now().Add(time.Hour)) {
+		t.Errorf("Web auth tokens should expire after at most an hour")
 	}
 
 	// By default user should be redirected to dasboard after login
-	_, res := login("")
 	testResponse(t, res, http.StatusFound, "")
 	if l := res.Header.Get("Location"); l != "/dashboard/" {
 		t.Errorf("Expected redirect to %s, got %s", "/dashboard/")
 	}
 
 	// Redirect to other supported endpoints is also allowed
-	_, res = login("/deletestore/")
+	if res, err = loginWeb(testEmail, "/deletestore/"); err != nil {
+		t.Fatal(err)
+	}
 	testResponse(t, res, http.StatusFound, "")
 	if l := res.Header.Get("Location"); l != "/deletestore/" {
 		t.Errorf("Expected redirect to %s, got %s", "/deletestore/")
 	}
 
 	// Using an external url or any unsupported endpoint should be treated as a bad request
-	_, res = login("http://attacker.com")
+	res, err = loginWeb(testEmail, "http://attacker.com")
 	testError(t, res, &BadRequest{"invalid redirect path"})
-	resetAll()
-	_, res = login("/notsupported/")
+
+	res, err = loginWeb(testEmail, "/notsupported/")
 	testError(t, res, &BadRequest{"invalid redirect path"})
 }
+
+//
+// func TestAuthentication(t *testing.T) {
+// 	resetAll()
+//
+// 	acc := &Account{Email: testEmail}
+// 	token := NewAuthToken(testEmail, "api")
+//
+// 	endpoint := &Endpoint{
+// 		Path:     "/authtest/",
+// 		AuthType: "api",
+// 	}
+//
+// 	server.Route()
+// }
 
 // Full lifecycle test including
 // - Requesting an api key
@@ -308,57 +361,33 @@ func TestWebLogin(t *testing.T) {
 // - Requesting a data reset
 // - Confirming a data reset
 func TestApiLifeCycle(t *testing.T) {
+	var res *http.Response
+
 	followRedirects(true)
 
 	resetCookies()
 	resetStorage()
 
-	// Post request for api key
-	res, _ := request("POST", host+"/auth/", url.Values{
-		"email": {testEmail},
-	}.Encode(), nil, ApiVersion)
-
-	// Response status code should be "ACCEPTED", response body should be the json-encoded auth token
-	tokenJSON, err := validateResponse(res, http.StatusAccepted, "")
-	if err != nil {
+	if _, err := loginApi(testEmail); err != nil {
 		t.Fatal(err)
 	}
-
-	authToken := &AuthToken{}
-	if err := json.Unmarshal(tokenJSON, authToken); err != nil {
-		t.Errorf("Expected response to be JSON representation of api key, got %s", tokenJSON)
-	}
-
-	// Activation message should be sent to the correct email
-	if sender.Recipient != testEmail {
-		t.Errorf("Expected activation message to be sent to %s, instead got %s", testEmail, sender.Recipient)
-	}
-
-	link, err := extractActivationLink()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// 'visit' activation link
-	res, _ = request("GET", link, "", nil, 0)
-	testResponse(t, res, http.StatusOK, "")
 
 	// Get data request authenticated with obtained api key should return with status code 200 - OK and
 	// empty response body (since we haven't written any data yet)
-	res, _ = request("GET", host+"/store/", "", authToken, ApiVersion)
+	res, _ = request("GET", host+"/store/", "", ApiVersion)
 	testResponse(t, res, http.StatusOK, "^$")
 
 	// Put request should return with status code 204 - NO CONTENT
-	res, _ = request("PUT", host+"/store/", testData, authToken, ApiVersion)
+	res, _ = request("PUT", host+"/store/", testData, ApiVersion)
 	testResponse(t, res, http.StatusNoContent, "")
 
 	// Now get data request should return the data previously saved through PUT
-	res, _ = request("GET", host+"/store/", "", authToken, ApiVersion)
+	res, _ = request("GET", host+"/store/", "", ApiVersion)
 	testResponse(t, res, http.StatusOK, fmt.Sprintf("^%s$", testData))
 
 	// Send data reset request. Response should have status code 202 - ACCEPTED
 	sender.Reset()
-	res, _ = request("DELETE", host+"/store/", "", authToken, ApiVersion)
+	res, _ = request("DELETE", host+"/store/", "", ApiVersion)
 	testResponse(t, res, http.StatusAccepted, "")
 
 	// Activation message should be sent to the correct email
@@ -366,54 +395,39 @@ func TestApiLifeCycle(t *testing.T) {
 		t.Fatalf("Expected confirm delete message to be sent to %s, instead got %s", testEmail, sender.Recipient)
 	}
 
-	if link, err = extractActivationLink(); err != nil {
+	link, err := extractActivationLink()
+	if err != nil {
 		t.Fatal(err)
 	}
 
 	// 'visit' link, should log in and redirect to delete store form
-	res, _ = request("GET", link, "", nil, 0)
+	res, _ = request("GET", link, "", 0)
 	testResponse(t, res, http.StatusOK, fmt.Sprintf("^deletestore$"))
 }
 
 func TestWeb(t *testing.T) {
 	resetCookies()
 	resetStorage()
+	followRedirects(true)
 
 	// If not logged in, should redirect to login page
-	res, _ := request("GET", host+"/dashboard/", "", nil, 0)
+	res, _ := request("GET", host+"/dashboard/", "", 0)
 	testResponse(t, res, http.StatusOK, "^login,,$")
 
-	// Post request for api key
-	res, _ = request("POST", host+"/auth/", url.Values{
-		"email": {testEmail},
-		"type":  {"web"},
-	}.Encode(), nil, ApiVersion)
-	testResponse(t, res, http.StatusAccepted, fmt.Sprintf("^login,%s,true$", testEmail))
-
-	// Activation message should be sent to the correct email
-	if sender.Recipient != testEmail {
-		t.Errorf("Expected activation message to be sent to %s, instead got %s", testEmail, sender.Recipient)
-	}
-
-	link, err := extractActivationLink()
-	if err != nil {
+	if _, err := loginWeb(testEmail, ""); err != nil {
 		t.Fatal(err)
 	}
 
-	// 'visit' activation link
-	res, _ = request("GET", link, "", nil, 0)
-	testResponse(t, res, http.StatusOK, "")
-
 	// We should be logged in now, so dashboard should render
-	res, _ = request("GET", host+"/dashboard/", "", nil, 0)
+	res, _ = request("GET", host+"/dashboard/", "", 0)
 	testResponse(t, res, http.StatusOK, "^dashboard$")
 
 	// Log out
-	res, _ = request("GET", host+"/logout/", "", nil, 0)
+	res, _ = request("GET", host+"/logout/", "", 0)
 	testResponse(t, res, http.StatusOK, "")
 
 	// If not logged in, should redirect to login page
-	res, _ = request("GET", host+"/dashboard/", "", nil, 0)
+	res, _ = request("GET", host+"/dashboard/", "", 0)
 	testResponse(t, res, http.StatusOK, "^login,,$")
 }
 
@@ -447,25 +461,25 @@ func TestErrorConditions(t *testing.T) {
 	// Trying to get an api key for a non-existing account using the PUT method should result in a 404
 	res, _ := request("PUT", host+"/auth/", url.Values{
 		"email": {"hello@world.com"},
-	}.Encode(), nil, ApiVersion)
+	}.Encode(), ApiVersion)
 
 	// No account with this email exists yet and we have not specified 'create=true' in our request
 	testError(t, res, &AccountNotFound{})
 
 	// A request without a valid authorization header should return with status code 401 - Unauthorized
-	res, _ = request("GET", host+"/store/", "", nil, ApiVersion)
+	res, _ = request("GET", host+"/store/", "", ApiVersion)
 	testError(t, res, &InvalidAuthToken{})
 
 	// Requests with unsupported HTTP methods should return with 405 - method not allowed
-	res, _ = request("POST", host+"/store/", "", nil, ApiVersion)
+	res, _ = request("POST", host+"/store/", "", ApiVersion)
 	testError(t, res, &MethodNotAllowed{})
 
 	// Requests to unsupported paths should return with 404 - not found
-	res, _ = request("GET", host+"/invalidpath", "", nil, ApiVersion)
+	res, _ = request("GET", host+"/invalidpath", "", ApiVersion)
 	testError(t, res, &UnsupportedEndpoint{})
 
 	// An invalid activation token should result in a bad request response
-	res, _ = request("GET", host+"/activate/?t=asdf", "", nil, ApiVersion)
+	res, _ = request("GET", host+"/activate/?t=asdf", "", ApiVersion)
 	testError(t, res, &BadRequest{"invalid activation token"})
 }
 
@@ -486,7 +500,7 @@ func TestOutdatedVersion(t *testing.T) {
 	sender.Reset()
 	res, _ = request("POST", host+"/auth/", url.Values{
 		"email": {testEmail},
-	}.Encode(), nil, 0)
+	}.Encode(), 0)
 	testError(t, res, &UnsupportedApiVersion{0, ApiVersion})
 	if sender.Recipient != testEmail {
 		t.Errorf("Expected outdated message to be sent to %s, instead got %s", testEmail, sender.Recipient)
@@ -499,12 +513,12 @@ func TestPanicRecovery(t *testing.T) {
 	server.mux.HandleFunc("/panic/", func(w http.ResponseWriter, r *http.Request) {
 		panic("Everyone panic!!!")
 	})
-	res, _ := request("GET", host+"/panic/", "", nil, 1)
+	res, _ := request("GET", host+"/panic/", "", 1)
 	testError(t, res, &ServerError{})
 	server.mux.HandleFunc("/panic2/", func(w http.ResponseWriter, r *http.Request) {
 		panic(errors.New("Everyone panic!!!"))
 	})
-	res, _ = request("GET", host+"/panic2/", "", nil, 1)
+	res, _ = request("GET", host+"/panic2/", "", 1)
 	testError(t, res, &ServerError{})
 }
 
