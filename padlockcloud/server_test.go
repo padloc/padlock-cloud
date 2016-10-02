@@ -252,90 +252,174 @@ func loginWeb(email string, redirect string) (*http.Response, error) {
 	return res, nil
 }
 
-func TestAuthApi(t *testing.T) {
+func TestAuthentication(t *testing.T) {
 	var res *http.Response
 	var err error
+	var at *AuthToken
+	var captureAuthToken = func(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
+		at = auth
+		return nil
+	}
 
 	followRedirects(false)
-	resetAll()
 
-	// Using the PUT method for an account that hasn't been created yet should result in a 404
-	if res, err = request("PUT", host+"/auth/", url.Values{
-		"email": {testEmail},
-	}.Encode(), ApiVersion); err != nil {
-		t.Fatal(err)
-	}
-	testResponse(t, res, http.StatusNotFound, "")
+	server.Route(&Endpoint{
+		Path:     "/authtestnoauth/",
+		AuthType: "",
+		Handlers: MethodFuncs{
+			"GET": captureAuthToken,
+		},
+	})
 
-	if _, err = loginApi(testEmail); err != nil {
-		t.Fatal(err)
-	}
+	server.Route(&Endpoint{
+		Path:     "/authtestapi/",
+		AuthType: "api",
+		Handlers: MethodFuncs{
+			"GET": captureAuthToken,
+		},
+	})
 
-	acc := &Account{Email: testEmail}
-	storage.Get(acc)
+	server.Route(&Endpoint{
+		Path:     "/authtestweb/",
+		AuthType: "web",
+		Handlers: MethodFuncs{
+			"GET": captureAuthToken,
+		},
+	})
 
-	if !authToken.Validate(acc) {
-		t.Error("Token should be activated")
-	}
+	t.Run("type=api (PUT)", func(t *testing.T) {
+		resetAll()
 
-	if authToken.Type != "api" {
-		t.Errorf("Wrong token type. Expected 'api', got '%s'", authToken.Type)
-	}
+		// Using the PUT method for an account that hasn't been created yet should result in a 404
+		if res, err = request("PUT", host+"/auth/", url.Values{
+			"email": {testEmail},
+		}.Encode(), ApiVersion); err != nil {
+			t.Fatal(err)
+		}
+		testResponse(t, res, http.StatusNotFound, "")
+	})
 
-	// For now, api auth tokens don't expire
-	if !authToken.Expires.IsZero() {
-		t.Errorf("Api auth tokens should not expire")
-	}
-}
+	t.Run("unauthenticated", func(t *testing.T) {
+		resetAll()
+		at = nil
 
-func TestWebLogin(t *testing.T) {
-	var res *http.Response
-	var err error
+		if res, err = request("GET", host+"/authtestnoauth/", "", 0); err != nil {
+			t.Fatal(err)
+		}
+		testResponse(t, res, http.StatusOK, "")
 
-	followRedirects(false)
-	resetAll()
+		if at != nil {
+			t.Error("Auth token to be passed to handler even though none was expected")
+		}
 
-	if res, err = loginWeb(testEmail, ""); err != nil {
-		t.Fatal(err)
-	}
+		if res, err = request("GET", host+"/authtestweb/", "", 0); err != nil {
+			t.Fatal(err)
+		}
+		testResponse(t, res, http.StatusFound, "")
+		if res.Header.Get("Location") != "/login/" {
+			t.Error("Expected to be redirected to login page")
+		}
 
-	acc := &Account{Email: testEmail}
-	storage.Get(acc)
+		if res, err = request("GET", host+"/authtestapi/", "", 0); err != nil {
+			t.Fatal(err)
+		}
+		testError(t, res, &InvalidAuthToken{})
+	})
 
-	if !authToken.Validate(acc) {
-		t.Error("Token should be activated")
-	}
+	t.Run("type=api", func(t *testing.T) {
+		resetAll()
+		at = nil
 
-	if authToken.Type != "web" {
-		t.Errorf("Wrong token type. Expected 'web', got '%s'", authToken.Type)
-	}
+		if _, err = loginApi(testEmail); err != nil {
+			t.Fatal(err)
+		}
 
-	// For now, api auth tokens don't expire
-	if !authToken.Expires.Before(time.Now().Add(time.Hour)) {
-		t.Errorf("Web auth tokens should expire after at most an hour")
-	}
+		// Test route without authentication
+		if res, err = request("GET", host+"/authtestnoauth/", "", 0); err != nil {
+			t.Fatal(err)
+		}
+		testResponse(t, res, http.StatusOK, "")
 
-	// By default user should be redirected to dasboard after login
-	testResponse(t, res, http.StatusFound, "")
-	if l := res.Header.Get("Location"); l != "/dashboard/" {
-		t.Errorf("Expected redirect to %s, got %s", "/dashboard/")
-	}
+		if at == nil {
+			t.Error("No auth token passed to handler")
+		}
 
-	// Redirect to other supported endpoints is also allowed
-	if res, err = loginWeb(testEmail, "/deletestore/"); err != nil {
-		t.Fatal(err)
-	}
-	testResponse(t, res, http.StatusFound, "")
-	if l := res.Header.Get("Location"); l != "/deletestore/" {
-		t.Errorf("Expected redirect to %s, got %s", "/deletestore/")
-	}
+		if at.Type != "api" {
+			t.Error("Wrong token type. Expected %s, got %s", "api", at.Type)
+		}
 
-	// Using an external url or any unsupported endpoint should be treated as a bad request
-	res, err = loginWeb(testEmail, "http://attacker.com")
-	testError(t, res, &BadRequest{"invalid redirect path"})
+		if at.Email != testEmail {
+			t.Errorf("Wrong account. Expected %s, got %s", testEmail, at.Email)
+		}
 
-	res, err = loginWeb(testEmail, "/notsupported/")
-	testError(t, res, &BadRequest{"invalid redirect path"})
+		if res, err = request("GET", host+"/authtestweb/", "", 0); err != nil {
+			t.Fatal(err)
+		}
+		testError(t, res, &InvalidAuthToken{})
+
+		if res, err = request("GET", host+"/authtestapi/", "", 0); err != nil {
+			t.Fatal(err)
+		}
+		testResponse(t, res, http.StatusOK, "")
+	})
+
+	t.Run("type=web", func(t *testing.T) {
+		resetAll()
+
+		if res, err = loginWeb(testEmail, ""); err != nil {
+			t.Fatal(err)
+		}
+
+		// By default user should be redirected to dasboard after login
+		testResponse(t, res, http.StatusFound, "")
+		if l := res.Header.Get("Location"); l != "/dashboard/" {
+			t.Errorf("Expected redirect to %s, got %s", "/dashboard/", res.Header.Get("Location"))
+		}
+
+		// Test route without authentication
+		if res, err = request("GET", host+"/authtestnoauth/", "", 0); err != nil {
+			t.Fatal(err)
+		}
+		testResponse(t, res, http.StatusOK, "")
+
+		if at == nil {
+			t.Error("No auth token passed to handler")
+		}
+
+		if at.Type != "web" {
+			t.Error("Wrong token type. Expected %s, got %s", "web", at.Type)
+		}
+
+		if at.Email != testEmail {
+			t.Errorf("Wrong account. Expected %s, got %s", testEmail, at.Email)
+		}
+
+		if res, err = request("GET", host+"/authtestweb/", "", 0); err != nil {
+			t.Fatal(err)
+		}
+		testResponse(t, res, http.StatusOK, "")
+
+		if res, err = request("GET", host+"/authtestapi/", "", 0); err != nil {
+			t.Fatal(err)
+		}
+		testError(t, res, &InvalidAuthToken{})
+
+		// Redirect to other supported endpoints is also allowed
+		if res, err = loginWeb(testEmail, "/deletestore/"); err != nil {
+			t.Fatal(err)
+		}
+		testResponse(t, res, http.StatusFound, "")
+		if l := res.Header.Get("Location"); l != "/deletestore/" {
+			t.Errorf("Expected redirect to %s, got %s", "/deletestore/", res.Header.Get("Location"))
+		}
+
+		// Using an external url or any unsupported endpoint should be treated as a bad request
+		res, err = loginWeb(testEmail, "http://attacker.com")
+		testError(t, res, &BadRequest{"invalid redirect path"})
+
+		res, err = loginWeb(testEmail, "/notsupported/")
+		testError(t, res, &BadRequest{"invalid redirect path"})
+	})
 }
 
 //
