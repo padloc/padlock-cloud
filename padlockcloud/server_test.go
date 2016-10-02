@@ -301,6 +301,19 @@ func TestAuthentication(t *testing.T) {
 		},
 	})
 
+	t.Run("account not found", func(t *testing.T) {
+		resetAll()
+
+		// Trying to get an api key for a non-existing account using the PUT method should result in a 404
+		if res, _ := request("PUT", host+"/auth/", url.Values{
+			"email": {"hello@world.com"},
+		}.Encode(), ApiVersion); err != nil {
+			t.Fatal(err)
+		}
+		// No account with this email exists yet and we have not specified 'create=true' in our request
+		testError(t, res, &AccountNotFound{})
+	})
+
 	t.Run("unauthenticated", func(t *testing.T) {
 		resetAll()
 		at = nil
@@ -443,6 +456,12 @@ func TestAuthentication(t *testing.T) {
 
 		res, err = loginWeb(testEmail, "/notsupported/")
 		testError(t, res, &BadRequest{"invalid redirect path"})
+	})
+
+	t.Run("invalid activation token", func(t *testing.T) {
+		// An invalid activation token should result in a bad request response
+		res, _ = request("GET", host+"/activate/?t=asdf", "", ApiVersion)
+		testError(t, res, &BadRequest{"invalid activation token"})
 	})
 }
 
@@ -590,33 +609,16 @@ func TestWeb(t *testing.T) {
 
 // TODO: Test reset data
 
-// Test correct handling of various error conditions
-func TestErrorConditions(t *testing.T) {
-	resetAll()
-
-	// Trying to get an api key for a non-existing account using the PUT method should result in a 404
-	res, _ := request("PUT", host+"/auth/", url.Values{
-		"email": {"hello@world.com"},
-	}.Encode(), ApiVersion)
-
-	// No account with this email exists yet and we have not specified 'create=true' in our request
-	testError(t, res, &AccountNotFound{})
-
-	// A request without a valid authorization header should return with status code 401 - Unauthorized
-	res, _ = request("GET", host+"/store/", "", ApiVersion)
-	testError(t, res, &InvalidAuthToken{})
-
+func TestMethodNotAllowed(t *testing.T) {
 	// Requests with unsupported HTTP methods should return with 405 - method not allowed
 	res, _ = request("POST", host+"/store/", "", ApiVersion)
 	testError(t, res, &MethodNotAllowed{})
+}
 
+func TestUnsupportedEndpoint(t *testing.T) {
 	// Requests to unsupported paths should return with 404 - not found
 	res, _ = request("GET", host+"/invalidpath", "", ApiVersion)
 	testError(t, res, &UnsupportedEndpoint{})
-
-	// An invalid activation token should result in a bad request response
-	res, _ = request("GET", host+"/activate/?t=asdf", "", ApiVersion)
-	testError(t, res, &BadRequest{"invalid activation token"})
 }
 
 func TestOutdatedVersion(t *testing.T) {
