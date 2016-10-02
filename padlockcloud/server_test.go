@@ -15,6 +15,7 @@ import "bytes"
 import "encoding/json"
 import "errors"
 import "time"
+import "github.com/gorilla/csrf"
 
 const (
 	testEmail = "martin@padlock.io"
@@ -113,7 +114,7 @@ func request(method string, url string, body string, version int) (*http.Respons
 		req.Header.Add("Accept", "application/json")
 	}
 
-	if authToken != nil {
+	if authToken != nil && authToken.Type == "api" {
 		req.Header.Add("Authorization", authToken.String())
 	}
 
@@ -201,6 +202,8 @@ func loginApi(email string) (*http.Response, error) {
 		return res, fmt.Errorf("Failed to parse api key from response: %s", responseBody)
 	}
 
+	authToken.Type = "api"
+
 	link, err := extractActivationLink()
 	if err != nil {
 		return res, err
@@ -257,6 +260,8 @@ func loginWeb(email string, redirect string) (*http.Response, error) {
 	if authToken, err = AuthTokenFromString(authCookie.Value); err != nil {
 		return res, fmt.Errorf("Failed to parse auth token from cookie. Error: %v", err)
 	}
+
+	authToken.Type = "web"
 
 	return res, nil
 }
@@ -356,14 +361,14 @@ func TestAuthentication(t *testing.T) {
 		// passed to the handler
 		if at == nil {
 			t.Error("No auth token passed to handler")
-		}
+		} else {
+			if at.Type != "api" {
+				t.Error("Wrong token type. Expected %s, got %s", "api", at.Type)
+			}
 
-		if at.Type != "api" {
-			t.Error("Wrong token type. Expected %s, got %s", "api", at.Type)
-		}
-
-		if at.Email != testEmail {
-			t.Errorf("Wrong account. Expected %s, got %s", testEmail, at.Email)
+			if at.Email != testEmail {
+				t.Errorf("Wrong account. Expected %s, got %s", testEmail, at.Email)
+			}
 		}
 
 		// We're authenticated but with the wrong token type. Should get a 401
@@ -403,14 +408,14 @@ func TestAuthentication(t *testing.T) {
 		// passed to the handler
 		if at == nil {
 			t.Error("No auth token passed to handler")
-		}
+		} else {
+			if at.Type != "web" {
+				t.Error("Wrong token type. Expected %s, got %s", "web", at.Type)
+			}
 
-		if at.Type != "web" {
-			t.Error("Wrong token type. Expected %s, got %s", "web", at.Type)
-		}
-
-		if at.Email != testEmail {
-			t.Errorf("Wrong account. Expected %s, got %s", testEmail, at.Email)
+			if at.Email != testEmail {
+				t.Errorf("Wrong account. Expected %s, got %s", testEmail, at.Email)
+			}
 		}
 
 		// We're logged in, but with the wrong auth type. should get a 401
@@ -453,20 +458,50 @@ func TestAuthentication(t *testing.T) {
 	})
 }
 
-//
-// func TestAuthentication(t *testing.T) {
-// 	resetAll()
-//
-// 	acc := &Account{Email: testEmail}
-// 	token := NewAuthToken(testEmail, "api")
-//
-// 	endpoint := &Endpoint{
-// 		Path:     "/authtest/",
-// 		AuthType: "api",
-// 	}
-//
-// 	server.Route()
-// }
+func TestCsrfProtection(t *testing.T) {
+	var res *http.Response
+	var err error
+
+	resetAll()
+	followRedirects(true)
+
+	server.Route(&Endpoint{
+		Path:     "/csrftest/",
+		AuthType: "web",
+		Handlers: MethodFuncs{
+			"GET": func(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
+				w.Write([]byte(csrf.Token(r)))
+				return nil
+			},
+			"POST": func(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
+				return nil
+			},
+		},
+	})
+
+	if res, err = loginWeb(testEmail, "/csrftest/"); err != nil {
+		t.Fatal(err)
+	}
+
+	csrfToken, err := validateResponse(res, http.StatusOK, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if res, err = request("POST", host+"/csrftest/", url.Values{
+		"gorilla.csrf.Token": {"asdf"},
+	}.Encode(), ApiVersion); err != nil {
+		t.Fatal(err)
+	}
+	testError(t, res, &InvalidCsrfToken{})
+
+	if res, err = request("POST", host+"/csrftest/", url.Values{
+		"gorilla.csrf.Token": {string(csrfToken)},
+	}.Encode(), ApiVersion); err != nil {
+		t.Fatal(err)
+	}
+	testResponse(t, res, http.StatusOK, "")
+}
 
 // Full lifecycle test including
 // - Requesting an api key
@@ -545,24 +580,6 @@ func TestWeb(t *testing.T) {
 	res, _ = request("GET", host+"/dashboard/", "", 0)
 	testResponse(t, res, http.StatusOK, "^login,,$")
 }
-
-// TODO: Test authentication
-//
-// func TestCsrfProtection() {
-//
-// 	acc := &Account{Email: testEmail}
-// 	t := NewAuthToken(testEmail, "web")
-// 	acc.AddAuthToken(t)
-// 	server.Put(acc)
-//
-// 	client.Jar.SetCookies(testUrl, []*http.Cookie{
-// 		{
-// 			Name:  "auth",
-// 			Value: t.String(),
-// 		},
-// 	})
-//
-// }
 
 // TODO: Test revoke api key
 
