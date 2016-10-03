@@ -69,6 +69,20 @@ func init() {
 			return time.Duration(0)
 		}
 	}
+
+	server.Route(&Endpoint{
+		Path:     "/csrftest/",
+		AuthType: "web",
+		Handlers: MethodFuncs{
+			"GET": func(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
+				w.Write([]byte(csrf.Token(r)))
+				return nil
+			},
+			"POST": func(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
+				return nil
+			},
+		},
+	})
 }
 
 func resetStorage() {
@@ -264,6 +278,12 @@ func loginWeb(email string, redirect string) (*http.Response, error) {
 	authToken.Type = "web"
 
 	return res, nil
+}
+
+func getCsrfToken() string {
+	res, _ := request("GET", host+"/csrftest/", "", 0)
+	csrfToken, _ := validateResponse(res, http.StatusOK, "")
+	return string(csrfToken)
 }
 
 func TestAuthentication(t *testing.T) {
@@ -472,20 +492,6 @@ func TestCsrfProtection(t *testing.T) {
 	resetAll()
 	followRedirects(true)
 
-	server.Route(&Endpoint{
-		Path:     "/csrftest/",
-		AuthType: "web",
-		Handlers: MethodFuncs{
-			"GET": func(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
-				w.Write([]byte(csrf.Token(r)))
-				return nil
-			},
-			"POST": func(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
-				return nil
-			},
-		},
-	})
-
 	if res, err = loginWeb(testEmail, "/csrftest/"); err != nil {
 		t.Fatal(err)
 	}
@@ -618,7 +624,79 @@ func TestLogout(t *testing.T) {
 	testResponse(t, res, http.StatusOK, "^login,,$")
 }
 
-// TODO: Test revoke api key
+func TestRevokeAuthToken(t *testing.T) {
+	var res *http.Response
+	var err error
+
+	resetAll()
+	followRedirects(true)
+
+	t.Run("unautenticated", func(t *testing.T) {
+		// If not logged in, should redirect to login page
+		if res, err = request("POST", host+"/revoke/", "", ApiVersion); err != nil {
+			t.Fatal(err)
+		}
+		testResponse(t, res, http.StatusOK, "login,,")
+	})
+
+	// Login in
+	if res, err = loginWeb(testEmail, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("revoke by token", func(t *testing.T) {
+		// Create and activate new auth token
+		if res, err = loginApi(testEmail); err != nil {
+			t.Fatal(err)
+		}
+		at := authToken
+		authToken = nil
+
+		// Revoke auth token by token
+		if res, err = request("POST", host+"/revoke/", url.Values{
+			"gorilla.csrf.Token": {getCsrfToken()},
+			"token":              {at.Token},
+		}.Encode(), ApiVersion); err != nil {
+			t.Fatal(err)
+		}
+		testResponse(t, res, http.StatusOK, "")
+
+		authToken = at
+		if res, err = request("GET", host+"/store/", "", ApiVersion); err != nil {
+			t.Fatal(err)
+		}
+		testError(t, res, &ExpiredAuthToken{})
+	})
+
+	t.Run("revoke by id", func(t *testing.T) {
+		// Create and activate new auth token
+		if res, err = loginApi(testEmail); err != nil {
+			t.Fatal(err)
+		}
+		at := authToken
+		authToken = nil
+
+		// Get id
+		acc := &Account{Email: at.Email}
+		storage.Get(acc)
+		at.Validate(acc)
+
+		// Revoke auth token by id
+		if res, err = request("POST", host+"/revoke/", url.Values{
+			"gorilla.csrf.Token": {getCsrfToken()},
+			"id":                 {at.Id},
+		}.Encode(), ApiVersion); err != nil {
+			t.Fatal(err)
+		}
+		testResponse(t, res, http.StatusOK, "")
+
+		authToken = at
+		if res, err = request("GET", host+"/store/", "", ApiVersion); err != nil {
+			t.Fatal(err)
+		}
+		testError(t, res, &ExpiredAuthToken{})
+	})
+}
 
 // TODO: Test reset data
 
