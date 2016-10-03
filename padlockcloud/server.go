@@ -601,7 +601,7 @@ func (server *Server) Revoke(w http.ResponseWriter, r *http.Request, auth *AuthT
 	acc := auth.Account()
 
 	t := &AuthToken{Token: token, Id: id}
-	if !t.Validate(acc) {
+	if _, t = acc.findAuthToken(t); t == nil {
 		return &BadRequest{"No such token"}
 	}
 
