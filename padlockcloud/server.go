@@ -21,15 +21,6 @@ const (
 	ApiVersion = 1
 )
 
-// Returns the appropriate protocol based on whether a request was made via https or not
-func schemeFromRequest(r *http.Request) string {
-	if r.TLS != nil {
-		return "https"
-	} else {
-		return "http"
-	}
-}
-
 func versionFromRequest(r *http.Request) int {
 	var vString string
 	accept := r.Header.Get("Accept")
@@ -98,8 +89,8 @@ type ServerConfig struct {
 	TLSCert string `yaml:"tls_cert"`
 	// Path to TLS key file
 	TLSKey string `yaml:"tls_key"`
-	// Explicit host to use in place of http.Request::Host when generating urls and such
-	Host string `yaml:"host"`
+	// Explicit base url to use in place of http.Request::Host when generating urls and such
+	BaseUrl string `yaml:"base_url"`
 	// Secret used for authenticating cookies
 	Secret string `yaml:"secret"`
 }
@@ -120,11 +111,17 @@ type Server struct {
 	endpoints map[string]*Endpoint
 }
 
-func (server *Server) GetHost(r *http.Request) string {
-	if server.Config.Host != "" {
-		return server.Config.Host
+func (server *Server) BaseUrl(r *http.Request) string {
+	if server.Config.BaseUrl != "" {
+		return strings.TrimSuffix(server.Config.BaseUrl, "/")
 	} else {
-		return r.Host
+		var scheme string
+		if server.Secure {
+			scheme = "https"
+		} else {
+			scheme = "http"
+		}
+		return fmt.Sprintf("%s://%s", scheme, r.Host)
 	}
 }
 
@@ -329,9 +326,8 @@ func (server *Server) RequestAuthToken(w http.ResponseWriter, r *http.Request, a
 
 	// Render activation email
 	if err := server.Templates.ActivateAuthTokenEmail.Execute(&emailBody, map[string]interface{}{
-		"activation_link": fmt.Sprintf("%s://%s/activate/?v=%d&t=%s", schemeFromRequest(r),
-			server.GetHost(r), ApiVersion, authRequest.Token),
-		"token": authRequest.AuthToken,
+		"activation_link": fmt.Sprintf("%s/activate/?t=%s", server.BaseUrl(r), authRequest.Token),
+		"token":           authRequest.AuthToken,
 	}); err != nil {
 		return err
 	}
@@ -522,9 +518,8 @@ func (server *Server) RequestDeleteStore(w http.ResponseWriter, r *http.Request,
 	// Render confirmation email
 	var buff bytes.Buffer
 	if err := server.Templates.ActivateAuthTokenEmail.Execute(&buff, map[string]interface{}{
-		"token": authRequest.AuthToken,
-		"activation_link": fmt.Sprintf("%s://%s/activate/?v=%d&t=%s", schemeFromRequest(r),
-			server.GetHost(r), ApiVersion, authRequest.Token),
+		"token":           authRequest.AuthToken,
+		"activation_link": fmt.Sprintf("%s/activate/?t=%s", server.BaseUrl(r), authRequest.Token),
 	}); err != nil {
 		return err
 	}

@@ -183,7 +183,7 @@ func extractActivationLink() (string, error) {
 	}
 
 	// Activation message should contain a valid activation link
-	linkPattern := fmt.Sprintf("%s/activate/\\?v=%d&t=%s", host, ApiVersion, tokenPattern)
+	linkPattern := fmt.Sprintf("%s/activate/\\?t=%s", host, tokenPattern)
 	msgPattern := fmt.Sprintf("%s, %s", testEmail, linkPattern)
 	match, _ := regexp.MatchString(msgPattern, sender.Message)
 	if !match {
