@@ -584,6 +584,25 @@ func TestStore(t *testing.T) {
 		}
 		testResponse(t, res, http.StatusOK, fmt.Sprintf("^deletestore$"))
 	})
+
+	t.Run("reset data", func(t *testing.T) {
+		loginWeb(testEmail, "")
+
+		// Revoke auth token by id
+		if res, err = request("POST", host+"/deletestore/", url.Values{
+			"gorilla.csrf.Token": {getCsrfToken()},
+		}.Encode(), 0); err != nil {
+			t.Fatal(err)
+		}
+		testResponse(t, res, http.StatusOK, "")
+
+		loginApi(testEmail)
+		// Store should be empty
+		if res, err = request("GET", host+"/store/", "", ApiVersion); err != nil {
+			t.Fatal(err)
+		}
+		testResponse(t, res, http.StatusOK, "^$")
+	})
 }
 
 func TestDashboard(t *testing.T) {
@@ -697,8 +716,6 @@ func TestRevokeAuthToken(t *testing.T) {
 		testError(t, res, &ExpiredAuthToken{})
 	})
 }
-
-// TODO: Test reset data
 
 func TestMethodNotAllowed(t *testing.T) {
 	// Requests with unsupported HTTP methods should return with 405 - method not allowed
