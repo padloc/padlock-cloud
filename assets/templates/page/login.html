@@ -1,0 +1,26 @@
+{{ define "css" }}
+    <link href="/static/css/login.css" rel="stylesheet" type="text/css">
+{{ end }}
+{{ define "main" }}
+    <section class="login">
+        <h1>Log In</h1>
+        {{ if .submitted }}
+        <p>
+            Wow, that was easy! We've sent and email to <strong>{{ .email }}</strong> with a magic login link.
+            Go ahead, check your inbox! (You can close this window now.)
+        </p>
+        {{ else }}
+        <p>
+            We know, even with a great password manager like Padlock passwords still suck. So we have
+            a much easier way for you to log in! Simply enter your email address and we'll send you a
+            magic login link!
+        </p>
+        <form action="." method="post" class="login-form">
+            <input name="type" type="hidden" value="web" required>
+            <input name="api_version" type="hidden" value="1" required>
+            <input name="email" type="email" required placeholder="Enter Your Email">
+            <button>Send Login Link</button>
+        </form>
+        {{ end }}
+    </section>
+{{ end }}

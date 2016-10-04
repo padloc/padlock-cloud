@@ -3,36 +3,40 @@
     <head>
         <title>{{- block "title" . -}} Padlock Cloud {{ end }}</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
-        <style>
-            body {
-                font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-                font-size: 22px;
-                -webkit-font-smoothing: antialiased;
-            }
+        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; img-src 'self'; font-src 'self'">
 
-            main {
-                max-width: 500px;
-                padding: 20px;
-                /*text-align: center;*/
-                margin: 0 auto;
-                line-height: 1.5em;
-            }
+        <link rel="shortcut icon" type="image/png" href="/static/img/favicon.png?v=3"/>
 
-            button {
-                border: none;
-                background: #59c6ff;
-                color: #fff;
-                font-family: inherit;
-                font-size: 18px;
-                padding: 8px 10px;
-                float: right;
-                cursor: pointer;
-                margin-top: 15px;
-                -webkit-font-smoothing: antialiased
-            }
-        </style>
+        <link href="/static/css/fonts.css" rel="stylesheet" type="text/css">
+        <link href="/static/css/base.css" rel="stylesheet" type="text/css">
+
+        {{ block "css" . }}
+        {{ end }}
     </head>
     <body>
+    <header>
+        <div class="inner">
+            <a href="/dashboard/" class="home">
+                <img src="/static/img/padlock-cloud.svg" class="logo">
+                <div class="type">Padlock Cloud</div>
+            </a>
+            <div class="spacer"></div>
+            {{ with .account }}
+            <div class="account-email">{{ .Email }}</div>
+            <nav>
+                <ul>
+                    <li><a href="/logout/">Logout</a></li>
+                </ul>
+            </nav>
+            {{ else }}
+            <nav>
+                <ul>
+                    <li><a href="/login/">Login</a></li>
+                </ul>
+            </nav>
+            {{ end }}
+        </div>
+    </header>
         <main>
             {{ block "main" . }}
             {{ end }}

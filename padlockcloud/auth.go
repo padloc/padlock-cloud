@@ -2,18 +2,104 @@ package padlockcloud
 
 import "time"
 import "encoding/json"
+import "encoding/base64"
+import "net/http"
+import "regexp"
+import "fmt"
+import "errors"
+
+var authStringPattern = regexp.MustCompile("^(?:AuthToken|ApiKey) (.+):(.+)$")
+var authMaxAge = func(authType string) time.Duration {
+	switch authType {
+	case "web":
+		return time.Hour
+	default:
+		return time.Duration(0)
+	}
+}
 
 // A wrapper for an api key containing some meta info like the user and device name
 type AuthToken struct {
 	Email    string
 	Token    string
+	Type     string
 	Id       string
 	Created  time.Time
 	LastUsed time.Time
+	Expires  time.Time
+	account  *Account
+}
+
+// Returns the account associated with this auth token
+func (t *AuthToken) Account() *Account {
+	return t.account
+}
+
+// Validates the auth token against account `a`, i.e. looks for the corresponding
+// token in the accounts `AuthTokens` slice. If found, the token is considered valid
+// and it's value is updated with the value of the corresponding auth token in `a.AuthTokens`
+// and the `account` field is set to `a`
+func (t *AuthToken) Validate(a *Account) bool {
+	if _, at := a.findAuthToken(t); at != nil && at.Token == t.Token {
+		*t = *at
+		t.account = a
+		return true
+	}
+
+	return false
+}
+
+// Returns a string representation of the auth token in the form "AuthToken base64(t.Email):t.Token"
+func (t *AuthToken) String() string {
+	return fmt.Sprintf(
+		"AuthToken %s:%s",
+		base64.RawURLEncoding.EncodeToString([]byte(t.Email)),
+		t.Token,
+	)
+}
+
+// Returns true if `t` is expires, false otherwise
+func (t *AuthToken) Expired() bool {
+	return !t.Expires.IsZero() && t.Expires.Before(time.Now())
+}
+
+// Creates an auth token from it's string representation of the form "AuthToken base64(t.Email):t.Token"
+func AuthTokenFromString(str string) (*AuthToken, error) {
+	// Check if the Authorization header exists and is well formed
+	if !authStringPattern.MatchString(str) {
+		return nil, errors.New("invalid credentials")
+	}
+
+	// Extract email and auth token from Authorization header
+	matches := authStringPattern.FindStringSubmatch(str)
+	email := matches[1]
+	// Try to decode email in case it's in base64
+	if dec, err := base64.RawURLEncoding.DecodeString(matches[1]); err == nil {
+		email = string(dec)
+	}
+	t := &AuthToken{
+		Email: email,
+		Token: matches[2],
+	}
+	return t, nil
+}
+
+// Creates an auth token from a given request by parsing the `Authorization` header
+// and `auth` cookie
+func AuthTokenFromRequest(r *http.Request) (*AuthToken, error) {
+	authString := r.Header.Get("Authorization")
+
+	if authString == "" {
+		if cookie, err := r.Cookie("auth"); err == nil {
+			authString = cookie.Value
+		}
+	}
+
+	return AuthTokenFromString(authString)
 }
 
 // Creates a new auth token for a given `email`
-func NewAuthToken(email string) (*AuthToken, error) {
+func NewAuthToken(email string, t string) (*AuthToken, error) {
 	authT, err := token()
 	if err != nil {
 		return nil, err
@@ -23,12 +109,24 @@ func NewAuthToken(email string) (*AuthToken, error) {
 		return nil, err
 	}
 
+	if t == "" {
+		t = "api"
+	}
+
+	var expires time.Time
+
+	if maxAge := authMaxAge(t); maxAge != 0 {
+		expires = time.Now().Add(maxAge)
+	}
+
 	return &AuthToken{
-		email,
-		authT,
-		id,
-		time.Now(),
-		time.Now(),
+		Email:    email,
+		Token:    authT,
+		Type:     t,
+		Id:       id,
+		Created:  time.Now(),
+		LastUsed: time.Now(),
+		Expires:  expires,
 	}, nil
 }
 
@@ -63,26 +161,49 @@ func (a *Account) AddAuthToken(token *AuthToken) {
 	a.AuthTokens = append(a.AuthTokens, token)
 }
 
-// Checks if a given api key is valid for this account
-func (a *Account) ValidateAuthToken(token string) bool {
-	// Check if the account contains any AuthToken with that matches
-	// the given key
-	for _, authToken := range a.AuthTokens {
-		if authToken.Token == token {
-			authToken.LastUsed = time.Now()
-			return true
+// Returns the matching AuthToken instance by comparing Token field, Id or both
+// If either Id or Token field is empty, only the other one will compared. If
+// both are empty, nil is returned
+func (a *Account) findAuthToken(at *AuthToken) (int, *AuthToken) {
+	if at.Token == "" && at.Id == "" {
+		return -1, nil
+	}
+	for i, t := range a.AuthTokens {
+		if t != nil &&
+			(at.Token == "" || t.Token == at.Token) &&
+			(at.Id == "" || t.Id == at.Id) {
+			return i, t
+			fmt.Println(at, i, t)
 		}
 	}
+	return -1, nil
+}
 
-	return false
+// Updates the correspoding auth token in the accounts `AuthTokens` slice with the
+// value of `t`
+func (a *Account) UpdateAuthToken(t *AuthToken) {
+	if _, at := a.findAuthToken(t); at != nil {
+		*at = *t
+	}
+}
+
+// Removes the corresponding auth token from the accounts `AuthTokens` slice
+func (a *Account) RemoveAuthToken(t *AuthToken) {
+	if i, _ := a.findAuthToken(t); i != -1 {
+		s := a.AuthTokens
+		s[i] = s[len(s)-1]
+		s[len(s)-1] = nil
+		a.AuthTokens = s[:len(s)-1]
+	}
 }
 
 // AuthRequest represents an api key - activation token pair used to activate a given api key
 // `AuthRequest.Token` is used to activate the AuthToken through a separate channel (e.g. email)
 type AuthRequest struct {
 	Token     string
-	AuthToken AuthToken
+	AuthToken *AuthToken
 	Created   time.Time
+	Redirect  string
 }
 
 // Implementation of the `Storable.Key` interface method
@@ -101,9 +222,9 @@ func (ar *AuthRequest) Serialize() ([]byte, error) {
 }
 
 // Creates a new `AuthRequest` with a given `email`
-func NewAuthRequest(email string) (*AuthRequest, error) {
+func NewAuthRequest(email string, tType string) (*AuthRequest, error) {
 	// Create new auth token
-	authToken, err := NewAuthToken(email)
+	authToken, err := NewAuthToken(email, tType)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +235,7 @@ func NewAuthRequest(email string) (*AuthRequest, error) {
 		return nil, err
 	}
 
-	return &AuthRequest{actToken, *authToken, time.Now()}, nil
+	return &AuthRequest{actToken, authToken, time.Now(), ""}, nil
 }
 
 func init() {

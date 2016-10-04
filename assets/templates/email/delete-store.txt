@@ -1,7 +1,0 @@
-{{ define "main" }}
-You are receiving this email because you requested to delete all data for the Padlock Cloud account {{ .email }}. To confirm the request, please visit the following link.
-
-WARNING: All your data will be deleted permanently and can not be restored afterwards!
-
-{{ .delete_link }}
-{{ end }}

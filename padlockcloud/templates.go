@@ -8,15 +8,14 @@ import ht "html/template"
 type Templates struct {
 	// Email template for api key activation email
 	ActivateAuthTokenEmail *t.Template
-	// Email template for deletion confirmation email
-	DeleteStoreEmail *t.Template
 	// Template for success page for activating an auth token
 	ActivateAuthTokenSuccess *ht.Template
-	// Template for success page for deleting account data
-	DeleteStoreSuccess *ht.Template
 	// Email template for clients using an outdated api version
 	DeprecatedVersionEmail *t.Template
 	ErrorPage              *ht.Template
+	LoginPage              *ht.Template
+	Dashboard              *ht.Template
+	DeleteStore            *ht.Template
 }
 
 // Loads templates from given directory
@@ -35,12 +34,6 @@ func LoadTemplates(path string) (*Templates, error) {
 	); err != nil {
 		return nil, err
 	}
-	if tt.DeleteStoreEmail, err = t.ParseFiles(
-		tp("email/base.txt"),
-		tp("email/delete-store.txt"),
-	); err != nil {
-		return nil, err
-	}
 	if tt.DeprecatedVersionEmail, err = t.ParseFiles(
 		tp("email/base.txt"),
 		tp("email/deprecated-version.txt"),
@@ -53,13 +46,16 @@ func LoadTemplates(path string) (*Templates, error) {
 	); err != nil {
 		return nil, err
 	}
-	if tt.DeleteStoreSuccess, err = ht.ParseFiles(
-		tp("page/base.html"),
-		tp("page/delete-store-success.html"),
-	); err != nil {
+	if tt.ErrorPage, err = ht.ParseFiles(tp("page/base.html"), tp("page/error.html")); err != nil {
 		return nil, err
 	}
-	if tt.ErrorPage, err = ht.ParseFiles(tp("page/base.html"), tp("page/error.html")); err != nil {
+	if tt.LoginPage, err = ht.ParseFiles(tp("page/base.html"), tp("page/login.html")); err != nil {
+		return nil, err
+	}
+	if tt.Dashboard, err = ht.ParseFiles(tp("page/base.html"), tp("page/dashboard.html")); err != nil {
+		return nil, err
+	}
+	if tt.DeleteStore, err = ht.ParseFiles(tp("page/base.html"), tp("page/delete-store.html")); err != nil {
 		return nil, err
 	}
 
