@@ -77,7 +77,7 @@ log:
 ```
 
 **NOTE**: If you are using a config file, all other flags and environment
-variables will be ingored.
+variables will be ignored.
 
 ## Security Considerations
 
