@@ -22,46 +22,7 @@ const (
 	testData  = "Hello World!"
 )
 
-var (
-	server    *Server
-	client    *http.Client
-	storage   *MemoryStorage
-	sender    *RecordSender
-	host      string
-	authToken *AuthToken
-)
-
 func init() {
-	storage = &MemoryStorage{}
-	sender = &RecordSender{}
-	templates := &Templates{
-		template.Must(template.New("").Parse("{{ .token.Email }}, {{ .activation_link }}")),
-		htmlTemplate.Must(htmlTemplate.New("").Parse("{{ .token.Email }}")),
-		template.Must(template.New("").Parse("")),
-		htmlTemplate.Must(htmlTemplate.New("").Parse("<html>{{ .message }}</html>")),
-		htmlTemplate.Must(htmlTemplate.New("").Parse("login,{{ .email }},{{ .submitted }}")),
-		htmlTemplate.Must(htmlTemplate.New("").Parse("dashboard")),
-		htmlTemplate.Must(htmlTemplate.New("").Parse("deletestore")),
-	}
-
-	logger := &Log{Config: &LogConfig{}}
-	logger.Init()
-	logger.Info.SetOutput(ioutil.Discard)
-	logger.Error.SetOutput(ioutil.Discard)
-	server = NewServer(logger, storage, sender, &ServerConfig{})
-	server.Templates = templates
-	server.Init()
-	server.emailRateLimiter = nil
-
-	testServer := httptest.NewServer(server.HandlePanic(server.mux))
-
-	host = testServer.URL
-
-	jar, _ := cookiejar.New(nil)
-	client = &http.Client{
-		Jar: jar,
-	}
-
 	authMaxAge = func(authType string) time.Duration {
 		switch authType {
 		case "web":
@@ -70,50 +31,45 @@ func init() {
 			return time.Duration(0)
 		}
 	}
-
-	server.Route(&Endpoint{
-		Path:     "/csrftest/",
-		AuthType: "web",
-		Handlers: MethodFuncs{
-			"GET": func(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
-				w.Write([]byte(csrf.Token(r)))
-				return nil
-			},
-			"POST": func(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
-				return nil
-			},
-		},
-	})
 }
 
-func resetStorage() {
-	storage.Open()
+type serverTestContext struct {
+	server    *Server
+	client    *http.Client
+	storage   *MemoryStorage
+	sender    *RecordSender
+	host      string
+	authToken *AuthToken
 }
 
-func resetCookies() {
+func (ctx *serverTestContext) resetStorage() {
+	ctx.storage.Open()
+}
+
+func (ctx *serverTestContext) resetCookies() {
 	jar, _ := cookiejar.New(nil)
-	client.Jar = jar
+	ctx.client.Jar = jar
 }
 
-func resetAll() {
-	resetCookies()
-	resetStorage()
-	sender.Reset()
-	authToken = nil
+func (ctx *serverTestContext) resetAll() {
+	ctx.resetCookies()
+	ctx.resetStorage()
+	ctx.sender.Reset()
+	ctx.authToken = nil
 }
 
-func followRedirects(follow bool) {
+func (ctx *serverTestContext) followRedirects(follow bool) {
 	if follow {
-		client.CheckRedirect = nil
+		ctx.client.CheckRedirect = nil
 	} else {
-		client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		ctx.client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		}
 	}
 }
 
 // Helper function for creating (optionally authenticated) requests
-func request(method string, url string, body string, version int) (*http.Response, error) {
+func (ctx *serverTestContext) request(method string, url string, body string, version int) (*http.Response, error) {
 	req, err := http.NewRequest(method, url, bytes.NewBuffer([]byte(body)))
 	if err != nil {
 		return nil, err
@@ -129,11 +85,175 @@ func request(method string, url string, body string, version int) (*http.Respons
 		req.Header.Add("Accept", "application/json")
 	}
 
-	if authToken != nil && authToken.Type == "api" {
-		req.Header.Add("Authorization", authToken.String())
+	if ctx.authToken != nil && ctx.authToken.Type == "api" {
+		req.Header.Add("Authorization", ctx.authToken.String())
 	}
 
-	return client.Do(req)
+	return ctx.client.Do(req)
+}
+
+func (ctx *serverTestContext) loginApi(email string) (*http.Response, error) {
+	var res *http.Response
+	var err error
+
+	if res, err = ctx.request("POST", ctx.host+"/auth/", url.Values{
+		"email": {email},
+		"type":  {"api"},
+	}.Encode(), ApiVersion); err != nil {
+		return nil, err
+	}
+
+	responseBody, err := validateResponse(res, http.StatusAccepted, "")
+	if err != nil {
+		return res, err
+	}
+
+	ctx.authToken = &AuthToken{}
+	// Response status code should be "ACCEPTED", response body should be the json-encoded auth token
+	if err := json.Unmarshal(responseBody, ctx.authToken); err != nil {
+		return res, fmt.Errorf("Failed to parse api key from response: %s", responseBody)
+	}
+
+	ctx.authToken.Type = "api"
+
+	link, err := ctx.extractActivationLink()
+	if err != nil {
+		return res, err
+	}
+
+	// 'visit' activation link
+	if res, err = ctx.request("GET", link, "", 0); err != nil {
+		return res, err
+	}
+
+	_, err = validateResponse(res, http.StatusOK, fmt.Sprintf("^%s$", testEmail))
+	return res, err
+}
+
+func (ctx *serverTestContext) loginWeb(email string, redirect string) (*http.Response, error) {
+	var res *http.Response
+	var err error
+
+	if res, err = ctx.request("POST", ctx.host+"/auth/", url.Values{
+		"email":    {email},
+		"type":     {"web"},
+		"redirect": {redirect},
+	}.Encode(), ApiVersion); err != nil {
+		return nil, err
+	}
+
+	if _, err := validateResponse(res, http.StatusAccepted, ""); err != nil {
+		return res, err
+	}
+
+	link, err := ctx.extractActivationLink()
+	if err != nil {
+		return res, err
+	}
+
+	// 'visit' activation link
+	if res, err = ctx.request("GET", link, "", 0); err != nil {
+		return res, err
+	}
+
+	u, _ := url.Parse(ctx.host)
+	var authCookie *http.Cookie
+	for _, c := range ctx.client.Jar.Cookies(u) {
+		if c.Name == "auth" {
+			authCookie = c
+			break
+		}
+	}
+
+	if authCookie == nil {
+		return res, errors.New("Expected cookie of name 'auth' to be set")
+	}
+
+	if ctx.authToken, err = AuthTokenFromString(authCookie.Value); err != nil {
+		return res, fmt.Errorf("Failed to parse auth token from cookie. Error: %v", err)
+	}
+
+	ctx.authToken.Type = "web"
+
+	return res, nil
+}
+
+func (ctx serverTestContext) getCsrfToken() string {
+	res, _ := ctx.request("GET", ctx.host+"/csrftest/", "", 0)
+	csrfToken, _ := validateResponse(res, http.StatusOK, "")
+	return string(csrfToken)
+}
+
+func (ctx *serverTestContext) extractActivationLink() (string, error) {
+	// Activation message should be sent to the correct email
+	if ctx.sender.Recipient != testEmail {
+		return "", fmt.Errorf("Expected activation message to be sent to %s, instead got %s", testEmail, ctx.sender.Recipient)
+	}
+
+	// Activation message should contain a valid activation link
+	linkPattern := fmt.Sprintf("%s/activate/\\?t=%s", ctx.host, tokenPattern)
+	msgPattern := fmt.Sprintf("%s, %s", testEmail, linkPattern)
+	match, _ := regexp.MatchString(msgPattern, ctx.sender.Message)
+	if !match {
+		return "", fmt.Errorf("Expected activation message to match \"%s\", got \"%s\"", msgPattern, ctx.sender.Message)
+	}
+	link := regexp.MustCompile(linkPattern).FindString(ctx.sender.Message)
+
+	return link, nil
+}
+
+func newServerTestContext() *serverTestContext {
+	storage := &MemoryStorage{}
+	sender := &RecordSender{}
+	templates := &Templates{
+		template.Must(template.New("").Parse("{{ .token.Email }}, {{ .activation_link }}")),
+		htmlTemplate.Must(htmlTemplate.New("").Parse("{{ .token.Email }}")),
+		template.Must(template.New("").Parse("")),
+		htmlTemplate.Must(htmlTemplate.New("").Parse("<html>{{ .message }}</html>")),
+		htmlTemplate.Must(htmlTemplate.New("").Parse("login,{{ .email }},{{ .submitted }}")),
+		htmlTemplate.Must(htmlTemplate.New("").Parse("dashboard")),
+		htmlTemplate.Must(htmlTemplate.New("").Parse("deletestore")),
+	}
+
+	logger := &Log{Config: &LogConfig{}}
+	logger.Init()
+	logger.Info.SetOutput(ioutil.Discard)
+	logger.Error.SetOutput(ioutil.Discard)
+	server := NewServer(logger, storage, sender, &ServerConfig{})
+	server.Templates = templates
+	server.Init()
+	server.emailRateLimiter = nil
+
+	testServer := httptest.NewServer(server.HandlePanic(server.mux))
+
+	host := testServer.URL
+
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{
+		Jar: jar,
+	}
+
+	server.Route(&Endpoint{
+		Path:     "/csrftest/",
+		AuthType: "web",
+		Handlers: MethodFuncs{
+			"GET": func(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
+				w.Write([]byte(csrf.Token(r)))
+				return nil
+			},
+			"POST": func(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
+				return nil
+			},
+		},
+	})
+
+	return &serverTestContext{
+		server:  server,
+		client:  client,
+		storage: storage,
+		sender:  sender,
+		host:    host,
+	}
 }
 
 // Helper function for checking a `http.Response` object for an expected status code and response body
@@ -177,116 +297,6 @@ func testError(t *testing.T, res *http.Response, e ErrorResponse) {
 	testResponse(t, res, e.Status(), regexp.QuoteMeta(string(JsonifyErrorResponse(e))))
 }
 
-func extractActivationLink() (string, error) {
-	// Activation message should be sent to the correct email
-	if sender.Recipient != testEmail {
-		return "", fmt.Errorf("Expected activation message to be sent to %s, instead got %s", testEmail, sender.Recipient)
-	}
-
-	// Activation message should contain a valid activation link
-	linkPattern := fmt.Sprintf("%s/activate/\\?t=%s", host, tokenPattern)
-	msgPattern := fmt.Sprintf("%s, %s", testEmail, linkPattern)
-	match, _ := regexp.MatchString(msgPattern, sender.Message)
-	if !match {
-		return "", fmt.Errorf("Expected activation message to match \"%s\", got \"%s\"", msgPattern, sender.Message)
-	}
-	link := regexp.MustCompile(linkPattern).FindString(sender.Message)
-
-	return link, nil
-}
-
-func loginApi(email string) (*http.Response, error) {
-	var res *http.Response
-	var err error
-
-	if res, err = request("POST", host+"/auth/", url.Values{
-		"email": {email},
-		"type":  {"api"},
-	}.Encode(), ApiVersion); err != nil {
-		return nil, err
-	}
-
-	responseBody, err := validateResponse(res, http.StatusAccepted, "")
-	if err != nil {
-		return res, err
-	}
-
-	authToken = &AuthToken{}
-	// Response status code should be "ACCEPTED", response body should be the json-encoded auth token
-	if err := json.Unmarshal(responseBody, authToken); err != nil {
-		return res, fmt.Errorf("Failed to parse api key from response: %s", responseBody)
-	}
-
-	authToken.Type = "api"
-
-	link, err := extractActivationLink()
-	if err != nil {
-		return res, err
-	}
-
-	// 'visit' activation link
-	if res, err = request("GET", link, "", 0); err != nil {
-		return res, err
-	}
-
-	_, err = validateResponse(res, http.StatusOK, fmt.Sprintf("^%s$", testEmail))
-	return res, err
-}
-
-func loginWeb(email string, redirect string) (*http.Response, error) {
-	var res *http.Response
-	var err error
-
-	if res, err = request("POST", host+"/auth/", url.Values{
-		"email":    {email},
-		"type":     {"web"},
-		"redirect": {redirect},
-	}.Encode(), ApiVersion); err != nil {
-		return nil, err
-	}
-
-	if _, err := validateResponse(res, http.StatusAccepted, ""); err != nil {
-		return res, err
-	}
-
-	link, err := extractActivationLink()
-	if err != nil {
-		return res, err
-	}
-
-	// 'visit' activation link
-	if res, err = request("GET", link, "", 0); err != nil {
-		return res, err
-	}
-
-	u, _ := url.Parse(host)
-	var authCookie *http.Cookie
-	for _, c := range client.Jar.Cookies(u) {
-		if c.Name == "auth" {
-			authCookie = c
-			break
-		}
-	}
-
-	if authCookie == nil {
-		return res, errors.New("Expected cookie of name 'auth' to be set")
-	}
-
-	if authToken, err = AuthTokenFromString(authCookie.Value); err != nil {
-		return res, fmt.Errorf("Failed to parse auth token from cookie. Error: %v", err)
-	}
-
-	authToken.Type = "web"
-
-	return res, nil
-}
-
-func getCsrfToken() string {
-	res, _ := request("GET", host+"/csrftest/", "", 0)
-	csrfToken, _ := validateResponse(res, http.StatusOK, "")
-	return string(csrfToken)
-}
-
 func TestAuthentication(t *testing.T) {
 	var res *http.Response
 	var err error
@@ -296,9 +306,10 @@ func TestAuthentication(t *testing.T) {
 		return nil
 	}
 
-	followRedirects(false)
+	ctx := newServerTestContext()
+	ctx.followRedirects(false)
 
-	server.Route(&Endpoint{
+	ctx.server.Route(&Endpoint{
 		Path:     "/authtestnoauth/",
 		AuthType: "",
 		Handlers: MethodFuncs{
@@ -306,7 +317,7 @@ func TestAuthentication(t *testing.T) {
 		},
 	})
 
-	server.Route(&Endpoint{
+	ctx.server.Route(&Endpoint{
 		Path:     "/authtestapi/",
 		AuthType: "api",
 		Handlers: MethodFuncs{
@@ -314,7 +325,7 @@ func TestAuthentication(t *testing.T) {
 		},
 	})
 
-	server.Route(&Endpoint{
+	ctx.server.Route(&Endpoint{
 		Path:     "/authtestweb/",
 		AuthType: "web",
 		Handlers: MethodFuncs{
@@ -323,10 +334,10 @@ func TestAuthentication(t *testing.T) {
 	})
 
 	t.Run("account not found", func(t *testing.T) {
-		resetAll()
+		ctx.resetAll()
 
 		// Trying to get an api key for a non-existing account using the PUT method should result in a 404
-		if res, err = request("PUT", host+"/auth/", url.Values{
+		if res, err = ctx.request("PUT", ctx.host+"/auth/", url.Values{
 			"email": {"hello@world.com"},
 		}.Encode(), ApiVersion); err != nil {
 			t.Fatal(err)
@@ -336,11 +347,11 @@ func TestAuthentication(t *testing.T) {
 	})
 
 	t.Run("unauthenticated", func(t *testing.T) {
-		resetAll()
+		ctx.resetAll()
 		at = nil
 
 		// Request should go through for route not requiring authentication
-		if res, err = request("GET", host+"/authtestnoauth/", "", 0); err != nil {
+		if res, err = ctx.request("GET", ctx.host+"/authtestnoauth/", "", 0); err != nil {
 			t.Fatal(err)
 		}
 		testResponse(t, res, http.StatusOK, "")
@@ -350,7 +361,7 @@ func TestAuthentication(t *testing.T) {
 		}
 
 		// Not logged in so we should be redirected to the login page
-		if res, err = request("GET", host+"/authtestweb/", "", 0); err != nil {
+		if res, err = ctx.request("GET", ctx.host+"/authtestweb/", "", 0); err != nil {
 			t.Fatal(err)
 		}
 		testResponse(t, res, http.StatusFound, "")
@@ -359,22 +370,22 @@ func TestAuthentication(t *testing.T) {
 		}
 
 		// Not authenticated so we should get a 401
-		if res, err = request("GET", host+"/authtestapi/", "", 0); err != nil {
+		if res, err = ctx.request("GET", ctx.host+"/authtestapi/", "", 0); err != nil {
 			t.Fatal(err)
 		}
 		testError(t, res, &InvalidAuthToken{})
 	})
 
 	t.Run("type=api", func(t *testing.T) {
-		resetAll()
+		ctx.resetAll()
 		at = nil
 
-		if _, err = loginApi(testEmail); err != nil {
+		if _, err = ctx.loginApi(testEmail); err != nil {
 			t.Fatal(err)
 		}
 
 		// Route without authentication should always go through
-		if res, err = request("GET", host+"/authtestnoauth/", "", 0); err != nil {
+		if res, err = ctx.request("GET", ctx.host+"/authtestnoauth/", "", 0); err != nil {
 			t.Fatal(err)
 		}
 		testResponse(t, res, http.StatusOK, "")
@@ -394,23 +405,23 @@ func TestAuthentication(t *testing.T) {
 		}
 
 		// We're authenticated but with the wrong token type. Should get a 401
-		if res, err = request("GET", host+"/authtestweb/", "", 0); err != nil {
+		if res, err = ctx.request("GET", ctx.host+"/authtestweb/", "", 0); err != nil {
 			t.Fatal(err)
 		}
 		testError(t, res, &InvalidAuthToken{})
 
 		// We're authenticated so the request should go through
-		if res, err = request("GET", host+"/authtestapi/", "", 0); err != nil {
+		if res, err = ctx.request("GET", ctx.host+"/authtestapi/", "", 0); err != nil {
 			t.Fatal(err)
 		}
 		testResponse(t, res, http.StatusOK, "")
 	})
 
 	t.Run("type=web", func(t *testing.T) {
-		resetAll()
+		ctx.resetAll()
 		at = nil
 
-		if res, err = loginWeb(testEmail, ""); err != nil {
+		if res, err = ctx.loginWeb(testEmail, ""); err != nil {
 			t.Fatal(err)
 		}
 
@@ -421,7 +432,7 @@ func TestAuthentication(t *testing.T) {
 		}
 
 		// Test route without authentication
-		if res, err = request("GET", host+"/authtestnoauth/", "", 0); err != nil {
+		if res, err = ctx.request("GET", ctx.host+"/authtestnoauth/", "", 0); err != nil {
 			t.Fatal(err)
 		}
 		testResponse(t, res, http.StatusOK, "")
@@ -441,20 +452,20 @@ func TestAuthentication(t *testing.T) {
 		}
 
 		// We're logged in, but with the wrong auth type. should get a 401
-		if res, err = request("GET", host+"/authtestapi/", "", 0); err != nil {
+		if res, err = ctx.request("GET", ctx.host+"/authtestapi/", "", 0); err != nil {
 			t.Fatal(err)
 		}
 		testError(t, res, &InvalidAuthToken{})
 
 		// We're logged in so the request should go through
-		if res, err = request("GET", host+"/authtestweb/", "", 0); err != nil {
+		if res, err = ctx.request("GET", ctx.host+"/authtestweb/", "", 0); err != nil {
 			t.Fatal(err)
 		}
 		testResponse(t, res, http.StatusOK, "")
 
 		// Make sure auth token expires
 		time.Sleep(authMaxAge("web"))
-		if res, err = request("GET", host+"/authtestweb/", "", 0); err != nil {
+		if res, err = ctx.request("GET", ctx.host+"/authtestweb/", "", 0); err != nil {
 			t.Fatal(err)
 		}
 		testResponse(t, res, http.StatusFound, "")
@@ -463,7 +474,7 @@ func TestAuthentication(t *testing.T) {
 		}
 
 		// Redirect to other supported endpoints is also allowed
-		if res, err = loginWeb(testEmail, "/deletestore/"); err != nil {
+		if res, err = ctx.loginWeb(testEmail, "/deletestore/"); err != nil {
 			t.Fatal(err)
 		}
 		testResponse(t, res, http.StatusFound, "")
@@ -472,16 +483,16 @@ func TestAuthentication(t *testing.T) {
 		}
 
 		// Using an external url or any unsupported endpoint should be treated as a bad request
-		res, err = loginWeb(testEmail, "http://attacker.com")
+		res, err = ctx.loginWeb(testEmail, "http://attacker.com")
 		testError(t, res, &BadRequest{"invalid redirect path"})
 
-		res, err = loginWeb(testEmail, "/notsupported/")
+		res, err = ctx.loginWeb(testEmail, "/notsupported/")
 		testError(t, res, &BadRequest{"invalid redirect path"})
 	})
 
 	t.Run("invalid activation token", func(t *testing.T) {
 		// An invalid activation token should result in a bad request response
-		res, _ = request("GET", host+"/activate/?t=asdf", "", ApiVersion)
+		res, _ = ctx.request("GET", ctx.host+"/activate/?t=asdf", "", ApiVersion)
 		testError(t, res, &BadRequest{"invalid activation token"})
 	})
 }
@@ -490,10 +501,10 @@ func TestCsrfProtection(t *testing.T) {
 	var res *http.Response
 	var err error
 
-	resetAll()
-	followRedirects(true)
+	ctx := newServerTestContext()
+	ctx.followRedirects(true)
 
-	if res, err = loginWeb(testEmail, "/csrftest/"); err != nil {
+	if res, err = ctx.loginWeb(testEmail, "/csrftest/"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -502,14 +513,14 @@ func TestCsrfProtection(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if res, err = request("POST", host+"/csrftest/", url.Values{
+	if res, err = ctx.request("POST", ctx.host+"/csrftest/", url.Values{
 		"gorilla.csrf.Token": {"asdf"},
 	}.Encode(), ApiVersion); err != nil {
 		t.Fatal(err)
 	}
 	testError(t, res, &InvalidCsrfToken{})
 
-	if res, err = request("POST", host+"/csrftest/", url.Values{
+	if res, err = ctx.request("POST", ctx.host+"/csrftest/", url.Values{
 		"gorilla.csrf.Token": {string(csrfToken)},
 	}.Encode(), ApiVersion); err != nil {
 		t.Fatal(err)
@@ -521,26 +532,26 @@ func TestStore(t *testing.T) {
 	var res *http.Response
 	var err error
 
-	resetAll()
-	followRedirects(true)
+	ctx := newServerTestContext()
+	ctx.followRedirects(true)
 
 	t.Run("read(unauthenticated)", func(t *testing.T) {
 		// Get data request authenticated with obtained api key should return with status code 200 - OK and
 		// empty response body (since we haven't written any data yet)
-		if res, err = request("GET", host+"/store/", "", ApiVersion); err != nil {
+		if res, err = ctx.request("GET", ctx.host+"/store/", "", ApiVersion); err != nil {
 			t.Fatal(err)
 		}
 		testError(t, res, &InvalidAuthToken{})
 	})
 
-	if _, err := loginApi(testEmail); err != nil {
+	if _, err := ctx.loginApi(testEmail); err != nil {
 		t.Fatal(err)
 	}
 
 	t.Run("read(empty)", func(t *testing.T) {
 		// Get data request authenticated with obtained api key should return with status code 200 - OK and
 		// empty response body (since we haven't written any data yet)
-		if res, err = request("GET", host+"/store/", "", ApiVersion); err != nil {
+		if res, err = ctx.request("GET", ctx.host+"/store/", "", ApiVersion); err != nil {
 			t.Fatal(err)
 		}
 		testResponse(t, res, http.StatusOK, "^$")
@@ -548,7 +559,7 @@ func TestStore(t *testing.T) {
 
 	t.Run("write", func(t *testing.T) {
 		// Put request should return with status code 204 - NO CONTENT
-		if res, err = request("PUT", host+"/store/", testData, ApiVersion); err != nil {
+		if res, err = ctx.request("PUT", ctx.host+"/store/", testData, ApiVersion); err != nil {
 			t.Fatal(err)
 		}
 		testResponse(t, res, http.StatusNoContent, "")
@@ -556,7 +567,7 @@ func TestStore(t *testing.T) {
 
 	t.Run("read(non-empty)", func(t *testing.T) {
 		// Now get data request should return the data previously saved through PUT
-		if res, err = request("GET", host+"/store/", "", ApiVersion); err != nil {
+		if res, err = ctx.request("GET", ctx.host+"/store/", "", ApiVersion); err != nil {
 			t.Fatal(err)
 		}
 		testResponse(t, res, http.StatusOK, fmt.Sprintf("^%s$", testData))
@@ -564,42 +575,42 @@ func TestStore(t *testing.T) {
 
 	t.Run("request delete", func(t *testing.T) {
 		// Send data reset request. Response should have status code 202 - ACCEPTED
-		if res, err = request("DELETE", host+"/store/", "", ApiVersion); err != nil {
+		if res, err = ctx.request("DELETE", ctx.host+"/store/", "", ApiVersion); err != nil {
 			t.Fatal(err)
 		}
 		testResponse(t, res, http.StatusAccepted, "")
 
 		// Activation message should be sent to the correct email
-		if sender.Recipient != testEmail {
-			t.Fatalf("Expected confirm delete message to be sent to %s, instead got %s", testEmail, sender.Recipient)
+		if ctx.sender.Recipient != testEmail {
+			t.Fatalf("Expected confirm delete message to be sent to %s, instead got %s", testEmail, ctx.sender.Recipient)
 		}
 
-		link, err := extractActivationLink()
+		link, err := ctx.extractActivationLink()
 		if err != nil {
 			t.Fatal(err)
 		}
 
 		// 'visit' link, should log in and redirect to delete store form
-		if res, err = request("GET", link, "", 0); err != nil {
+		if res, err = ctx.request("GET", link, "", 0); err != nil {
 			t.Fatal(err)
 		}
 		testResponse(t, res, http.StatusOK, fmt.Sprintf("^deletestore$"))
 	})
 
 	t.Run("reset data", func(t *testing.T) {
-		loginWeb(testEmail, "")
+		ctx.loginWeb(testEmail, "")
 
 		// Revoke auth token by id
-		if res, err = request("POST", host+"/deletestore/", url.Values{
-			"gorilla.csrf.Token": {getCsrfToken()},
+		if res, err = ctx.request("POST", ctx.host+"/deletestore/", url.Values{
+			"gorilla.csrf.Token": {ctx.getCsrfToken()},
 		}.Encode(), 0); err != nil {
 			t.Fatal(err)
 		}
 		testResponse(t, res, http.StatusOK, "")
 
-		loginApi(testEmail)
+		ctx.loginApi(testEmail)
 		// Store should be empty
-		if res, err = request("GET", host+"/store/", "", ApiVersion); err != nil {
+		if res, err = ctx.request("GET", ctx.host+"/store/", "", ApiVersion); err != nil {
 			t.Fatal(err)
 		}
 		testResponse(t, res, http.StatusOK, "^$")
@@ -607,19 +618,19 @@ func TestStore(t *testing.T) {
 }
 
 func TestDashboard(t *testing.T) {
-	resetAll()
-	followRedirects(true)
+	ctx := newServerTestContext()
+	ctx.followRedirects(true)
 
 	// If not logged in, should redirect to login page
-	res, _ := request("GET", host+"/dashboard/", "", 0)
+	res, _ := ctx.request("GET", ctx.host+"/dashboard/", "", 0)
 	testResponse(t, res, http.StatusOK, "^login,,$")
 
-	if _, err := loginWeb(testEmail, ""); err != nil {
+	if _, err := ctx.loginWeb(testEmail, ""); err != nil {
 		t.Fatal(err)
 	}
 
 	// We should be logged in now, so dashboard should render
-	res, _ = request("GET", host+"/dashboard/", "", 0)
+	res, _ = ctx.request("GET", ctx.host+"/dashboard/", "", 0)
 	testResponse(t, res, http.StatusOK, "^dashboard$")
 }
 
@@ -627,18 +638,20 @@ func TestLogout(t *testing.T) {
 	var res *http.Response
 	var err error
 
-	if _, err = loginWeb(testEmail, ""); err != nil {
+	ctx := newServerTestContext()
+
+	if _, err = ctx.loginWeb(testEmail, ""); err != nil {
 		t.Fatal(err)
 	}
 
 	// Log out
-	if res, err = request("GET", host+"/logout/", "", 0); err != nil {
+	if res, err = ctx.request("GET", ctx.host+"/logout/", "", 0); err != nil {
 		t.Fatal(err)
 	}
 	testResponse(t, res, http.StatusOK, "")
 
 	// If not logged in, should redirect to login page
-	if res, err = request("GET", host+"/dashboard/", "", 0); err != nil {
+	if res, err = ctx.request("GET", ctx.host+"/dashboard/", "", 0); err != nil {
 		t.Fatal(err)
 	}
 	testResponse(t, res, http.StatusOK, "^login,,$")
@@ -648,41 +661,41 @@ func TestRevokeAuthToken(t *testing.T) {
 	var res *http.Response
 	var err error
 
-	resetAll()
-	followRedirects(true)
+	ctx := newServerTestContext()
+	ctx.followRedirects(true)
 
 	t.Run("unautenticated", func(t *testing.T) {
 		// If not logged in, should redirect to login page
-		if res, err = request("POST", host+"/revoke/", "", ApiVersion); err != nil {
+		if res, err = ctx.request("POST", ctx.host+"/revoke/", "", ApiVersion); err != nil {
 			t.Fatal(err)
 		}
 		testResponse(t, res, http.StatusOK, "login,,")
 	})
 
 	// Login in
-	if res, err = loginWeb(testEmail, ""); err != nil {
+	if res, err = ctx.loginWeb(testEmail, ""); err != nil {
 		t.Fatal(err)
 	}
 
 	t.Run("revoke by token", func(t *testing.T) {
 		// Create and activate new auth token
-		if res, err = loginApi(testEmail); err != nil {
+		if res, err = ctx.loginApi(testEmail); err != nil {
 			t.Fatal(err)
 		}
-		at := authToken
-		authToken = nil
+		at := ctx.authToken
+		ctx.authToken = nil
 
 		// Revoke auth token by token
-		if res, err = request("POST", host+"/revoke/", url.Values{
-			"gorilla.csrf.Token": {getCsrfToken()},
+		if res, err = ctx.request("POST", ctx.host+"/revoke/", url.Values{
+			"gorilla.csrf.Token": {ctx.getCsrfToken()},
 			"token":              {at.Token},
 		}.Encode(), ApiVersion); err != nil {
 			t.Fatal(err)
 		}
 		testResponse(t, res, http.StatusOK, "")
 
-		authToken = at
-		if res, err = request("GET", host+"/store/", "", ApiVersion); err != nil {
+		ctx.authToken = at
+		if res, err = ctx.request("GET", ctx.host+"/store/", "", ApiVersion); err != nil {
 			t.Fatal(err)
 		}
 		testError(t, res, &ExpiredAuthToken{})
@@ -690,28 +703,28 @@ func TestRevokeAuthToken(t *testing.T) {
 
 	t.Run("revoke by id", func(t *testing.T) {
 		// Create and activate new auth token
-		if res, err = loginApi(testEmail); err != nil {
+		if res, err = ctx.loginApi(testEmail); err != nil {
 			t.Fatal(err)
 		}
-		at := authToken
-		authToken = nil
+		at := ctx.authToken
+		ctx.authToken = nil
 
 		// Get id
 		acc := &Account{Email: at.Email}
-		storage.Get(acc)
+		ctx.storage.Get(acc)
 		at.Validate(acc)
 
 		// Revoke auth token by id
-		if res, err = request("POST", host+"/revoke/", url.Values{
-			"gorilla.csrf.Token": {getCsrfToken()},
+		if res, err = ctx.request("POST", ctx.host+"/revoke/", url.Values{
+			"gorilla.csrf.Token": {ctx.getCsrfToken()},
 			"id":                 {at.Id},
 		}.Encode(), ApiVersion); err != nil {
 			t.Fatal(err)
 		}
 		testResponse(t, res, http.StatusOK, "")
 
-		authToken = at
-		if res, err = request("GET", host+"/store/", "", ApiVersion); err != nil {
+		ctx.authToken = at
+		if res, err = ctx.request("GET", ctx.host+"/store/", "", ApiVersion); err != nil {
 			t.Fatal(err)
 		}
 		testError(t, res, &ExpiredAuthToken{})
@@ -719,8 +732,9 @@ func TestRevokeAuthToken(t *testing.T) {
 }
 
 func TestMethodNotAllowed(t *testing.T) {
+	ctx := newServerTestContext()
 	// Requests with unsupported HTTP methods should return with 405 - method not allowed
-	if res, err := request("POST", host+"/store/", "", ApiVersion); err != nil {
+	if res, err := ctx.request("POST", ctx.host+"/store/", "", ApiVersion); err != nil {
 		t.Fatal(err)
 	} else {
 		testError(t, res, &MethodNotAllowed{})
@@ -728,8 +742,9 @@ func TestMethodNotAllowed(t *testing.T) {
 }
 
 func TestUnsupportedEndpoint(t *testing.T) {
+	ctx := newServerTestContext()
 	// Requests to unsupported paths should return with 404 - not found
-	if res, err := request("GET", host+"/invalidpath", "", ApiVersion); err != nil {
+	if res, err := ctx.request("GET", ctx.host+"/invalidpath", "", ApiVersion); err != nil {
 		t.Fatal(err)
 	} else {
 		testError(t, res, &UnsupportedEndpoint{})
@@ -737,69 +752,72 @@ func TestUnsupportedEndpoint(t *testing.T) {
 }
 
 func TestOutdatedVersion(t *testing.T) {
-	resetAll()
+	ctx := newServerTestContext()
 
 	// The root path is a special case in that the only way to figure out if the client is using
 	// and older api version is if the Authorization header is using the 'ApiKey' authentication scheme
 	token, _ := token()
-	req, _ := http.NewRequest("GET", host+"/", nil)
+	req, _ := http.NewRequest("GET", ctx.host+"/", nil)
 	req.Header.Add("Accept", "application/json")
 	req.Header.Add("Authorization", fmt.Sprintf("ApiKey %s:%s", testEmail, token))
-	res, _ := client.Do(req)
+	res, _ := ctx.client.Do(req)
 	testError(t, res, &UnsupportedEndpoint{})
-	if sender.Recipient != testEmail {
-		t.Errorf("Expected outdated message to be sent to %s, instead got %s", testEmail, sender.Recipient)
+	if ctx.sender.Recipient != testEmail {
+		t.Errorf("Expected outdated message to be sent to %s, instead got %s", testEmail, ctx.sender.Recipient)
 	}
 
-	resetAll()
+	ctx.resetAll()
 
 	// When doing an auth request, the email form field should be used for sending the notification since
 	// the user is not authenticated
-	res, _ = request("POST", host+"/auth/", url.Values{
+	res, _ = ctx.request("POST", ctx.host+"/auth/", url.Values{
 		"email": {testEmail},
 	}.Encode(), 0)
 	testError(t, res, &UnsupportedApiVersion{0, ApiVersion})
-	if sender.Recipient != testEmail {
-		t.Errorf("Expected outdated message to be sent to %s, instead got %s", testEmail, sender.Recipient)
+	if ctx.sender.Recipient != testEmail {
+		t.Errorf("Expected outdated message to be sent to %s, instead got %s", testEmail, ctx.sender.Recipient)
 	}
 
-	resetAll()
+	ctx.resetAll()
 
-	loginApi(testEmail)
+	ctx.loginApi(testEmail)
 
 	// When doing an auth request, the email form field should be used for sending the notification since
 	// the user is not authenticated
-	res, _ = request("GET", host+"/store/", url.Values{
+	res, _ = ctx.request("GET", ctx.host+"/store/", url.Values{
 		"email": {testEmail},
 	}.Encode(), 0)
 	testError(t, res, &UnsupportedApiVersion{0, ApiVersion})
-	if sender.Recipient != testEmail {
-		t.Errorf("Expected outdated message to be sent to %s, instead got %s", testEmail, sender.Recipient)
+	if ctx.sender.Recipient != testEmail {
+		t.Errorf("Expected outdated message to be sent to %s, instead got %s", testEmail, ctx.sender.Recipient)
 	}
 }
 
 func TestPanicRecovery(t *testing.T) {
+	ctx := newServerTestContext()
 	// Make sure the server recovers properly from runtime panics in handler functions
-	server.mux.HandleFunc("/panic/", func(w http.ResponseWriter, r *http.Request) {
+	ctx.server.mux.HandleFunc("/panic/", func(w http.ResponseWriter, r *http.Request) {
 		panic("Everyone panic!!!")
 	})
-	res, _ := request("GET", host+"/panic/", "", 1)
+	res, _ := ctx.request("GET", ctx.host+"/panic/", "", 1)
 	testError(t, res, &ServerError{})
-	server.mux.HandleFunc("/panic2/", func(w http.ResponseWriter, r *http.Request) {
+	ctx.server.mux.HandleFunc("/panic2/", func(w http.ResponseWriter, r *http.Request) {
 		panic(errors.New("Everyone panic!!!"))
 	})
-	res, _ = request("GET", host+"/panic2/", "", 1)
+	res, _ = ctx.request("GET", ctx.host+"/panic2/", "", 1)
 	testError(t, res, &ServerError{})
 }
 
 func TestErrorFormat(t *testing.T) {
+	ctx := newServerTestContext()
+
 	e := &UnsupportedEndpoint{}
 	testErr := func(format string, expected []byte) {
-		req, _ := http.NewRequest("GET", fmt.Sprintf("%s/invalidpath/?v=%d", host, ApiVersion), nil)
+		req, _ := http.NewRequest("GET", fmt.Sprintf("%s/invalidpath/?v=%d", ctx.host, ApiVersion), nil)
 		if format != "" {
 			req.Header.Add("Accept", format)
 		}
-		res, _ := client.Do(req)
+		res, _ := ctx.client.Do(req)
 		defer res.Body.Close()
 		body, _ := ioutil.ReadAll(res.Body)
 		if !bytes.Equal(body, expected) {
@@ -818,13 +836,13 @@ func TestEmailRateLimit(t *testing.T) {
 		t.Skip("skipping test in short mode.")
 	}
 
-	resetRateLimiter := func() {
+	initRL := func(ctx *serverTestContext) {
 		rl, _ := NewEmailRateLimiter(RateQuota{PerSec(1), 1}, RateQuota{PerSec(1), 1})
-		server.emailRateLimiter = rl
+		ctx.server.emailRateLimiter = rl
 	}
 
-	request := func(ip string, email string) (*http.Response, error) {
-		req, err := http.NewRequest("POST", host+"/auth/", bytes.NewBuffer([]byte(url.Values{
+	request := func(ctx *serverTestContext, ip string, email string) (*http.Response, error) {
+		req, err := http.NewRequest("POST", ctx.host+"/auth/", bytes.NewBuffer([]byte(url.Values{
 			"email": {email},
 		}.Encode())))
 		if err != nil {
@@ -837,7 +855,7 @@ func TestEmailRateLimit(t *testing.T) {
 
 		w := httptest.NewRecorder()
 
-		server.mux.ServeHTTP(w, req)
+		ctx.server.mux.ServeHTTP(w, req)
 
 		res := w.Result()
 		res.Request = req
@@ -845,70 +863,79 @@ func TestEmailRateLimit(t *testing.T) {
 		return res, nil
 	}
 
-	var res *http.Response
-	var err error
-
 	t.Run("const_ip", func(t *testing.T) {
-		resetRateLimiter()
+		var res *http.Response
+		var err error
+
+		t.Parallel()
+
+		ctx := newServerTestContext()
+		initRL(ctx)
 
 		// One request per second with a burst of 1 additional request is allowed
-		if res, err = request("1.2.3.4", "email1"); err != nil {
+		if res, err = request(ctx, "1.2.3.4", "email1"); err != nil {
 			t.Fatal(err)
 		}
 		testResponse(t, res, http.StatusAccepted, "")
 
-		if res, err = request("1.2.3.4", "email2"); err != nil {
+		if res, err = request(ctx, "1.2.3.4", "email2"); err != nil {
 			t.Fatal(err)
 		}
 		testResponse(t, res, http.StatusAccepted, "")
 
-		if res, err = request("1.2.3.4", "email3"); err != nil {
+		if res, err = request(ctx, "1.2.3.4", "email3"); err != nil {
 			t.Fatal(err)
 		}
 		testError(t, res, &RateLimitExceeded{})
 
 		// Requests with different ip should still go through
-		if res, err = request("1.2.3.5", "email4"); err != nil {
+		if res, err = request(ctx, "1.2.3.5", "email4"); err != nil {
 			t.Fatal(err)
 		}
 		testResponse(t, res, http.StatusAccepted, "")
 
 		// After a second of wait, request should go through again
 		time.Sleep(time.Second)
-		if res, err = request("1.2.3.4", "email5"); err != nil {
+		if res, err = request(ctx, "1.2.3.4", "email5"); err != nil {
 			t.Fatal(err)
 		}
 		testResponse(t, res, http.StatusAccepted, "")
 	})
 
 	t.Run("const_email", func(t *testing.T) {
-		resetRateLimiter()
+		var res *http.Response
+		var err error
+
+		t.Parallel()
+
+		ctx := newServerTestContext()
+		initRL(ctx)
 
 		// One request per second with a burst of 1 additional request is allowed
-		if res, err = request("1.2.3.4", "email1"); err != nil {
+		if res, err = request(ctx, "1.2.3.4", "email1"); err != nil {
 			t.Fatal(err)
 		}
 		testResponse(t, res, http.StatusAccepted, "")
 
-		if res, err = request("1.2.3.5", "email1"); err != nil {
+		if res, err = request(ctx, "1.2.3.5", "email1"); err != nil {
 			t.Fatal(err)
 		}
 		testResponse(t, res, http.StatusAccepted, "")
 
-		if res, err = request("1.2.3.6", "email1"); err != nil {
+		if res, err = request(ctx, "1.2.3.6", "email1"); err != nil {
 			t.Fatal(err)
 		}
 		testError(t, res, &RateLimitExceeded{})
 
 		// Requests with different email should still go through
-		if res, err = request("1.2.3.7", "email2"); err != nil {
+		if res, err = request(ctx, "1.2.3.7", "email2"); err != nil {
 			t.Fatal(err)
 		}
 		testResponse(t, res, http.StatusAccepted, "")
 
 		// After a second of wait, request should go through again
 		time.Sleep(time.Second)
-		if res, err = request("1.2.3.8", "email1"); err != nil {
+		if res, err = request(ctx, "1.2.3.8", "email1"); err != nil {
 			t.Fatal(err)
 		}
 		testResponse(t, res, http.StatusAccepted, "")
