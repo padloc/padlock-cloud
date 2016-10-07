@@ -177,22 +177,22 @@ func (e *UnsupportedApiVersion) Message() string {
 	return fmt.Sprintf("The api version you are using (%d) is not supported. Please use version %d", e.found, e.expected)
 }
 
-type TooManyRequests struct {
+type RateLimitExceeded struct {
 }
 
-func (e *TooManyRequests) Code() string {
-	return "too_many_requests"
+func (e *RateLimitExceeded) Code() string {
+	return "rate_limit_exceeded"
 }
 
-func (e *TooManyRequests) Error() string {
+func (e *RateLimitExceeded) Error() string {
 	return fmt.Sprintf("%s", e.Code())
 }
 
-func (e *TooManyRequests) Status() int {
+func (e *RateLimitExceeded) Status() int {
 	return http.StatusTooManyRequests
 }
 
-func (e *TooManyRequests) Message() string {
+func (e *RateLimitExceeded) Message() string {
 	return http.StatusText(e.Status())
 }
 

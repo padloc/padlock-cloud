@@ -100,15 +100,16 @@ type ServerConfig struct {
 type Server struct {
 	*graceful.Server
 	*Log
-	mux       *http.ServeMux
-	Listener  net.Listener
-	Storage   Storage
-	Sender    Sender
-	Templates *Templates
-	Config    *ServerConfig
-	Secure    bool
-	secret    []byte
-	endpoints map[string]*Endpoint
+	mux              *http.ServeMux
+	Listener         net.Listener
+	Storage          Storage
+	Sender           Sender
+	Templates        *Templates
+	Config           *ServerConfig
+	Secure           bool
+	secret           []byte
+	endpoints        map[string]*Endpoint
+	emailRateLimiter *EmailRateLimiter
 }
 
 func (server *Server) BaseUrl(r *http.Request) string {
@@ -188,9 +189,7 @@ func (server *Server) CheckEndpointVersion(r *http.Request, v int) error {
 
 	version := versionFromRequest(r)
 	if version != v {
-		if err := server.SendDeprecatedVersionEmail(r); err != nil {
-			server.LogError(&ServerError{err}, r)
-		}
+		server.SendDeprecatedVersionEmail(r)
 		return &UnsupportedApiVersion{version, v}
 	}
 
@@ -332,12 +331,16 @@ func (server *Server) RequestAuthToken(w http.ResponseWriter, r *http.Request, a
 		return err
 	}
 
-	// Send email with activation link
-	go func() {
-		if err := server.Sender.Send(email, emailSubj, emailBody.String()); err != nil {
-			server.LogError(&ServerError{err}, r)
-		}
-	}()
+	if !server.emailRateLimiter.RateLimit(getIp(r), email) {
+		// Send email with activation link
+		go func() {
+			if err := server.Sender.Send(email, emailSubj, emailBody.String()); err != nil {
+				server.LogError(&ServerError{err}, r)
+			}
+		}()
+	} else {
+		return &RateLimitExceeded{}
+	}
 
 	server.Info.Printf("%s - auth_token:request - %s:%s:%s\n", formatRequest(r), email, tType, authRequest.AuthToken.Id)
 
@@ -526,12 +529,16 @@ func (server *Server) RequestDeleteStore(w http.ResponseWriter, r *http.Request,
 
 	body := buff.String()
 
-	// Send email with confirmation link
-	go func() {
-		if err := server.Sender.Send(acc.Email, "Padlock Cloud Delete Request", body); err != nil {
-			server.LogError(&ServerError{err}, r)
-		}
-	}()
+	if !server.emailRateLimiter.RateLimit(getIp(r), acc.Email) {
+		// Send email with activation link
+		go func() {
+			if err := server.Sender.Send(acc.Email, "Padlock Cloud Delete Request", body); err != nil {
+				server.LogError(&ServerError{err}, r)
+			}
+		}()
+	} else {
+		return &RateLimitExceeded{}
+	}
 
 	server.Info.Printf("%s - data_store:request_delete - %s", formatRequest(r), acc.Email)
 
@@ -815,7 +822,7 @@ func (server *Server) SendDeprecatedVersionEmail(r *http.Request) error {
 		email = r.PostFormValue("email")
 	}
 
-	if email != "" {
+	if email != "" && !server.emailRateLimiter.RateLimit(getIp(r), email) {
 		var buff bytes.Buffer
 		if err := server.Templates.DeprecatedVersionEmail.Execute(&buff, nil); err != nil {
 			return err
@@ -882,6 +889,15 @@ func (server *Server) Init() error {
 		return err
 	}
 
+	if rl, err := NewEmailRateLimiter(
+		RateQuota{PerMin(1), 5},
+		RateQuota{PerMin(1), 5},
+	); err != nil {
+		return err
+	} else {
+		server.emailRateLimiter = rl
+	}
+
 	return nil
 }
 
@@ -896,15 +912,6 @@ func (server *Server) Start() error {
 	defer server.CleanUp()
 
 	var handler http.Handler = server.mux
-
-	// Add rate limiting middleWare
-	handler = RateLimit(handler, map[Route]RateQuota{
-		Route{"POST", "/auth/"}:    RateQuota{PerMin(1), 5},
-		Route{"PUT", "/auth/"}:     RateQuota{PerMin(1), 5},
-		Route{"DELETE", "/store/"}: RateQuota{PerMin(1), 5},
-	}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		server.HandleError(&TooManyRequests{}, w, r)
-	}))
 
 	// Add CORS middleware
 	handler = Cors(handler)

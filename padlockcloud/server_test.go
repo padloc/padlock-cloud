@@ -51,6 +51,7 @@ func init() {
 	server = NewServer(logger, storage, sender, &ServerConfig{})
 	server.Templates = templates
 	server.Init()
+	server.emailRateLimiter = nil
 
 	testServer := httptest.NewServer(server.HandlePanic(server.mux))
 
@@ -810,4 +811,107 @@ func TestErrorFormat(t *testing.T) {
 	testErr("application/json", JsonifyErrorResponse(e))
 	testErr("text/html", []byte(fmt.Sprintf("<html>%s</html>", e.Message())))
 	testErr("", []byte(e.Message()))
+}
+
+func TestEmailRateLimit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode.")
+	}
+
+	resetRateLimiter := func() {
+		rl, _ := NewEmailRateLimiter(RateQuota{PerSec(1), 1}, RateQuota{PerSec(1), 1})
+		server.emailRateLimiter = rl
+	}
+
+	request := func(ip string, email string) (*http.Response, error) {
+		req, err := http.NewRequest("POST", host+"/auth/", bytes.NewBuffer([]byte(url.Values{
+			"email": {email},
+		}.Encode())))
+		if err != nil {
+			return nil, err
+		}
+
+		req.RemoteAddr = ip
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Add("Accept", "application/vnd.padlock;version=1")
+
+		w := httptest.NewRecorder()
+
+		server.mux.ServeHTTP(w, req)
+
+		res := w.Result()
+		res.Request = req
+
+		return res, nil
+	}
+
+	var res *http.Response
+	var err error
+
+	t.Run("const_ip", func(t *testing.T) {
+		resetRateLimiter()
+
+		// One request per second with a burst of 1 additional request is allowed
+		if res, err = request("1.2.3.4", "email1"); err != nil {
+			t.Fatal(err)
+		}
+		testResponse(t, res, http.StatusAccepted, "")
+
+		if res, err = request("1.2.3.4", "email2"); err != nil {
+			t.Fatal(err)
+		}
+		testResponse(t, res, http.StatusAccepted, "")
+
+		if res, err = request("1.2.3.4", "email3"); err != nil {
+			t.Fatal(err)
+		}
+		testError(t, res, &RateLimitExceeded{})
+
+		// Requests with different ip should still go through
+		if res, err = request("1.2.3.5", "email4"); err != nil {
+			t.Fatal(err)
+		}
+		testResponse(t, res, http.StatusAccepted, "")
+
+		// After a second of wait, request should go through again
+		time.Sleep(time.Second)
+		if res, err = request("1.2.3.4", "email5"); err != nil {
+			t.Fatal(err)
+		}
+		testResponse(t, res, http.StatusAccepted, "")
+	})
+
+	t.Run("const_email", func(t *testing.T) {
+		resetRateLimiter()
+
+		// One request per second with a burst of 1 additional request is allowed
+		if res, err = request("1.2.3.4", "email1"); err != nil {
+			t.Fatal(err)
+		}
+		testResponse(t, res, http.StatusAccepted, "")
+
+		if res, err = request("1.2.3.5", "email1"); err != nil {
+			t.Fatal(err)
+		}
+		testResponse(t, res, http.StatusAccepted, "")
+
+		if res, err = request("1.2.3.6", "email1"); err != nil {
+			t.Fatal(err)
+		}
+		testError(t, res, &RateLimitExceeded{})
+
+		// Requests with different email should still go through
+		if res, err = request("1.2.3.7", "email2"); err != nil {
+			t.Fatal(err)
+		}
+		testResponse(t, res, http.StatusAccepted, "")
+
+		// After a second of wait, request should go through again
+		time.Sleep(time.Second)
+		if res, err = request("1.2.3.8", "email1"); err != nil {
+			t.Fatal(err)
+		}
+		testResponse(t, res, http.StatusAccepted, "")
+	})
+
 }
