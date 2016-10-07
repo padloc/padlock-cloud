@@ -152,6 +152,7 @@ func (acc *Account) Deserialize(data []byte) error {
 
 // Implementation of the `Storable.Serialize` method
 func (acc *Account) Serialize() ([]byte, error) {
+	acc.RemoveOldAuthTokens()
 	return json.Marshal(acc)
 }
 
@@ -195,6 +196,19 @@ func (a *Account) RemoveAuthToken(t *AuthToken) {
 		s[len(s)-1] = nil
 		a.AuthTokens = s[:len(s)-1]
 	}
+}
+
+// Filters out auth tokens that have been expired for 7 days or more
+func (a *Account) RemoveOldAuthTokens() {
+	s := a.AuthTokens[:0]
+
+	for _, t := range a.AuthTokens {
+		if t.Expires.IsZero() || t.Expires.After(time.Now().Add(-7*24*time.Hour)) {
+			s = append(s, t)
+		}
+	}
+
+	a.AuthTokens = s
 }
 
 // AuthRequest represents an api key - activation token pair used to activate a given api key
