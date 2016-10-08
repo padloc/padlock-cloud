@@ -135,6 +135,8 @@ type Account struct {
 	// The email servers as a unique identifier and as a means for
 	// requesting/activating api keys
 	Email string
+	// Time the account was created
+	Created time.Time
 	// A set of api keys that can be used to access the data associated with this
 	// account
 	AuthTokens []*AuthToken
@@ -152,6 +154,9 @@ func (acc *Account) Deserialize(data []byte) error {
 
 // Implementation of the `Storable.Serialize` method
 func (acc *Account) Serialize() ([]byte, error) {
+	if acc.Created.IsZero() {
+		acc.Created = time.Now()
+	}
 	acc.RemoveOldAuthTokens()
 	return json.Marshal(acc)
 }
