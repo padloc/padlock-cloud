@@ -5,6 +5,7 @@ import "errors"
 import "encoding/json"
 import "path/filepath"
 import "github.com/syndtr/goleveldb/leveldb"
+import "github.com/syndtr/goleveldb/leveldb/iterator"
 
 // Error singletons
 var (
@@ -28,6 +29,11 @@ type Storable interface {
 	Deserialize([]byte) error
 }
 
+type StorageIterator interface {
+	Next() bool
+	Get(Storable) error
+}
+
 // Common interface for storage implementations
 type Storage interface {
 	// Prepares the database for use
@@ -41,7 +47,7 @@ type Storage interface {
 	// Removes a given `Storable` object from the store
 	Delete(Storable) error
 	// Lists all keys for a given `Storable` type
-	List(Storable) ([]string, error)
+	Iterator(Storable) (StorageIterator, error)
 }
 
 // Map of supported `Storable` implementations along with identifier strings that can be used for
@@ -50,6 +56,14 @@ var StorableTypes = map[reflect.Type]string{}
 
 func RegisterStorable(t Storable, loc string) {
 	StorableTypes[reflect.TypeOf(t).Elem()] = loc
+}
+
+type LevelDBIterator struct {
+	iterator.Iterator
+}
+
+func (iter *LevelDBIterator) Get(t Storable) error {
+	return t.Deserialize(iter.Value())
 }
 
 type LevelDBConfig struct {
@@ -172,21 +186,32 @@ func (s *LevelDBStorage) Delete(t Storable) error {
 	return db.Delete(t.Key(), nil)
 }
 
-func (s *LevelDBStorage) List(t Storable) ([]string, error) {
-	var keys []string
-
+func (s *LevelDBStorage) Iterator(t Storable) (StorageIterator, error) {
 	db, err := s.getDB(t)
 	if err != nil {
-		return keys, err
+		return nil, err
 	}
 
 	iter := db.NewIterator(nil, nil)
-	for iter.Next() {
-		keys = append(keys, string(iter.Key()))
-	}
-	iter.Release()
+	return &LevelDBIterator{iter}, nil
+}
 
-	return keys, nil
+type SliceIterator struct {
+	s [][]byte
+	i int
+}
+
+func (iter *SliceIterator) Next() bool {
+	if iter.i < len(iter.s)-1 {
+		iter.i = iter.i + 1
+		return true
+	}
+
+	return false
+}
+
+func (iter *SliceIterator) Get(t Storable) error {
+	return t.Deserialize(iter.s[iter.i])
 }
 
 // In-memory implemenation of the `Storage` interface Mainly used for testing
@@ -261,25 +286,26 @@ func (s *MemoryStorage) Delete(t Storable) error {
 	return nil
 }
 
-func (s *MemoryStorage) List(t Storable) ([]string, error) {
-	var l []string
-
+func (s *MemoryStorage) Iterator(t Storable) (StorageIterator, error) {
 	if s.store == nil {
-		return l, ErrStorageClosed
+		return nil, ErrStorageClosed
 	}
 
 	if t == nil {
-		return l, ErrUnregisteredStorable
+		return nil, ErrUnregisteredStorable
 	}
 
 	ts := s.store[reflect.TypeOf(t)]
 	if ts == nil {
-		return l, ErrUnregisteredStorable
+		return nil, ErrUnregisteredStorable
 	}
 
-	for key, _ := range ts {
-		l = append(l, key)
+	var sl [][]byte
+	for _, val := range ts {
+		sl = append(sl, val)
 	}
 
-	return l, nil
+	return &SliceIterator{
+		s: sl,
+	}, nil
 }

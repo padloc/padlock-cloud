@@ -3,7 +3,6 @@ package padlockcloud
 import "testing"
 import "io/ioutil"
 import "os"
-import "fmt"
 
 type testStrbl string
 
@@ -56,16 +55,6 @@ func TestLevelDBStorage(t *testing.T) {
 	storage.Open()
 	defer storage.Close()
 
-	// Haven't written anything to the storage yet, so `Storage.List()` should give us an empty slice
-	list, err := storage.List(&storable)
-	if err != nil {
-		t.Fatalf("Should return no error, got %v", err)
-	}
-	listStr := fmt.Sprintf("%s", list)
-	if listStr != "[]" {
-		t.Fatalf("Expected '%s', got '%s'", "[]", listStr)
-	}
-
 	// Still haven't written anything to storage, so trying to get a specific instace should give us
 	// ErrNotFound
 	if err := storage.Get(&storable); err != ErrNotFound {
@@ -85,16 +74,6 @@ func TestLevelDBStorage(t *testing.T) {
 	}
 	if storable2 != storable {
 		t.Fatalf("Expected '%s', got '%s'", storable, storable2)
-	}
-
-	// Now that we have a database entry we should have something in the list as well
-	list, err = storage.List(&storable)
-	if err != nil {
-		t.Fatalf("Should return no error, got %v", err)
-	}
-	listStr = fmt.Sprintf("%s", list)
-	if listStr != "[somekey]" {
-		t.Fatalf("Expected '%s', got '%s'", "[somekey]", listStr)
 	}
 
 	// Lets delete our one entry again. This should work without any incidents

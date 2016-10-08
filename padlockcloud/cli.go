@@ -67,21 +67,20 @@ func (cliApp *CliApp) ListAccounts(context *cli.Context) error {
 	}
 	defer cliApp.Storage.Close()
 
-	var acc *Account
-	accs, err := cliApp.Storage.List(acc)
+	acc := &Account{}
+	iter, err := cliApp.Storage.Iterator(acc)
 	if err != nil {
 		return err
 	}
+	defer iter.(*LevelDBIterator).Release()
 
-	if len(accs) == 0 {
-		fmt.Println("No existing accounts!")
-	} else {
-		output := ""
-		for _, email := range accs {
-			output = output + email + "\n"
-		}
-		fmt.Print(output)
+	output := ""
+	for iter.Next() {
+		iter.Get(acc)
+		output = output + acc.Email + "\n"
 	}
+	fmt.Print(output)
+
 	return nil
 }
 
