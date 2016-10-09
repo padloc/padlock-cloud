@@ -4,6 +4,7 @@ import "reflect"
 import "errors"
 import "encoding/json"
 import "path/filepath"
+import "time"
 import "github.com/syndtr/goleveldb/leveldb"
 import "github.com/syndtr/goleveldb/leveldb/iterator"
 
@@ -16,6 +17,10 @@ var (
 	// A query was attempted on a closed storage
 	ErrStorageClosed = errors.New("padlock: storage closed")
 )
+
+func typeFromStorable(t Storable) reflect.Type {
+	return reflect.TypeOf(t).Elem()
+}
 
 // Common interface for types that can be stored using the `Storage` interface.
 type Storable interface {
@@ -32,6 +37,7 @@ type Storable interface {
 type StorageIterator interface {
 	Next() bool
 	Get(Storable) error
+	Release()
 }
 
 // Common interface for storage implementations
@@ -40,6 +46,10 @@ type Storage interface {
 	Open() error
 	// Closes the database and performs cleanup actions
 	Close() error
+	// Returns readyness of the storage
+	Ready() bool
+	// Whether storage can store a certain storable
+	CanStore(t Storable) bool
 	// Populates a given `Storable` object with data retrieved from the store
 	Get(Storable) error
 	// Updates the store with the data from a given `Storable` object
@@ -55,7 +65,7 @@ type Storage interface {
 var StorableTypes = map[reflect.Type]string{}
 
 func RegisterStorable(t Storable, loc string) {
-	StorableTypes[reflect.TypeOf(t).Elem()] = loc
+	StorableTypes[typeFromStorable(t)] = loc
 }
 
 type LevelDBIterator struct {
@@ -109,9 +119,18 @@ func (s *LevelDBStorage) Close() error {
 	return nil
 }
 
+func (s *LevelDBStorage) Ready() bool {
+	return s.stores != nil
+}
+
+func (s *LevelDBStorage) CanStore(t Storable) bool {
+	_, err := s.getDB(t)
+	return err == nil
+}
+
 // Get `leveldb.DB` instance for a given type
 func (s *LevelDBStorage) getDB(t Storable) (*leveldb.DB, error) {
-	db := s.stores[reflect.TypeOf(t).Elem()]
+	db := s.stores[typeFromStorable(t)]
 
 	if db == nil {
 		return nil, ErrUnregisteredStorable
@@ -214,6 +233,10 @@ func (iter *SliceIterator) Get(t Storable) error {
 	return t.Deserialize(iter.s[iter.i])
 }
 
+func (iter *SliceIterator) Release() {
+	iter.s = nil
+}
+
 // In-memory implemenation of the `Storage` interface Mainly used for testing
 type MemoryStorage struct {
 	store map[reflect.Type](map[string][]byte)
@@ -286,6 +309,14 @@ func (s *MemoryStorage) Delete(t Storable) error {
 	return nil
 }
 
+func (s *MemoryStorage) Ready() bool {
+	return s.store != nil
+}
+
+func (s *MemoryStorage) CanStore(t Storable) bool {
+	return true
+}
+
 func (s *MemoryStorage) Iterator(t Storable) (StorageIterator, error) {
 	if s.store == nil {
 		return nil, ErrStorageClosed
@@ -307,5 +338,69 @@ func (s *MemoryStorage) Iterator(t Storable) (StorageIterator, error) {
 
 	return &SliceIterator{
 		s: sl,
+	}, nil
+}
+
+type StorageCleaner struct {
+	storage  Storage
+	storable Storable
+	cond     func(t Storable) bool
+	stop     chan bool
+	Log      *Log
+}
+
+func (cl *StorageCleaner) Start(interval time.Duration) {
+	cl.stop = make(chan bool)
+	go func() {
+		for {
+			select {
+			case <-cl.stop:
+				return
+			default:
+				cl.Clean()
+				time.Sleep(interval)
+			}
+		}
+	}()
+}
+
+func (cl *StorageCleaner) Stop() {
+	cl.stop <- true
+}
+
+func (cl *StorageCleaner) Clean() error {
+	iter, err := cl.storage.Iterator(cl.storable)
+	if err != nil {
+		return err
+	}
+	defer iter.Release()
+
+	n := 0
+	for iter.Next() {
+		iter.Get(cl.storable)
+		if cl.cond(cl.storable) {
+			cl.storage.Delete(cl.storable)
+			n = n + 1
+		}
+	}
+
+	if n > 0 && cl.Log != nil {
+		cl.Log.Info.Printf("Deleted %d entries of %T\n", n, cl.storable)
+	}
+
+	return nil
+}
+
+func NewStorageCleaner(s Storage, t Storable, cond func(t Storable) bool) (*StorageCleaner, error) {
+	if !s.Ready() {
+		return nil, ErrStorageClosed
+	}
+	if !s.CanStore(t) {
+		return nil, ErrUnregisteredStorable
+	}
+	return &StorageCleaner{
+		storage:  s,
+		storable: t,
+		cond:     cond,
 	}, nil
 }

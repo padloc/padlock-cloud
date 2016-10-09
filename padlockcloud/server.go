@@ -100,16 +100,17 @@ type ServerConfig struct {
 type Server struct {
 	*graceful.Server
 	*Log
-	mux              *http.ServeMux
-	Listener         net.Listener
-	Storage          Storage
-	Sender           Sender
-	Templates        *Templates
-	Config           *ServerConfig
-	Secure           bool
-	secret           []byte
-	endpoints        map[string]*Endpoint
-	emailRateLimiter *EmailRateLimiter
+	mux                *http.ServeMux
+	Listener           net.Listener
+	Storage            Storage
+	Sender             Sender
+	Templates          *Templates
+	Config             *ServerConfig
+	Secure             bool
+	secret             []byte
+	endpoints          map[string]*Endpoint
+	emailRateLimiter   *EmailRateLimiter
+	authRequestCleaner *StorageCleaner
 }
 
 func (server *Server) BaseUrl(r *http.Request) string {
@@ -898,10 +899,24 @@ func (server *Server) Init() error {
 		server.emailRateLimiter = rl
 	}
 
+	// Clean out auth request older than 24hrs once a day
+	if cl, err := NewStorageCleaner(server.Storage, &AuthRequest{}, func(t Storable) bool {
+		return t.(*AuthRequest).Created.Before(time.Now().Add(-24 * time.Hour))
+	}); err != nil {
+		return err
+	} else {
+		server.authRequestCleaner = cl
+		cl.Log = server.Log
+		cl.Start(24 * time.Hour)
+	}
+
 	return nil
 }
 
 func (server *Server) CleanUp() error {
+	if server.authRequestCleaner != nil {
+		server.authRequestCleaner.Stop()
+	}
 	return server.Storage.Close()
 }
 
