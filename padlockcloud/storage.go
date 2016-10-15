@@ -351,14 +351,15 @@ type StorageCleaner struct {
 
 func (cl *StorageCleaner) Start(interval time.Duration) {
 	cl.stop = make(chan bool)
+	ticker := time.NewTicker(interval)
 	go func() {
 		for {
 			select {
-			case <-cl.stop:
-				return
-			default:
+			case <-ticker.C:
 				cl.Clean()
-				time.Sleep(interval)
+			case <-cl.stop:
+				ticker.Stop()
+				return
 			}
 		}
 	}()
