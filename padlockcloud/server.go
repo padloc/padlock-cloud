@@ -5,7 +5,6 @@ import "net/http/httputil"
 import "fmt"
 import "encoding/base64"
 import "regexp"
-import "errors"
 import "bytes"
 import "time"
 import "strconv"
@@ -96,14 +95,13 @@ type ServerConfig struct {
 type Server struct {
 	*graceful.Server
 	*Log
-	mux                *http.ServeMux
 	Storage            Storage
 	Sender             Sender
 	Templates          *Templates
 	Config             *ServerConfig
 	Secure             bool
+	Endpoints          map[string]*Endpoint
 	secret             []byte
-	endpoints          map[string]*Endpoint
 	emailRateLimiter   *EmailRateLimiter
 	authRequestCleaner *StorageCleaner
 }
@@ -216,7 +214,7 @@ func (server *Server) HandleError(e error, w http.ResponseWriter, r *http.Reques
 }
 
 // Registers handlers mapped by method for a given path
-func (server *Server) Route(mux *http.ServeMux, endpoint *Endpoint) {
+func (server *Server) WrapEndpoint(endpoint *Endpoint) Handler {
 	var h Handler = endpoint
 
 	// If auth type is "web", wrap handler in csrf middleware
@@ -233,47 +231,45 @@ func (server *Server) Route(mux *http.ServeMux, endpoint *Endpoint) {
 	// Check if Method is supported
 	h = (&CheckMethod{endpoint.Handlers}).Wrap(h)
 
+	h = (&HandlePanic{}).Wrap(h)
+
 	h = (&HandleError{server}).Wrap(h)
 
-	server.mux.Handle(endpoint.Path, HttpHandler(h))
-
-	server.endpoints[endpoint.Path] = endpoint
+	return h
 }
 
 // Registeres http handlers for various routes
-func (server *Server) SetupRoutes() {
-	mux := server.mux
+func (server *Server) InitEndpoints() {
+	if server.Endpoints == nil {
+		server.Endpoints = make(map[string]*Endpoint)
+	}
 
 	// Endpoint for logging in / requesting api keys
-	server.Route(mux, &Endpoint{
-		Path: "/auth/",
+	server.Endpoints["/auth/"] = &Endpoint{
 		Handlers: map[string]Handler{
 			"PUT":  &RequestAuthToken{server},
 			"POST": &RequestAuthToken{server},
 		},
 		Version: ApiVersion,
-	})
+	}
 
 	// Endpoint for logging in / requesting api keys
-	server.Route(mux, &Endpoint{
-		Path: "/login/",
+	server.Endpoints["/login/"] = &Endpoint{
 		Handlers: map[string]Handler{
 			"GET":  &LoginPage{server},
 			"POST": &RequestAuthToken{server},
 		},
-	})
+	}
 
 	// Endpoint for activating auth tokens
-	server.Route(mux, &Endpoint{
-		Path: "/activate/",
+	server.Endpoints["/activate/"] = &Endpoint{
 		Handlers: map[string]Handler{
 			"GET": &ActivateAuthToken{server},
 		},
-	})
+	}
 
 	// Endpoint for reading / writing and deleting a store
-	server.Route(mux, &Endpoint{
-		Path: "/store/",
+	server.Endpoints["/store/"] = &Endpoint{
 		Handlers: map[string]Handler{
 			"GET":    &ReadStore{server},
 			"HEAD":   &ReadStore{server},
@@ -282,50 +278,53 @@ func (server *Server) SetupRoutes() {
 		},
 		Version:  ApiVersion,
 		AuthType: "api",
-	})
+	}
 
-	server.Route(mux, &Endpoint{
-		Path: "/deletestore/",
+	server.Endpoints["/deletestore/"] = &Endpoint{
 		Handlers: map[string]Handler{
 			"GET":  &DeleteStore{server},
 			"POST": &DeleteStore{server},
 		},
 		AuthType: "web",
-	})
+	}
 
 	// Dashboard for managing data, auth tokens etc.
-	server.Route(mux, &Endpoint{
-		Path: "/dashboard/",
+	server.Endpoints["/dashboard/"] = &Endpoint{
 		Handlers: map[string]Handler{
 			"GET": &Dashboard{server},
 		},
 		AuthType: "web",
-	})
+	}
 
 	// Endpoint for logging out
-	server.Route(mux, &Endpoint{
-		Path: "/logout/",
+	server.Endpoints["/logout/"] = &Endpoint{
 		Handlers: map[string]Handler{
 			"GET": &Logout{server},
 		},
 		AuthType: "web",
-	})
+	}
 
 	// Endpoint for revoking auth tokens
-	server.Route(mux, &Endpoint{
-		Path: "/revoke/",
+	server.Endpoints["/revoke/"] = &Endpoint{
 		Handlers: map[string]Handler{
 			"POST": &Revoke{server},
 		},
 		AuthType: "web",
-	})
+	}
+}
+func (server *Server) InitHandler() {
+	mux := http.NewServeMux()
+
+	for key, endpoint := range server.Endpoints {
+		mux.Handle(key, HttpHandler(server.WrapEndpoint(endpoint)))
+	}
 
 	// Serve up static files
 	fs := http.FileServer(http.Dir(filepath.Join(server.Config.AssetsPath, "static")))
-	server.mux.Handle("/static/", http.StripPrefix("/static/", fs))
+	mux.Handle("/static/", http.StripPrefix("/static/", fs))
 
 	// Fall through route
-	server.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// Older clients might still be using the deprecated 'ApiKey email:token' authentication
 		// scheme. Send users of these clients a deprecated-version-email
 		if strings.Contains(r.Header.Get("Authorization"), "ApiKey") {
@@ -341,6 +340,8 @@ func (server *Server) SetupRoutes() {
 			server.HandleError(&UnsupportedEndpoint{r.URL.Path}, w, r)
 		}
 	})
+
+	server.Handler = mux
 }
 
 func (server *Server) SendDeprecatedVersionEmail(r *http.Request) error {
@@ -379,22 +380,6 @@ func (server *Server) SendDeprecatedVersionEmail(r *http.Request) error {
 	return nil
 }
 
-func (server *Server) HandlePanic(h http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer func() {
-			if e := recover(); e != nil {
-				err, ok := e.(error)
-				if !ok {
-					err = errors.New(fmt.Sprintf("%v", e))
-				}
-				server.HandleError(err, w, r)
-			}
-		}()
-
-		h.ServeHTTP(w, r)
-	})
-}
-
 // Initialize Server with dependencies and configuration
 func (server *Server) Init() error {
 	var err error
@@ -413,7 +398,7 @@ func (server *Server) Init() error {
 		}
 	}
 
-	server.SetupRoutes()
+	server.InitEndpoints()
 
 	if server.Templates == nil {
 		// Load templates from assets directory
@@ -459,24 +444,9 @@ func (server *Server) CleanUp() error {
 }
 
 func (server *Server) Start() error {
-	if err := server.Init(); err != nil {
-		return err
-	}
 	defer server.CleanUp()
 
-	var handler http.Handler = server.mux
-
-	// Add CORS middleware
-	handler = Cors(handler)
-
-	// Add panic recovery
-	handler = server.HandlePanic(handler)
-
-	return server.ServeHandler(handler)
-}
-
-func (server *Server) ServeHandler(handler http.Handler) error {
-	server.Handler = handler
+	server.InitHandler()
 
 	port := server.Config.Port
 	tlsCert := server.Config.TLSCert
@@ -502,12 +472,10 @@ func NewServer(log *Log, storage Storage, sender Sender, config *ServerConfig) *
 			Server:  &http.Server{},
 			Timeout: time.Second * 10,
 		},
-		Log:       log,
-		mux:       http.NewServeMux(),
-		Storage:   storage,
-		Sender:    sender,
-		Config:    config,
-		endpoints: make(map[string]*Endpoint),
+		Log:     log,
+		Storage: storage,
+		Sender:  sender,
+		Config:  config,
 	}
 
 	// Hook up logger for http.Server

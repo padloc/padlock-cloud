@@ -34,12 +34,13 @@ func init() {
 }
 
 type serverTestContext struct {
-	server    *Server
-	client    *http.Client
-	storage   *MemoryStorage
-	sender    *RecordSender
-	host      string
-	authToken *AuthToken
+	server            *Server
+	client            *http.Client
+	storage           *MemoryStorage
+	sender            *RecordSender
+	host              string
+	authToken         *AuthToken
+	capturedAuthToken *AuthToken
 }
 
 func (ctx *serverTestContext) resetStorage() {
@@ -56,6 +57,7 @@ func (ctx *serverTestContext) resetAll() {
 	ctx.resetStorage()
 	ctx.sender.Reset()
 	ctx.authToken = nil
+	ctx.capturedAuthToken = nil
 }
 
 func (ctx *serverTestContext) followRedirects(follow bool) {
@@ -203,6 +205,13 @@ func (ctx *serverTestContext) extractActivationLink() (string, error) {
 }
 
 func newServerTestContext() *serverTestContext {
+	var context *serverTestContext
+
+	var captureAuthToken = HandlerFunc(func(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
+		context.capturedAuthToken = auth
+		return nil
+	})
+
 	storage := &MemoryStorage{}
 	sender := &RecordSender{}
 	templates := &Templates{
@@ -222,19 +231,8 @@ func newServerTestContext() *serverTestContext {
 	server := NewServer(logger, storage, sender, &ServerConfig{})
 	server.Templates = templates
 	server.Init()
-	server.emailRateLimiter = nil
 
-	testServer := httptest.NewServer(server.HandlePanic(server.mux))
-
-	host := testServer.URL
-
-	jar, _ := cookiejar.New(nil)
-	client := &http.Client{
-		Jar: jar,
-	}
-
-	server.Route(server.mux, &Endpoint{
-		Path:     "/csrftest/",
+	server.Endpoints["/csrftest/"] = &Endpoint{
 		AuthType: "web",
 		Handlers: map[string]Handler{
 			"GET": HandlerFunc(func(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
@@ -245,15 +243,62 @@ func newServerTestContext() *serverTestContext {
 				return nil
 			}),
 		},
-	})
+	}
 
-	return &serverTestContext{
+	server.Endpoints["/authtestnoauth/"] = &Endpoint{
+		AuthType: "",
+		Handlers: map[string]Handler{
+			"GET": captureAuthToken,
+		},
+	}
+
+	server.Endpoints["/authtestapi/"] = &Endpoint{
+		AuthType: "api",
+		Handlers: map[string]Handler{
+			"GET": captureAuthToken,
+		},
+	}
+
+	server.Endpoints["/authtestweb/"] = &Endpoint{
+		AuthType: "web",
+		Handlers: map[string]Handler{
+			"GET": captureAuthToken,
+		},
+	}
+
+	server.Endpoints["/panic/"] = &Endpoint{
+		Handlers: map[string]Handler{
+			"GET": HandlerFunc(func(w http.ResponseWriter, r *http.Request, a *AuthToken) error {
+				panic("Everyone panic!!!")
+			}),
+			"POST": HandlerFunc(func(w http.ResponseWriter, r *http.Request, a *AuthToken) error {
+				panic(errors.New("Everyone panic!!!"))
+			}),
+		},
+	}
+
+	server.InitHandler()
+
+	server.emailRateLimiter = nil
+
+	testServer := httptest.NewServer(server.Handler)
+
+	host := testServer.URL
+
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{
+		Jar: jar,
+	}
+
+	context = &serverTestContext{
 		server:  server,
 		client:  client,
 		storage: storage,
 		sender:  sender,
 		host:    host,
 	}
+
+	return context
 }
 
 // Helper function for checking a `http.Response` object for an expected status code and response body
@@ -300,38 +345,9 @@ func testError(t *testing.T, res *http.Response, e ErrorResponse) {
 func TestAuthentication(t *testing.T) {
 	var res *http.Response
 	var err error
-	var at *AuthToken
-	var captureAuthToken = func(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
-		at = auth
-		return nil
-	}
 
 	ctx := newServerTestContext()
 	ctx.followRedirects(false)
-
-	ctx.server.Route(ctx.server.mux, &Endpoint{
-		Path:     "/authtestnoauth/",
-		AuthType: "",
-		Handlers: map[string]Handler{
-			"GET": HandlerFunc(captureAuthToken),
-		},
-	})
-
-	ctx.server.Route(ctx.server.mux, &Endpoint{
-		Path:     "/authtestapi/",
-		AuthType: "api",
-		Handlers: map[string]Handler{
-			"GET": HandlerFunc(captureAuthToken),
-		},
-	})
-
-	ctx.server.Route(ctx.server.mux, &Endpoint{
-		Path:     "/authtestweb/",
-		AuthType: "web",
-		Handlers: map[string]Handler{
-			"GET": HandlerFunc(captureAuthToken),
-		},
-	})
 
 	t.Run("account not found", func(t *testing.T) {
 		ctx.resetAll()
@@ -348,7 +364,6 @@ func TestAuthentication(t *testing.T) {
 
 	t.Run("unauthenticated", func(t *testing.T) {
 		ctx.resetAll()
-		at = nil
 
 		// Request should go through for route not requiring authentication
 		if res, err = ctx.request("GET", ctx.host+"/authtestnoauth/", "", 0); err != nil {
@@ -356,7 +371,7 @@ func TestAuthentication(t *testing.T) {
 		}
 		testResponse(t, res, http.StatusOK, "")
 
-		if at != nil {
+		if ctx.capturedAuthToken != nil {
 			t.Error("Auth token to be passed to handler even though none was expected")
 		}
 
@@ -378,7 +393,6 @@ func TestAuthentication(t *testing.T) {
 
 	t.Run("type=api", func(t *testing.T) {
 		ctx.resetAll()
-		at = nil
 
 		if _, err = ctx.loginApi(testEmail); err != nil {
 			t.Fatal(err)
@@ -392,6 +406,7 @@ func TestAuthentication(t *testing.T) {
 
 		// Even though no authentication is required for this route, an auth token should still be
 		// passed to the handler
+		at := ctx.capturedAuthToken
 		if at == nil {
 			t.Error("No auth token passed to handler")
 		} else {
@@ -419,7 +434,6 @@ func TestAuthentication(t *testing.T) {
 
 	t.Run("type=web", func(t *testing.T) {
 		ctx.resetAll()
-		at = nil
 
 		if res, err = ctx.loginWeb(testEmail, ""); err != nil {
 			t.Fatal(err)
@@ -437,6 +451,7 @@ func TestAuthentication(t *testing.T) {
 		}
 		testResponse(t, res, http.StatusOK, "")
 
+		at := ctx.capturedAuthToken
 		// Even though no authentication is required for this route, an auth token should still be
 		// passed to the handler
 		if at == nil {
@@ -795,16 +810,9 @@ func TestOutdatedVersion(t *testing.T) {
 
 func TestPanicRecovery(t *testing.T) {
 	ctx := newServerTestContext()
-	// Make sure the server recovers properly from runtime panics in handler functions
-	ctx.server.mux.HandleFunc("/panic/", func(w http.ResponseWriter, r *http.Request) {
-		panic("Everyone panic!!!")
-	})
-	res, _ := ctx.request("GET", ctx.host+"/panic/", "", 1)
+	res, _ := ctx.request("GET", ctx.host+"/panic/", "", 0)
 	testError(t, res, &ServerError{})
-	ctx.server.mux.HandleFunc("/panic2/", func(w http.ResponseWriter, r *http.Request) {
-		panic(errors.New("Everyone panic!!!"))
-	})
-	res, _ = ctx.request("GET", ctx.host+"/panic2/", "", 1)
+	res, _ = ctx.request("POST", ctx.host+"/panic/", "", 0)
 	testError(t, res, &ServerError{})
 }
 
@@ -855,7 +863,7 @@ func TestEmailRateLimit(t *testing.T) {
 
 		w := httptest.NewRecorder()
 
-		ctx.server.mux.ServeHTTP(w, req)
+		ctx.server.Handler.ServeHTTP(w, req)
 
 		res := w.Result()
 		res.Request = req

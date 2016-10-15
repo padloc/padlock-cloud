@@ -58,6 +58,10 @@ func (cliApp *CliApp) RunServer(context *cli.Context) error {
 			"spoofing attacks! See the README for details.\n\n")
 	}
 
+	if err := cliApp.Server.Init(); err != nil {
+		return err
+	}
+
 	return cliApp.Server.Start()
 }
 

@@ -39,7 +39,7 @@ func (h *RequestAuthToken) Handle(w http.ResponseWriter, r *http.Request, auth *
 		return &BadRequest{"unsupported auth token type"}
 	}
 
-	if redirect != "" && h.endpoints[redirect] == nil {
+	if redirect != "" && h.Endpoints[redirect] == nil {
 		return &BadRequest{"invalid redirect path"}
 	}
 
@@ -447,7 +447,6 @@ func (f HandlerFunc) Handle(w http.ResponseWriter, r *http.Request, a *AuthToken
 }
 
 type Endpoint struct {
-	Path     string
 	Handlers map[string]Handler
 	Version  int
 	AuthType string

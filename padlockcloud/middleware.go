@@ -1,6 +1,8 @@
 package padlockcloud
 
 import "net/http"
+import "errors"
+import "fmt"
 import "github.com/gorilla/csrf"
 
 type MiddleWare interface {
@@ -112,5 +114,30 @@ func (m *CheckMethod) Wrap(h Handler) Handler {
 		}
 
 		return h.Handle(w, r, auth)
+	})
+}
+
+type HandlePanic struct {
+}
+
+func (m *HandlePanic) Wrap(h Handler) Handler {
+	return HandlerFunc(func(w http.ResponseWriter, r *http.Request, a *AuthToken) error {
+		var err error
+
+		func() {
+			defer func() {
+				if e := recover(); e != nil {
+					var ok bool
+					err, ok = e.(error)
+					if !ok {
+						err = errors.New(fmt.Sprintf("%v", e))
+					}
+				}
+			}()
+
+			err = h.Handle(w, r, a)
+		}()
+
+		return err
 	})
 }
