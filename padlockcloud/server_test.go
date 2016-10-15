@@ -704,7 +704,7 @@ func TestRevokeAuthToken(t *testing.T) {
 		if res, err = ctx.request("POST", ctx.host+"/revoke/", url.Values{
 			"gorilla.csrf.Token": {ctx.getCsrfToken()},
 			"token":              {at.Token},
-		}.Encode(), ApiVersion); err != nil {
+		}.Encode(), 0); err != nil {
 			t.Fatal(err)
 		}
 		testResponse(t, res, http.StatusOK, "")
@@ -733,7 +733,7 @@ func TestRevokeAuthToken(t *testing.T) {
 		if res, err = ctx.request("POST", ctx.host+"/revoke/", url.Values{
 			"gorilla.csrf.Token": {ctx.getCsrfToken()},
 			"id":                 {at.Id},
-		}.Encode(), ApiVersion); err != nil {
+		}.Encode(), 0); err != nil {
 			t.Fatal(err)
 		}
 		testResponse(t, res, http.StatusOK, "")
@@ -776,7 +776,7 @@ func TestOutdatedVersion(t *testing.T) {
 	req.Header.Add("Accept", "application/json")
 	req.Header.Add("Authorization", fmt.Sprintf("ApiKey %s:%s", testEmail, token))
 	res, _ := ctx.client.Do(req)
-	testError(t, res, &UnsupportedEndpoint{})
+	testError(t, res, &UnsupportedApiVersion{})
 	if ctx.sender.Recipient != testEmail {
 		t.Errorf("Expected outdated message to be sent to %s, instead got %s", testEmail, ctx.sender.Recipient)
 	}

@@ -13,6 +13,13 @@ type Handler interface {
 	Handle(http.ResponseWriter, *http.Request, *AuthToken) error
 }
 
+type VoidHandler struct {
+}
+
+func (h *VoidHandler) Handle(w http.ResponseWriter, r *http.Request, a *AuthToken) error {
+	return nil
+}
+
 type RequestAuthToken struct {
 	*Server
 }
@@ -437,6 +444,34 @@ func (h *Revoke) Handle(w http.ResponseWriter, r *http.Request, auth *AuthToken)
 
 	http.Redirect(w, r, "/dashboard/", http.StatusFound)
 
+	return nil
+}
+
+type StaticHandler struct {
+	fh http.Handler
+}
+
+func (h *StaticHandler) Handle(w http.ResponseWriter, r *http.Request, a *AuthToken) error {
+	h.fh.ServeHTTP(w, r)
+	return nil
+}
+
+func NewStaticHandler(dir string, path string) *StaticHandler {
+	// Serve up static files
+	fh := http.StripPrefix(path, http.FileServer(http.Dir(dir)))
+	return &StaticHandler{fh}
+}
+
+type RootHandler struct {
+	*Server
+}
+
+func (h *RootHandler) Handle(w http.ResponseWriter, r *http.Request, a *AuthToken) error {
+	if r.URL.Path != "/" {
+		return &UnsupportedEndpoint{r.URL.Path}
+	}
+
+	http.Redirect(w, r, "/dashboard/", http.StatusFound)
 	return nil
 }
 

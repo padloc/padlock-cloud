@@ -6,10 +6,10 @@ import "fmt"
 import "encoding/base64"
 import "regexp"
 import "bytes"
+import "strings"
 import "time"
 import "strconv"
 import "path/filepath"
-import "strings"
 import "gopkg.in/tylerb/graceful.v1"
 
 const (
@@ -311,6 +311,26 @@ func (server *Server) InitEndpoints() {
 		},
 		AuthType: "web",
 	}
+
+	server.Endpoints["/static/"] = &Endpoint{
+		Handlers: map[string]Handler{
+			"GET": NewStaticHandler(
+				filepath.Join(server.Config.AssetsPath, "static"),
+				"/static/",
+			),
+		},
+	}
+
+	server.Endpoints["/"] = &Endpoint{
+		Handlers: map[string]Handler{
+			"GET": &RootHandler{server},
+			// Older clients might still be using this method. Add a void handler so
+			// the request gets past the allowed method check and the request can be handled
+			// as a UnsupportedApiVersion error
+			"PUT": &VoidHandler{},
+		},
+	}
+
 }
 func (server *Server) InitHandler() {
 	mux := http.NewServeMux()
@@ -318,28 +338,6 @@ func (server *Server) InitHandler() {
 	for key, endpoint := range server.Endpoints {
 		mux.Handle(key, HttpHandler(server.WrapEndpoint(endpoint)))
 	}
-
-	// Serve up static files
-	fs := http.FileServer(http.Dir(filepath.Join(server.Config.AssetsPath, "static")))
-	mux.Handle("/static/", http.StripPrefix("/static/", fs))
-
-	// Fall through route
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		// Older clients might still be using the deprecated 'ApiKey email:token' authentication
-		// scheme. Send users of these clients a deprecated-version-email
-		if strings.Contains(r.Header.Get("Authorization"), "ApiKey") {
-			server.SendDeprecatedVersionEmail(r)
-		}
-
-		accept := r.Header.Get("Accept")
-		// If accept header contains "html", assume that the request comes from a browser and redirect
-		// to dashboard
-		if r.URL.Path == "/" && strings.Contains(accept, "html") {
-			http.Redirect(w, r, "/dashboard/", http.StatusFound)
-		} else {
-			server.HandleError(&UnsupportedEndpoint{r.URL.Path}, w, r)
-		}
-	})
 
 	server.Handler = mux
 }

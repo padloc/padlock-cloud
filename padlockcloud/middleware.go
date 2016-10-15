@@ -3,6 +3,7 @@ package padlockcloud
 import "net/http"
 import "errors"
 import "fmt"
+import "strings"
 import "github.com/gorilla/csrf"
 
 type MiddleWare interface {
@@ -16,9 +17,14 @@ type CheckEndpointVersion struct {
 
 func (m *CheckEndpointVersion) Wrap(h Handler) Handler {
 	return HandlerFunc(func(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
-		if ver := versionFromRequest(r); m.Version != 0 && ver != m.Version {
+		// Contains deprecated 'ApiKey email:token' authentication scheme
+		depAuth := strings.Contains(r.Header.Get("Authorization"), "ApiKey")
+
+		version := versionFromRequest(r)
+
+		if depAuth || m.Version != 0 && version != m.Version {
 			m.SendDeprecatedVersionEmail(r)
-			return &UnsupportedApiVersion{ver, m.Version}
+			return &UnsupportedApiVersion{version, m.Version}
 		}
 
 		return h.Handle(w, r, auth)
