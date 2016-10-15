@@ -29,7 +29,7 @@ const (
 const ReceiptTypeItunes = "ios-appstore"
 
 type ItunesInterface interface {
-	ValidateReceipt(string) (*ItunesSubscription, error)
+	ValidateReceipt(string) (*ItunesPlan, error)
 }
 
 type ItunesConfig struct {
@@ -41,17 +41,7 @@ type ItunesServer struct {
 	Config *ItunesConfig
 }
 
-type ItunesSubscription struct {
-	Receipt string
-	Expires time.Time
-	Status  int
-}
-
-func (s *ItunesSubscription) Active() bool {
-	return s.Expires.After(time.Now())
-}
-
-func parseItunesResult(data []byte) (*ItunesSubscription, error) {
+func parseItunesResult(data []byte) (*ItunesPlan, error) {
 	result := &struct {
 		Status            int `json:"status"`
 		LatestReceiptInfo struct {
@@ -82,14 +72,14 @@ func parseItunesResult(data []byte) (*ItunesSubscription, error) {
 
 	expires := time.Unix(0, int64(expiresInt)*1000000)
 
-	return &ItunesSubscription{
+	return &ItunesPlan{
 		result.LatestReceipt,
 		expires,
 		result.Status,
 	}, nil
 }
 
-func (itunes *ItunesServer) ValidateReceipt(receipt string) (*ItunesSubscription, error) {
+func (itunes *ItunesServer) ValidateReceipt(receipt string) (*ItunesPlan, error) {
 	fmt.Printf("validating receipt %s, environment: %s", receipt, itunes.Config.Environment)
 	body, err := json.Marshal(map[string]string{
 		"receipt-data": receipt,
