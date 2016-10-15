@@ -233,17 +233,17 @@ func newServerTestContext() *serverTestContext {
 		Jar: jar,
 	}
 
-	server.Route(&Endpoint{
+	server.Route(server.mux, &Endpoint{
 		Path:     "/csrftest/",
 		AuthType: "web",
-		Handlers: MethodFuncs{
-			"GET": func(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
+		Handlers: map[string]Handler{
+			"GET": HandlerFunc(func(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
 				w.Write([]byte(csrf.Token(r)))
 				return nil
-			},
-			"POST": func(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
+			}),
+			"POST": HandlerFunc(func(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
 				return nil
-			},
+			}),
 		},
 	})
 
@@ -309,27 +309,27 @@ func TestAuthentication(t *testing.T) {
 	ctx := newServerTestContext()
 	ctx.followRedirects(false)
 
-	ctx.server.Route(&Endpoint{
+	ctx.server.Route(ctx.server.mux, &Endpoint{
 		Path:     "/authtestnoauth/",
 		AuthType: "",
-		Handlers: MethodFuncs{
-			"GET": captureAuthToken,
+		Handlers: map[string]Handler{
+			"GET": HandlerFunc(captureAuthToken),
 		},
 	})
 
-	ctx.server.Route(&Endpoint{
+	ctx.server.Route(ctx.server.mux, &Endpoint{
 		Path:     "/authtestapi/",
 		AuthType: "api",
-		Handlers: MethodFuncs{
-			"GET": captureAuthToken,
+		Handlers: map[string]Handler{
+			"GET": HandlerFunc(captureAuthToken),
 		},
 	})
 
-	ctx.server.Route(&Endpoint{
+	ctx.server.Route(ctx.server.mux, &Endpoint{
 		Path:     "/authtestweb/",
 		AuthType: "web",
-		Handlers: MethodFuncs{
-			"GET": captureAuthToken,
+		Handlers: map[string]Handler{
+			"GET": HandlerFunc(captureAuthToken),
 		},
 	})
 
