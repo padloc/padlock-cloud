@@ -12,16 +12,19 @@ func TestLoadTemplates(t *testing.T) {
 	}
 	defer os.RemoveAll(dir)
 
-	if _, err := LoadTemplates(dir); err == nil {
+	templates := &Templates{}
+
+	if err := LoadTemplates(templates, dir); err == nil {
 		t.Fatal("Trying to load templates from empty or unexisting directory should return an error")
 	}
 
-	templates, err := LoadTemplates(filepath.Join(DefaultAssetsPath, "templates"))
-	if err != nil {
+	if err := LoadTemplates(templates, filepath.Join(DefaultAssetsPath, "templates")); err != nil {
 		t.Fatalf("Loading templates from default dir should work without errors, got %v", err)
 	}
 
-	if templates.ActivateAuthTokenEmail == nil ||
+	if templates.BasePage == nil ||
+		templates.BaseEmail == nil ||
+		templates.ActivateAuthTokenEmail == nil ||
 		templates.ActivateAuthTokenSuccess == nil ||
 		templates.DeprecatedVersionEmail == nil ||
 		templates.ErrorPage == nil ||

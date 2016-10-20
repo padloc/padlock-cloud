@@ -2,8 +2,7 @@ package padlockcloud
 
 import "testing"
 import "fmt"
-import "text/template"
-import htmlTemplate "html/template"
+import "html/template"
 import "net/http"
 import "net/http/cookiejar"
 import "net/http/httptest"
@@ -215,13 +214,15 @@ func newServerTestContext() *serverTestContext {
 	storage := &MemoryStorage{}
 	sender := &RecordSender{}
 	templates := &Templates{
+		template.New(""),
+		template.New(""),
 		template.Must(template.New("").Parse("{{ .token.Email }}, {{ .activation_link }}")),
-		htmlTemplate.Must(htmlTemplate.New("").Parse("{{ .token.Email }}")),
+		template.Must(template.New("").Parse("{{ .token.Email }}")),
 		template.Must(template.New("").Parse("")),
-		htmlTemplate.Must(htmlTemplate.New("").Parse("<html>{{ .message }}</html>")),
-		htmlTemplate.Must(htmlTemplate.New("").Parse("login,{{ .email }},{{ .submitted }}")),
-		htmlTemplate.Must(htmlTemplate.New("").Parse("dashboard")),
-		htmlTemplate.Must(htmlTemplate.New("").Parse("deletestore")),
+		template.Must(template.New("").Parse("<html>{{ .message }}</html>")),
+		template.Must(template.New("").Parse("login,{{ .email }},{{ .submitted }}")),
+		template.Must(template.New("").Parse("dashboard")),
+		template.Must(template.New("").Parse("deletestore")),
 	}
 
 	logger := &Log{Config: &LogConfig{}}

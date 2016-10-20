@@ -6,6 +6,9 @@ import "fmt"
 import "strings"
 import "github.com/gorilla/csrf"
 
+var CSRFTemplateTag = csrf.TemplateTag
+var CSRFTemplateField = csrf.TemplateField
+
 type MiddleWare interface {
 	Wrap(Handler) Handler
 }

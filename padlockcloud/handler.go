@@ -7,7 +7,6 @@ import "encoding/json"
 import "errors"
 import "bytes"
 import "time"
-import "github.com/gorilla/csrf"
 
 type Handler interface {
 	Handle(http.ResponseWriter, *http.Request, *AuthToken) error
@@ -145,12 +144,11 @@ type ActivateAuthToken struct {
 	*Server
 }
 
-// Hander function for activating a given api key
-func (h *ActivateAuthToken) Handle(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
+func (h *ActivateAuthToken) GetAuthRequest(r *http.Request) (*AuthRequest, error) {
 	token := r.URL.Query().Get("t")
 
 	if token == "" {
-		return &BadRequest{"no activation token provided"}
+		return nil, &BadRequest{"no activation token provided"}
 	}
 
 	// Let's check if an unactivate api key exists for this token. If not,
@@ -158,16 +156,20 @@ func (h *ActivateAuthToken) Handle(w http.ResponseWriter, r *http.Request, auth 
 	authRequest := &AuthRequest{Token: token}
 	if err := h.Storage.Get(authRequest); err != nil {
 		if err == ErrNotFound {
-			return &BadRequest{"invalid activation token"}
+			return nil, &BadRequest{"invalid activation token"}
 		} else {
-			return err
+			return nil, err
 		}
 	}
 
-	authToken := authRequest.AuthToken
+	return authRequest, nil
+}
+
+func (h *ActivateAuthToken) Activate(authRequest *AuthRequest) error {
+	at := authRequest.AuthToken
 
 	// Create account instance with the given email address.
-	acc := &Account{Email: authToken.Email}
+	acc := &Account{Email: at.Email}
 
 	// Fetch existing account data. It's fine if no existing data is found. In that case we'll create
 	// a new entry in the database
@@ -176,7 +178,7 @@ func (h *ActivateAuthToken) Handle(w http.ResponseWriter, r *http.Request, auth 
 	}
 
 	// Add the new key to the account
-	acc.AddAuthToken(authToken)
+	acc.AddAuthToken(at)
 
 	// Save the changes
 	if err := h.Storage.Put(acc); err != nil {
@@ -188,12 +190,17 @@ func (h *ActivateAuthToken) Handle(w http.ResponseWriter, r *http.Request, auth 
 		return err
 	}
 
-	redirect := authRequest.Redirect
+	return nil
+}
 
-	if authToken.Type == "web" {
+func (h *ActivateAuthToken) Success(w http.ResponseWriter, r *http.Request, authRequest *AuthRequest) error {
+	redirect := authRequest.Redirect
+	at := authRequest.AuthToken
+
+	if at.Type == "web" {
 		http.SetCookie(w, &http.Cookie{
 			Name:     "auth",
-			Value:    authToken.String(),
+			Value:    at.String(),
 			HttpOnly: true,
 			Path:     "/",
 			Secure:   h.Secure,
@@ -209,16 +216,30 @@ func (h *ActivateAuthToken) Handle(w http.ResponseWriter, r *http.Request, auth 
 	} else {
 		var b bytes.Buffer
 		if err := h.Templates.ActivateAuthTokenSuccess.Execute(&b, map[string]interface{}{
-			"token": authToken,
+			"token": at,
 		}); err != nil {
 			return err
 		}
 		b.WriteTo(w)
 	}
 
-	h.Info.Printf("%s - auth_token:activate - %s:%s:%s\n", formatRequest(r), acc.Email, authToken.Type, authToken.Id)
+	h.Info.Printf("%s - auth_token:activate - %s:%s:%s\n", formatRequest(r), at.Email, at.Type, at.Id)
 
 	return nil
+}
+
+// Hander function for activating a given api key
+func (h *ActivateAuthToken) Handle(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
+	authRequest, err := h.GetAuthRequest(r)
+	if err != nil {
+		return err
+	}
+
+	if err := h.Activate(authRequest); err != nil {
+		return err
+	}
+
+	return h.Success(w, r, authRequest)
 }
 
 type ReadStore struct {
@@ -296,9 +317,9 @@ func (h *DeleteStore) Handle(w http.ResponseWriter, r *http.Request, auth *AuthT
 
 	var b bytes.Buffer
 	if err := h.Templates.DeleteStore.Execute(&b, map[string]interface{}{
-		"account":        acc,
-		"deleted":        deleted,
-		csrf.TemplateTag: csrf.TemplateField(r),
+		"account":       acc,
+		"deleted":       deleted,
+		CSRFTemplateTag: CSRFTemplateField(r),
 	}); err != nil {
 		return err
 	}
@@ -383,8 +404,8 @@ func (h *Dashboard) Handle(w http.ResponseWriter, r *http.Request, auth *AuthTok
 
 	var b bytes.Buffer
 	if err := h.Templates.Dashboard.Execute(&b, map[string]interface{}{
-		"account":        acc,
-		csrf.TemplateTag: csrf.TemplateField(r),
+		"account":       acc,
+		CSRFTemplateTag: CSRFTemplateField(r),
 	}); err != nil {
 		return err
 	}

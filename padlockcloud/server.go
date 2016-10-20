@@ -378,7 +378,6 @@ func (server *Server) SendDeprecatedVersionEmail(r *http.Request) error {
 	return nil
 }
 
-// Initialize Server with dependencies and configuration
 func (server *Server) Init() error {
 	var err error
 
@@ -399,9 +398,9 @@ func (server *Server) Init() error {
 	server.InitEndpoints()
 
 	if server.Templates == nil {
+		server.Templates = &Templates{}
 		// Load templates from assets directory
-		server.Templates, err = LoadTemplates(filepath.Join(server.Config.AssetsPath, "templates"))
-		if err != nil {
+		if err := LoadTemplates(server.Templates, filepath.Join(server.Config.AssetsPath, "templates")); err != nil {
 			return err
 		}
 	}

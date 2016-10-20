@@ -1,13 +1,17 @@
 {{ define "css" }}
     <link href="/static/css/dashboard.css" rel="stylesheet" type="text/css">
 {{ end }}
-{{ define "main" }}
+
+{{ define "dashboard-manage-account" }}
 <section>
     <h2>Manage Account</h2>
     <p>
         <a href="/deletestore/">Reset Data</a>
     </p>
 </section>
+{{ end }}
+
+{{ define "dashboard-manage-devices" }}
 <section>
     <h2>Paired Devices</h2>
     <ul class="paired-devices">
@@ -46,4 +50,11 @@
         {{ end }}
     </ul>
 </section>
+{{ end }}
+
+{{ define "main" }}
+
+{{ template "dashboard-manage-account" . }}
+{{ template "dashboard-manage-devices" . }}
+
 {{ end }}
