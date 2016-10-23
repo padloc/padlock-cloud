@@ -25,7 +25,6 @@ func TestLoadTemplates(t *testing.T) {
 	if templates.BasePage == nil ||
 		templates.BaseEmail == nil ||
 		templates.ActivateAuthTokenEmail == nil ||
-		templates.ActivateAuthTokenSuccess == nil ||
 		templates.DeprecatedVersionEmail == nil ||
 		templates.ErrorPage == nil ||
 		templates.LoginPage == nil ||

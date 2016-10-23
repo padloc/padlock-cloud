@@ -10,8 +10,6 @@ type Templates struct {
 	BaseEmail *t.Template
 	// Email template for api key activation email
 	ActivateAuthTokenEmail *t.Template
-	// Template for success page for activating an auth token
-	ActivateAuthTokenSuccess *t.Template
 	// Email template for clients using an outdated api version
 	DeprecatedVersionEmail *t.Template
 	ErrorPage              *t.Template
@@ -43,16 +41,10 @@ func LoadTemplates(tt *Templates, p string) error {
 	if tt.BasePage, err = t.ParseFiles(fp.Join(p, "page/base.html")); err != nil {
 		return err
 	}
-	if tt.ActivateAuthTokenSuccess, err = ExtendTemplate(tt.BasePage, fp.Join(p, "page/activate-auth-token-success.html")); err != nil {
-		return err
-	}
 	if tt.ActivateAuthTokenEmail, err = ExtendTemplate(tt.BaseEmail, fp.Join(p, "email/activate-auth-token.txt")); err != nil {
 		return err
 	}
 	if tt.DeprecatedVersionEmail, err = ExtendTemplate(tt.BaseEmail, fp.Join(p, "email/deprecated-version.txt")); err != nil {
-		return err
-	}
-	if tt.ActivateAuthTokenSuccess, err = ExtendTemplate(tt.BasePage, fp.Join(p, "page/activate-auth-token-success.html")); err != nil {
 		return err
 	}
 	if tt.ErrorPage, err = ExtendTemplate(tt.BasePage, fp.Join(p, "page/error.html")); err != nil {

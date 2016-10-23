@@ -122,13 +122,7 @@ func (ctx *serverTestContext) loginApi(email string) (*http.Response, error) {
 		return res, err
 	}
 
-	// 'visit' activation link
-	if res, err = ctx.request("GET", link, "", 0); err != nil {
-		return res, err
-	}
-
-	_, err = validateResponse(res, http.StatusOK, fmt.Sprintf("^%s$", testEmail))
-	return res, err
+	return ctx.request("GET", link, "", 0)
 }
 
 func (ctx *serverTestContext) loginWeb(email string, redirect string) (*http.Response, error) {
@@ -217,7 +211,6 @@ func newServerTestContext() *serverTestContext {
 		template.New(""),
 		template.New(""),
 		template.Must(template.New("").Parse("{{ .token.Email }}, {{ .activation_link }}")),
-		template.Must(template.New("").Parse("{{ .token.Email }}")),
 		template.Must(template.New("").Parse("")),
 		template.Must(template.New("").Parse("<html>{{ .message }}</html>")),
 		template.Must(template.New("").Parse("login,{{ .email }},{{ .submitted }}")),

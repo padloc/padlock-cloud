@@ -159,6 +159,12 @@ header .inner, main {
     font-weight: bold;
 }
 
+.note {
+    background: rgba(89, 198, 255, 0.1);
+    padding: 20px;
+    border: solid 1px #59c6ff;
+}
+
 @media (max-width: 500px) {
     header .home .type {
         display: none;

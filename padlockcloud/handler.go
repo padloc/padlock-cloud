@@ -193,35 +193,44 @@ func (h *ActivateAuthToken) Activate(authRequest *AuthRequest) error {
 	return nil
 }
 
+func (h *ActivateAuthToken) SetAuthCookie(w http.ResponseWriter, at *AuthToken) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "auth",
+		Value:    at.String(),
+		HttpOnly: true,
+		Path:     "/",
+		Secure:   h.Secure,
+	})
+}
+
 func (h *ActivateAuthToken) Success(w http.ResponseWriter, r *http.Request, authRequest *AuthRequest) error {
 	redirect := authRequest.Redirect
 	at := authRequest.AuthToken
 
 	if at.Type == "web" {
-		http.SetCookie(w, &http.Cookie{
-			Name:     "auth",
-			Value:    at.String(),
-			HttpOnly: true,
-			Path:     "/",
-			Secure:   h.Secure,
-		})
-
-		if redirect == "" {
-			redirect = "/dashboard/"
-		}
+		h.SetAuthCookie(w, at)
 	}
 
-	if redirect != "" {
-		http.Redirect(w, r, redirect, http.StatusFound)
-	} else {
-		var b bytes.Buffer
-		if err := h.Templates.ActivateAuthTokenSuccess.Execute(&b, map[string]interface{}{
-			"token": at,
-		}); err != nil {
+	if redirect == "" {
+		redirect = "/dashboard/"
+	}
+
+	if at.Type == "api" {
+		// If auth type is "api" also log them in so they can be redirected to dashboard
+		login, err := NewAuthRequest(at.Email, "web")
+		if err != nil {
 			return err
 		}
-		b.WriteTo(w)
+
+		if err := h.Activate(login); err != nil {
+			return err
+		}
+
+		h.SetAuthCookie(w, login.AuthToken)
+		redirect = redirect + fmt.Sprintf("?paired=%s", at.Id)
 	}
+
+	http.Redirect(w, r, redirect, http.StatusFound)
 
 	h.Info.Printf("%s - auth_token:activate - %s:%s:%s\n", formatRequest(r), at.Email, at.Type, at.Id)
 
@@ -405,6 +414,7 @@ func (h *Dashboard) Handle(w http.ResponseWriter, r *http.Request, auth *AuthTok
 	var b bytes.Buffer
 	if err := h.Templates.Dashboard.Execute(&b, map[string]interface{}{
 		"account":       acc,
+		"paired":        r.URL.Query()["paired"],
 		CSRFTemplateTag: CSRFTemplateField(r),
 	}); err != nil {
 		return err
