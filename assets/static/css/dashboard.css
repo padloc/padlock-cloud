@@ -5,13 +5,6 @@ ul.paired-devices li {
     font-size: 90%;
 }
 
-button {
-    background: none;
-    color: #59c6ff;
-    padding: 0;
-    margin: 5px 0 0 2px;
-}
-
 .expired {
     opacity: 0.5;
 }

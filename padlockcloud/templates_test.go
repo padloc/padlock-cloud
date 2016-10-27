@@ -28,8 +28,7 @@ func TestLoadTemplates(t *testing.T) {
 		templates.DeprecatedVersionEmail == nil ||
 		templates.ErrorPage == nil ||
 		templates.LoginPage == nil ||
-		templates.Dashboard == nil ||
-		templates.DeleteStore == nil {
+		templates.Dashboard == nil {
 		t.Fatal("All templates should be initialized and not nil")
 	}
 }

@@ -282,7 +282,6 @@ func (server *Server) InitEndpoints() {
 
 	server.Endpoints["/deletestore/"] = &Endpoint{
 		Handlers: map[string]Handler{
-			"GET":  &DeleteStore{server},
 			"POST": &DeleteStore{server},
 		},
 		AuthType: "web",

@@ -15,7 +15,6 @@ type Templates struct {
 	ErrorPage              *t.Template
 	LoginPage              *t.Template
 	Dashboard              *t.Template
-	DeleteStore            *t.Template
 }
 
 func ExtendTemplate(base *t.Template, path string) (*t.Template, error) {
@@ -54,9 +53,6 @@ func LoadTemplates(tt *Templates, p string) error {
 		return err
 	}
 	if tt.Dashboard, err = ExtendTemplate(tt.BasePage, fp.Join(p, "page/dashboard.html")); err != nil {
-		return err
-	}
-	if tt.DeleteStore, err = ExtendTemplate(tt.BasePage, fp.Join(p, "page/delete-store.html")); err != nil {
 		return err
 	}
 

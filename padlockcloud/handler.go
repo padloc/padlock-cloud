@@ -315,25 +315,11 @@ type DeleteStore struct {
 func (h *DeleteStore) Handle(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
 	acc := auth.Account()
 
-	deleted := false
-
-	if r.Method == "POST" {
-		if err := h.Storage.Delete(&DataStore{Account: acc}); err != nil {
-			return err
-		}
-		deleted = true
-	}
-
-	var b bytes.Buffer
-	if err := h.Templates.DeleteStore.Execute(&b, map[string]interface{}{
-		"account":       acc,
-		"deleted":       deleted,
-		CSRFTemplateTag: CSRFTemplateField(r),
-	}); err != nil {
+	if err := h.Storage.Delete(&DataStore{Account: acc}); err != nil {
 		return err
 	}
 
-	b.WriteTo(w)
+	http.Redirect(w, r, "/dashboard/?datareset=1", http.StatusFound)
 	return nil
 }
 
@@ -352,7 +338,7 @@ func (h *RequestDeleteStore) Handle(w http.ResponseWriter, r *http.Request, auth
 	}
 
 	// After logging in, redirect to delete store page
-	authRequest.Redirect = "/deletestore/"
+	authRequest.Redirect = "/dashboard/?action=resetdata"
 
 	// Save authrequest
 	if err := h.Storage.Put(authRequest); err != nil {
@@ -414,7 +400,9 @@ func (h *Dashboard) Handle(w http.ResponseWriter, r *http.Request, auth *AuthTok
 	var b bytes.Buffer
 	if err := h.Templates.Dashboard.Execute(&b, map[string]interface{}{
 		"account":       acc,
-		"paired":        r.URL.Query()["paired"],
+		"paired":        r.URL.Query().Get("paired"),
+		"datareset":     r.URL.Query().Get("datareset"),
+		"action":        r.URL.Query().Get("action"),
 		CSRFTemplateTag: CSRFTemplateField(r),
 	}); err != nil {
 		return err

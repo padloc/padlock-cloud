@@ -39,6 +39,13 @@ button {
     text-overflow: ellipsis;
 }
 
+button.light {
+    background: none;
+    color: #59c6ff;
+    padding: 0;
+    margin: 5px 0 0 2px;
+}
+
 *:focus {
     outline: none;
 }

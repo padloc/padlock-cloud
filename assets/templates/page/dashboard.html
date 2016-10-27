@@ -5,9 +5,23 @@
 {{ define "dashboard-manage-account" }}
 <section>
     <h2>Manage Account</h2>
-    <p>
-        <a href="/deletestore/">Reset Data</a>
+    {{ if eq .action "resetdata" }}
+    <p class="note">
+        Are you sure you want to delete all your data on Padlock Cloud?
+        <strong>This action can not be undone!</strong>
+        (Data stored locally on your devices will not be affected)
     </p>
+    <form action="/deletestore/" method="POST">
+        {{ .csrfField }}
+        <button>Reset Data</button>
+    </form>
+    {{ else if .datareset }}
+    <p class="note">
+        Your data has been reset successfully!
+    </p>
+    {{ else }}
+        <a href=".?action=resetdata">Reset Data</a>
+    {{ end }}
 </section>
 {{ end }}
 
@@ -44,7 +58,7 @@
             <form action="/revoke/" method="POST">
                 <input name="id" type="hidden" value="{{ .Id }}">
                 {{ $csrfField }}
-                <button>Revoke</button>
+                <button class="light">Revoke</button>
             </form>
             {{ end }}
         </li>
