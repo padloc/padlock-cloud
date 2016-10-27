@@ -216,6 +216,16 @@ func (a *Account) RemoveOldAuthTokens() {
 	a.AuthTokens = s
 }
 
+func (a *Account) AuthTokensByType(typ string) []*AuthToken {
+	var tokens []*AuthToken
+	for _, t := range a.AuthTokens {
+		if t != nil && t.Type == typ {
+			tokens = append(tokens, t)
+		}
+	}
+	return tokens
+}
+
 // AuthRequest represents an api key - activation token pair used to activate a given api key
 // `AuthRequest.Token` is used to activate the AuthToken through a separate channel (e.g. email)
 type AuthRequest struct {

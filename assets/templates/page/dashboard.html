@@ -33,9 +33,8 @@
     {{ end }}
     <ul class="paired-devices">
         {{ $csrfField := .csrfField }}
-        {{ range .account.AuthTokens }}
-        {{ if . }}
-        {{ if eq .Type "api" }}
+        {{ with .account.AuthTokensByType "api" }}
+        {{ range . }}
         <li{{ if .Expired }} class="expired"{{ end }}>
             {{ if .Expired }}
             <div class="expired-label">Expired / Revoked</div>
@@ -63,7 +62,11 @@
             {{ end }}
         </li>
         {{ end }}
-        {{ end }}
+        {{ else }}
+        <p>
+            You don't have any connected devices yet.<br>
+            <a href="https://padlock.io">Download the app to get started!</a>
+        </p>
         {{ end }}
     </ul>
 </section>
