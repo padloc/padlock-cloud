@@ -482,12 +482,12 @@ func TestAuthentication(t *testing.T) {
 		}
 
 		// Redirect to other supported endpoints is also allowed
-		if res, err = ctx.loginWeb(testEmail, "/authtestweb/"); err != nil {
+		if res, err = ctx.loginWeb(testEmail, "/authtestweb/?query"); err != nil {
 			t.Fatal(err)
 		}
 		testResponse(t, res, http.StatusFound, "")
-		if l := res.Header.Get("Location"); l != "/authtestweb/" {
-			t.Errorf("Expected redirect to %s, got %s", "/authtestweb/", res.Header.Get("Location"))
+		if l := res.Header.Get("Location"); l != "/authtestweb/?query" {
+			t.Errorf("Expected redirect to %s, got %s", "/authtestweb/?query", res.Header.Get("Location"))
 		}
 
 		// Using an external url or any unsupported endpoint should be treated as a bad request

@@ -1,12 +1,15 @@
 package padlockcloud
 
-import "net/http"
-import "io/ioutil"
-import "fmt"
-import "encoding/json"
-import "errors"
-import "bytes"
-import "time"
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io/ioutil"
+	"net/http"
+	"net/url"
+	"time"
+)
 
 type Handler interface {
 	Handle(http.ResponseWriter, *http.Request, *AuthToken) error
@@ -45,8 +48,10 @@ func (h *RequestAuthToken) Handle(w http.ResponseWriter, r *http.Request, auth *
 		return &BadRequest{"unsupported auth token type"}
 	}
 
-	if redirect != "" && h.Endpoints[redirect] == nil {
-		return &BadRequest{"invalid redirect path"}
+	if redirect != "" {
+		if url, err := url.Parse(redirect); err != nil || h.Endpoints[url.Path] == nil {
+			return &BadRequest{"invalid redirect path"}
+		}
 	}
 
 	// If the client does not explicitly state that the server should create a new account for this email
