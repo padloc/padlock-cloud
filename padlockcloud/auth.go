@@ -208,7 +208,12 @@ func (a *Account) RemoveOldAuthTokens() {
 	s := a.AuthTokens[:0]
 
 	for _, t := range a.AuthTokens {
-		if t.Expires.IsZero() || t.Expires.After(time.Now().Add(-7*24*time.Hour)) {
+		var maxAge time.Duration = 0
+		// Keep expired api tokens around for a while longer
+		if t.Type == "api" {
+			maxAge = 7 * 24 * time.Hour
+		}
+		if t.Expires.IsZero() || t.Expires.After(time.Now().Add(-maxAge)) {
 			s = append(s, t)
 		}
 	}
