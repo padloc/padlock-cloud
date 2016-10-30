@@ -300,6 +300,12 @@ func NewCliApp() *CliApp {
 					EnvVar:      "PC_BASE_URL",
 					Destination: &config.Server.BaseUrl,
 				},
+				cli.BoolFlag{
+					Name:        "cors",
+					Usage:       "Enable Cross-Origin Resource Sharing",
+					EnvVar:      "PC_CORS",
+					Destination: &config.Server.Cors,
+				},
 			},
 			Action: cliApp.RunServer,
 		},

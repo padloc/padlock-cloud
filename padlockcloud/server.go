@@ -88,6 +88,8 @@ type ServerConfig struct {
 	BaseUrl string `yaml:"base_url"`
 	// Secret used for authenticating cookies
 	Secret string `yaml:"secret"`
+	// Enable Cross-Origin Resource Sharing
+	Cors bool `yaml:"cors"`
 }
 
 // The Server type holds all the contextual data and logic used for running a Padlock Cloud instances
@@ -340,7 +342,11 @@ func (server *Server) InitHandler() {
 		mux.Handle(key, HttpHandler(server.WrapEndpoint(endpoint)))
 	}
 
-	server.Handler = mux
+	if server.Config.Cors {
+		server.Handler = Cors(mux)
+	} else {
+		server.Handler = mux
+	}
 }
 
 func (server *Server) SendDeprecatedVersionEmail(r *http.Request) error {
