@@ -2,6 +2,15 @@
     <link href="/static/css/dashboard.css" rel="stylesheet" type="text/css">
 {{ end }}
 
+{{ define "dashboard-notice" }}
+    {{ with .paired }}
+    <p class="note">Device paired successfully!</p>
+    {{ end }}
+    {{ with .revoked }}
+    <p class="note">Device access revoced successfully!</p>
+    {{ end }}
+{{ end }}
+
 {{ define "dashboard-manage-account" }}
 <section>
     <h2>Manage Account</h2>
@@ -28,9 +37,6 @@
 {{ define "dashboard-manage-devices" }}
 <section>
     <h2>Paired Devices</h2>
-    {{ with .paired }}
-    <p class="note">Device paired successfully!</p>
-    {{ end }}
     <ul class="paired-devices">
         {{ $csrfField := .csrfField }}
         {{ with .account.AuthTokensByType "api" }}
@@ -74,6 +80,9 @@
 
 {{ define "main" }}
 
+<section>
+{{ template "dashboard-notice" . }}
+</section>
 {{ template "dashboard-manage-account" . }}
 {{ template "dashboard-manage-devices" . }}
 

@@ -406,6 +406,7 @@ func (h *Dashboard) Handle(w http.ResponseWriter, r *http.Request, auth *AuthTok
 	if err := h.Templates.Dashboard.Execute(&b, map[string]interface{}{
 		"account":       acc,
 		"paired":        r.URL.Query().Get("paired"),
+		"revoked":       r.URL.Query().Get("revoked"),
 		"datareset":     r.URL.Query().Get("datareset"),
 		"action":        r.URL.Query().Get("action"),
 		CSRFTemplateTag: CSRFTemplateField(r),
@@ -466,7 +467,7 @@ func (h *Revoke) Handle(w http.ResponseWriter, r *http.Request, auth *AuthToken)
 		return err
 	}
 
-	http.Redirect(w, r, "/dashboard/", http.StatusFound)
+	http.Redirect(w, r, fmt.Sprintf("/dashboard/?revoked=%s", t.Id), http.StatusFound)
 
 	return nil
 }
