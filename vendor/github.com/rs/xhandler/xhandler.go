@@ -9,7 +9,7 @@
 //
 // You may create net/context aware middlewares pretty much the same way as
 // you would do with http.Handler.
-package xhandler
+package xhandler // import "github.com/rs/xhandler"
 
 import (
 	"net/http"
