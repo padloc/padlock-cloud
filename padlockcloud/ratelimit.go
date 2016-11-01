@@ -18,7 +18,7 @@ type Route struct {
 type VaryBy struct{}
 
 func (v *VaryBy) Key(r *http.Request) string {
-	return formatRequest(r)
+	return FormatRequest(r)
 }
 
 // Limits the rate of a given handler to a certain number of requests per minute

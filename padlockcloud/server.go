@@ -43,7 +43,7 @@ func getIp(r *http.Request) string {
 	return ip
 }
 
-func formatRequest(r *http.Request) string {
+func FormatRequest(r *http.Request) string {
 	return fmt.Sprintf("%s %s %s", getIp(r), r.Method, r.URL)
 }
 
@@ -174,9 +174,9 @@ func (server *Server) Authenticate(r *http.Request) (*AuthToken, error) {
 func (server *Server) LogError(err error, r *http.Request) {
 	switch e := err.(type) {
 	case *ServerError, *InvalidCsrfToken:
-		server.Error.Printf("%s - %v\nRequest:\n%s\n", formatRequest(r), e, formatRequestVerbose(r))
+		server.Error.Printf("%s - %v\nRequest:\n%s\n", FormatRequest(r), e, formatRequestVerbose(r))
 	default:
-		server.Info.Printf("%s - %v", formatRequest(r), e)
+		server.Info.Printf("%s - %v", FormatRequest(r), e)
 	}
 }
 

@@ -137,7 +137,7 @@ func (h *RequestAuthToken) Handle(w http.ResponseWriter, r *http.Request, auth *
 		return &RateLimitExceeded{}
 	}
 
-	h.Info.Printf("%s - auth_token:request - %s:%s:%s\n", formatRequest(r), email, tType, authRequest.AuthToken.Id)
+	h.Info.Printf("%s - auth_token:request - %s:%s:%s\n", FormatRequest(r), email, tType, authRequest.AuthToken.Id)
 
 	w.WriteHeader(http.StatusAccepted)
 	w.Write(response)
@@ -237,7 +237,7 @@ func (h *ActivateAuthToken) Success(w http.ResponseWriter, r *http.Request, auth
 
 	http.Redirect(w, r, redirect, http.StatusFound)
 
-	h.Info.Printf("%s - auth_token:activate - %s:%s:%s\n", formatRequest(r), at.Email, at.Type, at.Id)
+	h.Info.Printf("%s - auth_token:activate - %s:%s:%s\n", FormatRequest(r), at.Email, at.Type, at.Id)
 
 	return nil
 }
@@ -272,7 +272,7 @@ func (h *ReadStore) Handle(w http.ResponseWriter, r *http.Request, auth *AuthTok
 		return err
 	}
 
-	h.Info.Printf("%s - data_store:read - %s\n", formatRequest(r), acc.Email)
+	h.Info.Printf("%s - data_store:read - %s\n", FormatRequest(r), acc.Email)
 
 	// Return raw data in response body
 	w.Write(data.Content)
@@ -305,7 +305,7 @@ func (h *WriteStore) Handle(w http.ResponseWriter, r *http.Request, auth *AuthTo
 		return err
 	}
 
-	h.Info.Printf("%s - data_store:write - %s\n", formatRequest(r), acc.Email)
+	h.Info.Printf("%s - data_store:write - %s\n", FormatRequest(r), acc.Email)
 
 	// Return with NO CONTENT status code
 	w.WriteHeader(http.StatusNoContent)
@@ -372,7 +372,7 @@ func (h *RequestDeleteStore) Handle(w http.ResponseWriter, r *http.Request, auth
 		return &RateLimitExceeded{}
 	}
 
-	h.Info.Printf("%s - data_store:request_delete - %s", formatRequest(r), acc.Email)
+	h.Info.Printf("%s - data_store:request_delete - %s", FormatRequest(r), acc.Email)
 
 	// Send ACCEPTED status code
 	w.WriteHeader(http.StatusAccepted)
