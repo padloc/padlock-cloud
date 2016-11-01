@@ -1,0 +1,169 @@
+{
+	"comment": "",
+	"ignore": "test",
+	"package": [
+		{
+			"checksumSHA1": "OzddgAh0uv3ukKhWW7QFUEFbxow=",
+			"path": "github.com/golang/snappy",
+			"revision": "723cc1e459b8eea2dea4583200fd60757d40097a",
+			"revisionTime": "2015-07-30T03:18:44Z"
+		},
+		{
+			"checksumSHA1": "g/V4qrXjUGG9B+e3hB+4NAYJ5Gs=",
+			"path": "github.com/gorilla/context",
+			"revision": "08b5f424b9271eedf6f9f0ce86cb9396ed337a42",
+			"revisionTime": "2016-08-17T18:46:32Z"
+		},
+		{
+			"checksumSHA1": "WM2EnJ5GBsHmT8W/fgvlZmfbEDw=",
+			"path": "github.com/gorilla/csrf",
+			"revision": "a8abe8abf66db8f4a9750d76ba95b4021a354757",
+			"revisionTime": "2016-09-01T05:58:16Z"
+		},
+		{
+			"checksumSHA1": "nZoAsxDHOA8fLilA56HKvezLqNU=",
+			"path": "github.com/gorilla/securecookie",
+			"revision": "c13558c2b1c44da35e0eb043053609a5ba3a1f19",
+			"revisionTime": "2016-08-16T22:23:38Z"
+		},
+		{
+			"checksumSHA1": "d9PxF1XQGLMJZRct2R8qVM/eYlE=",
+			"path": "github.com/hashicorp/golang-lru",
+			"revision": "a0d98a5f288019575c6d1f4bb1573fef2d1fcdc4",
+			"revisionTime": "2016-02-07T21:47:19Z"
+		},
+		{
+			"checksumSHA1": "2nOpYjx8Sn57bqlZq17yM4YJuM4=",
+			"path": "github.com/hashicorp/golang-lru/simplelru",
+			"revision": "a0d98a5f288019575c6d1f4bb1573fef2d1fcdc4",
+			"revisionTime": "2016-02-07T21:47:19Z"
+		},
+		{
+			"checksumSHA1": "Hky3u+8Rqum+wB5BHMj0A8ZmT4g=",
+			"path": "github.com/pkg/errors",
+			"revision": "17b591df37844cde689f4d5813e5cea0927d8dd2",
+			"revisionTime": "2016-08-22T09:00:10Z"
+		},
+		{
+			"checksumSHA1": "IAg7PcqaEf/TL1KNqZB0FTEb778=",
+			"path": "github.com/rs/cors",
+			"revision": "ceb1fbf238d7711a11a86a2622d0b85305348aeb",
+			"revisionTime": "2015-10-30T05:37:20Z"
+		},
+		{
+			"checksumSHA1": "uEgHSdDVcceCTdH3WSC/p9QKm0k=",
+			"path": "github.com/rs/xhandler",
+			"revision": "d9d9599b6aaf6a058cb7b1f48291ded2cbd13390",
+			"revisionTime": "2015-12-24T01:29:56Z"
+		},
+		{
+			"checksumSHA1": "gAbBMXBHsWGR/2YnCgk2tvRC/Xw=",
+			"path": "github.com/syndtr/goleveldb/leveldb",
+			"revision": "1a9d62f03ea92815b46fcaab357cfd4df264b1a0",
+			"revisionTime": "2015-08-19T05:16:22Z"
+		},
+		{
+			"checksumSHA1": "ivcxSNaMtNbNZoPMxslm60h0oxw=",
+			"path": "github.com/syndtr/goleveldb/leveldb/cache",
+			"revision": "1a9d62f03ea92815b46fcaab357cfd4df264b1a0",
+			"revisionTime": "2015-08-19T05:16:22Z"
+		},
+		{
+			"checksumSHA1": "5KPgnvCPlR0ysDAqo6jApzRQ3tw=",
+			"path": "github.com/syndtr/goleveldb/leveldb/comparer",
+			"revision": "1a9d62f03ea92815b46fcaab357cfd4df264b1a0",
+			"revisionTime": "2015-08-19T05:16:22Z"
+		},
+		{
+			"checksumSHA1": "fN497lLW+8s95VMEXBdvo6euVLI=",
+			"path": "github.com/syndtr/goleveldb/leveldb/errors",
+			"revision": "1a9d62f03ea92815b46fcaab357cfd4df264b1a0",
+			"revisionTime": "2015-08-19T05:16:22Z"
+		},
+		{
+			"checksumSHA1": "eqKeD6DS7eNCtxVYZEHHRKkyZrw=",
+			"path": "github.com/syndtr/goleveldb/leveldb/filter",
+			"revision": "1a9d62f03ea92815b46fcaab357cfd4df264b1a0",
+			"revisionTime": "2015-08-19T05:16:22Z"
+		},
+		{
+			"checksumSHA1": "cRn09EwfU3k2ZjvClHYmVFlakRY=",
+			"path": "github.com/syndtr/goleveldb/leveldb/iterator",
+			"revision": "1a9d62f03ea92815b46fcaab357cfd4df264b1a0",
+			"revisionTime": "2015-08-19T05:16:22Z"
+		},
+		{
+			"checksumSHA1": "6UUddO1LxE2XvZrFLML8UYxcNH8=",
+			"path": "github.com/syndtr/goleveldb/leveldb/journal",
+			"revision": "1a9d62f03ea92815b46fcaab357cfd4df264b1a0",
+			"revisionTime": "2015-08-19T05:16:22Z"
+		},
+		{
+			"checksumSHA1": "LshzRv+3spfwuHLepRxiyjf/3sQ=",
+			"path": "github.com/syndtr/goleveldb/leveldb/memdb",
+			"revision": "1a9d62f03ea92815b46fcaab357cfd4df264b1a0",
+			"revisionTime": "2015-08-19T05:16:22Z"
+		},
+		{
+			"checksumSHA1": "RDHx3eCcgLNgxdmoSopQP4GrvO0=",
+			"path": "github.com/syndtr/goleveldb/leveldb/opt",
+			"revision": "1a9d62f03ea92815b46fcaab357cfd4df264b1a0",
+			"revisionTime": "2015-08-19T05:16:22Z"
+		},
+		{
+			"checksumSHA1": "rCr1faK7Bj3FRJVTONBUSFIuWLw=",
+			"path": "github.com/syndtr/goleveldb/leveldb/storage",
+			"revision": "1a9d62f03ea92815b46fcaab357cfd4df264b1a0",
+			"revisionTime": "2015-08-19T05:16:22Z"
+		},
+		{
+			"checksumSHA1": "VygDrZVbOvkfC82Snan5QM5mhDM=",
+			"path": "github.com/syndtr/goleveldb/leveldb/table",
+			"revision": "1a9d62f03ea92815b46fcaab357cfd4df264b1a0",
+			"revisionTime": "2015-08-19T05:16:22Z"
+		},
+		{
+			"checksumSHA1": "FmE6QSxe8QqI1R6HWdyTotwVHm8=",
+			"path": "github.com/syndtr/goleveldb/leveldb/util",
+			"revision": "1a9d62f03ea92815b46fcaab357cfd4df264b1a0",
+			"revisionTime": "2015-08-19T05:16:22Z"
+		},
+		{
+			"checksumSHA1": "9jjO5GjLa0XF/nfWihF02RoH4qc=",
+			"path": "golang.org/x/net/context",
+			"revision": "a625e3953219464fdd5611bb48bf87c927717295",
+			"revisionTime": "2016-10-18T08:54:36Z"
+		},
+		{
+			"checksumSHA1": "xvUCUatbky/OjZDvSkWbxMca1vc=",
+			"path": "gopkg.in/throttled/throttled.v2",
+			"revision": "b5675e93f9d999b22f92d859a5bf2138d3641af4",
+			"revisionTime": "2015-09-10T05:17:05Z"
+		},
+		{
+			"checksumSHA1": "4bnCXkKPIICJ6H22zT1G9RBFyZw=",
+			"path": "gopkg.in/throttled/throttled.v2/store/memstore",
+			"revision": "b5675e93f9d999b22f92d859a5bf2138d3641af4",
+			"revisionTime": "2015-09-10T05:17:05Z"
+		},
+		{
+			"checksumSHA1": "hiOUviIMDKo7y918uBiEhfJyOkk=",
+			"path": "gopkg.in/tylerb/graceful.v1",
+			"revision": "50a48b6e73fcc75b45e22c05b79629a67c79e938",
+			"revisionTime": "2016-08-29T01:00:30Z"
+		},
+		{
+			"checksumSHA1": "hi6sSeRj+oyvsd+VqeSW4x9ET4U=",
+			"path": "gopkg.in/urfave/cli.v1",
+			"revision": "1efa31f08b9333f1bd4882d61f9d668a70cd902e",
+			"revisionTime": "2016-06-28T05:30:56Z"
+		},
+		{
+			"checksumSHA1": "yV+2de12Q/t09hBGYGKEOFr1/zc=",
+			"path": "gopkg.in/yaml.v2",
+			"revision": "e4d366fc3c7938e2958e662b4258c7a89e1f0e3e",
+			"revisionTime": "2016-07-15T03:37:55Z"
+		}
+	],
+	"rootPath": "github.com/maklesoft/padlock-cloud"
+}

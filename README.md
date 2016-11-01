@@ -62,7 +62,7 @@ server:
   port: 5555
   tls_cert: cert.crt
   tls_key: cert.key
-  host: cloud.padlock.io
+  base_url: https://cloud.padlock.io
 leveldb:
   path: path/to/db
 email:
@@ -77,7 +77,7 @@ log:
 ```
 
 **NOTE**: If you are using a config file, all other flags and environment
-variables will be ingored.
+variables will be ignored.
 
 ## Security Considerations
 
@@ -90,7 +90,7 @@ through plain http. You should make sure that in this case the server does
 **not** listen on a public port and that any reverse proxies that handle
 outgoing connections are protected via TLS.
 
-### Link spoofing and the --host option
+### Link spoofing and the --base-url option
 
 Padlock Cloud frequently uses confirmation links for things like activating
 authentication tokens, confirmation for deleting an account etc. They usually
@@ -103,24 +103,23 @@ https://hostname:port/activate/?v=1&t=cdB6iEdL4o5PfhLey30Rrg
 
 These links are sent out to a users email address and serve as a form of
 authentication. Only users that actually have control over the email account
-accociated with their Padlock Cloud account may access the correponding data.
+associated with their Padlock Cloud account may access the corresponding data.
 
-Now the `hostname` and `port` portion of the url will obviously differ based on
+Now the `hostname` and `port` portion of the URL will obviously differ based on
 the environment. By default, the app will simply use the value provided by the
 `Host` header of the incoming request. But the `Host` header can easily be
 faked and unless the server is running behind a reverse proxy that sets the it
-to the correct value, this opens the app up to a vulnerabilty we call 'link
-spoofing'. Let's say an attacker sends an authentiation request to our server
+to the correct value, this opens the app up to a vulnerability we call 'link
+spoofing'. Let's say an attacker sends an authentication request to our server
 using a targets email address, but changes the `Host` header to a server that
 he controls. The email that is sent to the target will now contain a link that
 points to the attackers server instead of our own and once the user clicks the
 link the attacker is in possession of the activation token which can in turn be
 used to activate the authentication token he already has.  There is a simple
-solution for this: Explicitly provide a hostname and port to be used for link
-generation when starting up the server. The `runserver` command provides the
-`--host` flag for this. This is a string that contains the hostname and
-optionally a port, e.g. `example.com:3000` or simply `example.com`. it is
-recommended to use this option in production environments at all times!
+solution for this: Explicitly provide a base URL to be used for constructing
+links when starting up the server. The `runserver` command provides the
+`--base-url` flag for this. It is recommended to use this option in production
+environments at all times!
 
 ## Troubleshooting
 

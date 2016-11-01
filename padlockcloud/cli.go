@@ -4,6 +4,7 @@ import "fmt"
 import "path/filepath"
 import "io/ioutil"
 import "errors"
+import "encoding/base64"
 import "gopkg.in/yaml.v2"
 import "gopkg.in/urfave/cli.v1"
 
@@ -51,11 +52,14 @@ func (cliApp *CliApp) RunServer(context *cli.Context) error {
 	cfg, _ := yaml.Marshal(cliApp.Config)
 	cliApp.Server.Info.Printf("Running server with the following configuration:\n%s", cfg)
 
-	if cliApp.Config.Server.Host == "" {
-		fmt.Printf("\nWARNING: No --host option provided for generating urls. The 'Host' header from\n" +
-			"incoming requests will be used instead. Note that the 'Host' header can easily be\n" +
-			"spoofed! Unless you're running this server behind a reverse proxy you probably want\n" +
-			"to provide an explicit host string! See the README for details.\n\n")
+	if cliApp.Config.Server.BaseUrl == "" {
+		fmt.Printf("\nWARNING: No --base-url option provided for constructing urls. The 'Host' header\n" +
+			"from incoming requests will be used instead which makes the server vulnerable to URL\n" +
+			"spoofing attacks! See the README for details.\n\n")
+	}
+
+	if err := cliApp.Server.Init(); err != nil {
+		return err
 	}
 
 	return cliApp.Server.Start()
@@ -67,21 +71,20 @@ func (cliApp *CliApp) ListAccounts(context *cli.Context) error {
 	}
 	defer cliApp.Storage.Close()
 
-	var acc *Account
-	accs, err := cliApp.Storage.List(acc)
+	acc := &Account{}
+	iter, err := cliApp.Storage.Iterator(acc)
 	if err != nil {
 		return err
 	}
+	defer iter.(*LevelDBIterator).Release()
 
-	if len(accs) == 0 {
-		fmt.Println("No existing accounts!")
-	} else {
-		output := ""
-		for _, email := range accs {
-			output = output + email + "\n"
-		}
-		fmt.Print(output)
+	output := ""
+	for iter.Next() {
+		iter.Get(acc)
+		output = output + acc.Email + "\n"
 	}
+	fmt.Print(output)
+
 	return nil
 }
 
@@ -146,6 +149,23 @@ func (cliApp *CliApp) DeleteAccount(context *cli.Context) error {
 	defer cliApp.Storage.Close()
 
 	return cliApp.Storage.Delete(acc)
+}
+
+func genSecret() (string, error) {
+	b, err := randomBytes(32)
+	if err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(b), nil
+}
+
+func (cliApp *CliApp) GenSecret(context *cli.Context) error {
+	s, err := genSecret()
+	if err != nil {
+		return err
+	}
+	fmt.Println(s)
+	return nil
 }
 
 func NewCliApp() *CliApp {
@@ -274,12 +294,17 @@ func NewCliApp() *CliApp {
 					Destination: &config.Server.TLSKey,
 				},
 				cli.StringFlag{
-					Name: "host",
-					Usage: "Host string to used for generating urls. May include the port. " +
-						"If not provided the requests 'Host' header is used.",
+					Name:        "base-url",
+					Usage:       "Base url for constructing urls",
 					Value:       "",
-					EnvVar:      "PC_HOST",
-					Destination: &config.Server.Host,
+					EnvVar:      "PC_BASE_URL",
+					Destination: &config.Server.BaseUrl,
+				},
+				cli.BoolFlag{
+					Name:        "cors",
+					Usage:       "Enable Cross-Origin Resource Sharing",
+					EnvVar:      "PC_CORS",
+					Destination: &config.Server.Cors,
 				},
 			},
 			Action: cliApp.RunServer,
@@ -309,6 +334,11 @@ func NewCliApp() *CliApp {
 					Action: cliApp.DeleteAccount,
 				},
 			},
+		},
+		{
+			Name:   "gensecret",
+			Usage:  "Generate random 32 byte secret",
+			Action: cliApp.GenSecret,
 		},
 	}
 

@@ -1,0 +1,27 @@
+ul.paired-devices li {
+    padding: 15px 20px;
+    border: solid 1px #eee;
+    margin: 10px 0;
+    font-size: 90%;
+}
+
+.expired {
+    opacity: 0.5;
+}
+
+.expired-label {
+    float: right;
+    color: red;
+}
+
+@media (max-width: 500px) {
+    .expired-label {
+        float: none;
+        margin: 0 3px;
+    }
+
+    tr {
+        display: flex;
+        flex-direction: column;
+    }
+}

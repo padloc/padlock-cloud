@@ -15,6 +15,7 @@ type ErrorResponse interface {
 }
 
 type BadRequest struct {
+	Msg string
 }
 
 func (e *BadRequest) Code() string {
@@ -22,7 +23,7 @@ func (e *BadRequest) Code() string {
 }
 
 func (e *BadRequest) Error() string {
-	return fmt.Sprintf("%s", e.Code())
+	return fmt.Sprintf("%s - %s", e.Code(), e.Msg)
 }
 
 func (e *BadRequest) Status() int {
@@ -30,48 +31,69 @@ func (e *BadRequest) Status() int {
 }
 
 func (e *BadRequest) Message() string {
-	return http.StatusText(e.Status())
+	return fmt.Sprintf("%s: %s", http.StatusText(e.Status()), e.Msg)
 }
 
-type InvalidToken struct {
-	token string
-}
-
-func (e *InvalidToken) Code() string {
-	return "invalid_token"
-}
-
-func (e *InvalidToken) Error() string {
-	return fmt.Sprintf("%s - %s", e.Code(), e.token)
-}
-
-func (e *InvalidToken) Status() int {
-	return http.StatusBadRequest
-}
-
-func (e *InvalidToken) Message() string {
-	return "Invalid Token"
-}
-
-type Unauthorized struct {
+type InvalidAuthToken struct {
 	email string
 	token string
 }
 
-func (e *Unauthorized) Code() string {
-	return "unauthorized"
+func (e *InvalidAuthToken) Code() string {
+	return "invalid_auth_token"
 }
 
-func (e *Unauthorized) Error() string {
+func (e *InvalidAuthToken) Error() string {
 	return fmt.Sprintf("%s - %s:%s", e.Code(), e.email, e.token)
 }
 
-func (e *Unauthorized) Status() int {
+func (e *InvalidAuthToken) Status() int {
 	return http.StatusUnauthorized
 }
 
-func (e *Unauthorized) Message() string {
-	return http.StatusText(e.Status())
+func (e *InvalidAuthToken) Message() string {
+	return fmt.Sprintf("%s - %s", http.StatusText(e.Status()), "No valid authorization token provided")
+}
+
+type ExpiredAuthToken struct {
+	email string
+	token string
+}
+
+func (e *ExpiredAuthToken) Code() string {
+	return "expired_auth_token"
+}
+
+func (e *ExpiredAuthToken) Error() string {
+	return fmt.Sprintf("%s - %s:%s", e.Code(), e.email, e.token)
+}
+
+func (e *ExpiredAuthToken) Status() int {
+	return http.StatusUnauthorized
+}
+
+func (e *ExpiredAuthToken) Message() string {
+	return fmt.Sprintf("%s - %s", http.StatusText(e.Status()), "The provided authorization token has expired")
+}
+
+type InvalidCsrfToken struct {
+	reason error
+}
+
+func (e *InvalidCsrfToken) Code() string {
+	return "invalid_csrf_token"
+}
+
+func (e *InvalidCsrfToken) Error() string {
+	return fmt.Sprintf("%s - %s", e.Code(), e.reason)
+}
+
+func (e *InvalidCsrfToken) Status() int {
+	return http.StatusForbidden
+}
+
+func (e *InvalidCsrfToken) Message() string {
+	return fmt.Sprintf("%s - %s", http.StatusText(e.Status()), "Invalid CSRF Token")
 }
 
 type MethodNotAllowed struct {
@@ -135,7 +157,8 @@ func (e *AccountNotFound) Message() string {
 }
 
 type UnsupportedApiVersion struct {
-	version int
+	found    int
+	expected int
 }
 
 func (e *UnsupportedApiVersion) Code() string {
@@ -143,7 +166,7 @@ func (e *UnsupportedApiVersion) Code() string {
 }
 
 func (e *UnsupportedApiVersion) Error() string {
-	return fmt.Sprintf("%s - %d", e.Code(), e.version)
+	return fmt.Sprintf("%s - %d!=%d", e.Code(), e.found, e.expected)
 }
 
 func (e *UnsupportedApiVersion) Status() int {
@@ -151,25 +174,25 @@ func (e *UnsupportedApiVersion) Status() int {
 }
 
 func (e *UnsupportedApiVersion) Message() string {
-	return fmt.Sprintf("The api version you are using (%d) is not supported. Please use version %d", e.version, ApiVersion)
+	return fmt.Sprintf("The api version you are using (%d) is not supported. Please use version %d", e.found, e.expected)
 }
 
-type TooManyRequests struct {
+type RateLimitExceeded struct {
 }
 
-func (e *TooManyRequests) Code() string {
-	return "too_many_requests"
+func (e *RateLimitExceeded) Code() string {
+	return "rate_limit_exceeded"
 }
 
-func (e *TooManyRequests) Error() string {
+func (e *RateLimitExceeded) Error() string {
 	return fmt.Sprintf("%s", e.Code())
 }
 
-func (e *TooManyRequests) Status() int {
+func (e *RateLimitExceeded) Status() int {
 	return http.StatusTooManyRequests
 }
 
-func (e *TooManyRequests) Message() string {
+func (e *RateLimitExceeded) Message() string {
 	return http.StatusText(e.Status())
 }
 
@@ -178,7 +201,7 @@ type ServerError struct {
 }
 
 func (e *ServerError) Error() string {
-	return fmt.Sprintf("%s - %s", e.Code(), e.error.Error())
+	return fmt.Sprintf("%s - %v", e.Code(), e.error)
 }
 
 func (e *ServerError) Code() string {

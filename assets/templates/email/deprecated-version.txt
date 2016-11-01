@@ -1,0 +1,9 @@
+{{ define "main" -}}
+Thanks for using Padlock!
+
+You're receiving this email because you tried to use Padlock Cloud with an outdated version of the app. Please update to the newest version using one of the following links:
+
+Android: https://play.google.com/store/apps/details?id=com.maklesoft.padlock
+iOS: https://itunes.apple.com/app/id871710139
+Google Chrome: https://chrome.google.com/webstore/detail/padlock/npkoefjfcjbknoeadfkbcdpbapaamcif
+{{- end }}

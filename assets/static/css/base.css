@@ -1,0 +1,184 @@
+body {
+    padding: 0;
+    margin: 0;
+    font-family: "Clear Sans", "Helvetica Neue", Helvetica, sans-serif;
+    font-size: 18px;
+    color: #333;
+    font-weight: 300;
+    -webkit-tap-highlight-color: transparent;
+}
+
+body, input, button {
+    -webkit-font-smoothing: antialiased;
+}
+
+input:not([type="checkbox"]), button {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    border-radius: 0;
+    font-size: inherit;
+    font-family: inherit;
+    padding: 10px 15px;
+    background: #fff;
+    border: solid 1px #ccc;
+    min-width: 0;
+}
+
+input[type="checkbox"] {
+    vertical-align: middle;
+    cursor: pointer;
+}
+
+button {
+    border: none;
+    background: #59c6ff;
+    color: #fff;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+button.light {
+    background: none;
+    color: #59c6ff;
+    padding: 0;
+    margin: 5px 0 0 2px;
+}
+
+*:focus {
+    outline: none;
+}
+
+h1 {
+    font-size: 250%;
+    font-weight: 100;
+    margin: 20px 0;
+}
+
+h2 {
+    font-size: 120%;
+    font-weight: 400;
+}
+
+h3 {
+    font-size: 110%;
+    font-weight: 400;
+}
+
+a {
+    color: #59c6ff;
+    text-decoration: none;
+    font-weight: 400;
+}
+
+button:hover, a:hover {
+    opacity: 0.7;
+}
+
+section {
+    padding: 0 40px;
+    margin: 40px 0;
+    clear: both;
+}
+
+footer {
+    display: block;
+    padding: 10px;
+    text-align: center;
+    font-size: 80%;
+    border-top: solid 1px #ccc;
+}
+
+footer .copyright {
+    color: #ccc;
+}
+
+footer a {
+    margin: 0 5px;
+}
+
+ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+th {
+    text-align: left;
+    vertical-align: top;
+    width: 150px;
+}
+
+svg.icon {
+    fill: currentColor;
+    stroke: currentColor;
+}
+
+header {
+    background: #ffffff;
+    position: fixed;
+    top: 0;
+    width: 100%;
+    z-index: 1;
+    padding: 0 10px;
+    box-sizing: border-box;
+    border-bottom: solid 1px #ccc;
+}
+
+header .inner {
+    height: 50px;
+    width: 100%;
+    margin: 0 auto;
+}
+
+header .inner, header .home, header nav, header nav ul {
+    display: flex;
+    align-items: center;
+}
+
+header nav ul li {
+    display: inline-block;
+    margin-left: 10px;
+}
+
+header .logo {
+    width: 35px;
+    height: 35px;
+    margin-right: 10px;
+    margin-left: 3px;
+}
+
+header .spacer {
+    flex: 1;
+}
+
+main {
+    margin: 80px auto;
+}
+
+header .inner, main {
+    max-width: 800px;
+}
+
+.account-email {
+    font-size: 90%;
+    font-weight: bold;
+}
+
+.note {
+    background: rgba(89, 198, 255, 0.1);
+    padding: 20px;
+    border: solid 1px #59c6ff;
+}
+
+@media (max-width: 500px) {
+    header .home .type {
+        display: none;
+    }
+
+    section {
+        padding-left: 20px;
+        padding-right: 20px;
+    }
+}

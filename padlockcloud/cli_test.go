@@ -13,6 +13,7 @@ func NewSampleConfig(dir string) CliConfig {
 	logfile := filepath.Join(dir, "LOG.txt")
 	errfile := filepath.Join(dir, "ERR.txt")
 	dbpath := filepath.Join(dir, "db")
+	secret, _ := genSecret()
 
 	return CliConfig{
 		LogConfig{
@@ -25,7 +26,8 @@ func NewSampleConfig(dir string) CliConfig {
 			Port:       5555,
 			TLSCert:    "",
 			TLSKey:     "",
-			Host:       "myhostname.com",
+			BaseUrl:    "http://example.com",
+			Secret:     secret,
 		},
 		LevelDBConfig{
 			Path: dbpath,
@@ -40,6 +42,10 @@ func NewSampleConfig(dir string) CliConfig {
 }
 
 func TestCliFlags(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode.")
+	}
+
 	dir, err := ioutil.TempDir("", "")
 	if err != nil {
 		t.Fatal(err)
@@ -75,6 +81,10 @@ func TestCliFlags(t *testing.T) {
 }
 
 func TestCliConfigFile(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode.")
+	}
+
 	dir, err := ioutil.TempDir("", "")
 	if err != nil {
 		t.Fatal(err)
@@ -106,7 +116,7 @@ func TestCliConfigFile(t *testing.T) {
 		!reflect.DeepEqual(*app.Storage.Config, cfg.LevelDB) ||
 		!reflect.DeepEqual(*app.Server.Config, cfg.Server) ||
 		!reflect.DeepEqual(*app.Sender.(*EmailSender).Config, cfg.Email) {
-		yamlData2, _ := yaml.Marshal(cfg)
+		yamlData2, _ := yaml.Marshal(app.Config)
 		t.Fatalf("Config file not loaded correctly. \n\nExpected: \n\n%s\n\n Got: \n\n%s\n", yamlData, yamlData2)
 	}
 

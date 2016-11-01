@@ -55,3 +55,39 @@ func RateLimit(handler http.Handler, quotas map[Route]RateQuota, deniedHandler h
 		}
 	})
 }
+
+type EmailRateLimiter struct {
+	ipRateLimiter    throttled.RateLimiter
+	emailRateLimiter throttled.RateLimiter
+}
+
+func (erl *EmailRateLimiter) RateLimit(ip string, email string) bool {
+	if erl == nil {
+		return false
+	}
+	ipLimited, _, _ := erl.ipRateLimiter.RateLimit(ip, 1)
+	emailLimited, _, _ := erl.ipRateLimiter.RateLimit(email, 1)
+	return ipLimited || emailLimited
+}
+
+func NewEmailRateLimiter(ipQuota RateQuota, emailQuota RateQuota) (*EmailRateLimiter, error) {
+	store, err := memstore.New(65536)
+	if err != nil {
+		return nil, err
+	}
+
+	ipRateLimiter, err := throttled.NewGCRARateLimiter(store, throttled.RateQuota(ipQuota))
+	if err != nil {
+		return nil, err
+	}
+
+	emailRateLimiter, err := throttled.NewGCRARateLimiter(store, throttled.RateQuota(emailQuota))
+	if err != nil {
+		return nil, err
+	}
+
+	return &EmailRateLimiter{
+		ipRateLimiter,
+		emailRateLimiter,
+	}, nil
+}

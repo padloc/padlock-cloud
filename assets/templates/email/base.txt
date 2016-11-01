@@ -1,0 +1,7 @@
+Hi there!
+
+{{ block "main" . }}
+{{ end }}
+
+Best,
+The Padlock Team
