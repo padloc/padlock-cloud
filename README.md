@@ -63,6 +63,7 @@ server:
   tls_cert: cert.crt
   tls_key: cert.key
   base_url: https://cloud.padlock.io
+  cors: false
 leveldb:
   path: path/to/db
 email:
@@ -122,6 +123,21 @@ links when starting up the server. The `runserver` command provides the
 environments at all times!
 
 ## Troubleshooting
+
+### Chrome app fails to connect to custom server
+
+When trying to connect to a custom server instance, the Chrome app fails with
+the error message "Failed to connect to Padlock Cloud. Please check your
+internet and try again!".  This is due to the same-origin policy in Chrome
+preventing requests to domains other than cloud.padlock.io that do not
+implement [Cross-Origin Resource
+Sharing](https://developer.mozilla.org/en-US/docs/Web/HTTP/Access_control_CORS).
+While it's not enabled by default, Padlock Cloud does come with built-in CORS
+support. In order to enable it, simple use the `cors` option. E.g.:
+
+```sh
+padlock-cloud runserver --cors
+```
 
 ### Failed to load templates
 
