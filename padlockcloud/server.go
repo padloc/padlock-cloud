@@ -97,15 +97,15 @@ type ServerConfig struct {
 type Server struct {
 	*graceful.Server
 	*Log
-	Storage            Storage
-	Sender             Sender
-	Templates          *Templates
-	Config             *ServerConfig
-	Secure             bool
-	Endpoints          map[string]*Endpoint
-	secret             []byte
-	emailRateLimiter   *EmailRateLimiter
-	authRequestCleaner *StorageCleaner
+	Storage           Storage
+	Sender            Sender
+	Templates         *Templates
+	Config            *ServerConfig
+	Secure            bool
+	Endpoints         map[string]*Endpoint
+	secret            []byte
+	emailRateLimiter  *EmailRateLimiter
+	cleanAuthRequests *Job
 }
 
 func (server *Server) BaseUrl(r *http.Request) string {
@@ -426,23 +426,43 @@ func (server *Server) Init() error {
 		server.emailRateLimiter = rl
 	}
 
-	// Clean out auth request older than 24hrs once a day
-	if cl, err := NewStorageCleaner(server.Storage, &AuthRequest{}, func(t Storable) bool {
-		return t.(*AuthRequest).Created.Before(time.Now().Add(-24 * time.Hour))
-	}); err != nil {
-		return err
-	} else {
-		server.authRequestCleaner = cl
-		cl.Log = server.Log
-		cl.Start(24 * time.Hour)
+	server.cleanAuthRequests = &Job{
+		Action: func() {
+			ar := &AuthRequest{}
+			iter, err := server.Storage.Iterator(ar)
+			if err != nil {
+				server.Log.Error.Println("Error while cleaning auth requests:", err)
+				return
+			}
+			defer iter.Release()
+
+			n := 0
+			for iter.Next() {
+				if err := iter.Get(ar); err != nil {
+					server.Log.Error.Println("Error while cleaning auth requests:", err)
+				}
+				if ar.Created.Before(time.Now().Add(-24 * time.Hour)) {
+					if err := server.Storage.Delete(ar); err != nil {
+						server.Log.Error.Println("Error while cleaning auth requests:", err)
+					}
+					n = n + 1
+				}
+			}
+
+			if n > 0 {
+				server.Log.Info.Printf("Deleted %d auth requests older than 24 hrs", n)
+			}
+		},
 	}
+
+	server.cleanAuthRequests.Start(24 * time.Hour)
 
 	return nil
 }
 
 func (server *Server) CleanUp() error {
-	if server.authRequestCleaner != nil {
-		server.authRequestCleaner.Stop()
+	if server.cleanAuthRequests != nil {
+		server.cleanAuthRequests.Stop()
 	}
 	return server.Storage.Close()
 }

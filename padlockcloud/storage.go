@@ -4,7 +4,6 @@ import "reflect"
 import "errors"
 import "encoding/json"
 import "path/filepath"
-import "time"
 import "github.com/syndtr/goleveldb/leveldb"
 import "github.com/syndtr/goleveldb/leveldb/iterator"
 
@@ -338,70 +337,5 @@ func (s *MemoryStorage) Iterator(t Storable) (StorageIterator, error) {
 
 	return &SliceIterator{
 		s: sl,
-	}, nil
-}
-
-type StorageCleaner struct {
-	storage  Storage
-	storable Storable
-	cond     func(t Storable) bool
-	stop     chan bool
-	Log      *Log
-}
-
-func (cl *StorageCleaner) Start(interval time.Duration) {
-	cl.stop = make(chan bool)
-	ticker := time.NewTicker(interval)
-	go func() {
-		for {
-			select {
-			case <-ticker.C:
-				cl.Clean()
-			case <-cl.stop:
-				ticker.Stop()
-				return
-			}
-		}
-	}()
-}
-
-func (cl *StorageCleaner) Stop() {
-	cl.stop <- true
-}
-
-func (cl *StorageCleaner) Clean() error {
-	iter, err := cl.storage.Iterator(cl.storable)
-	if err != nil {
-		return err
-	}
-	defer iter.Release()
-
-	n := 0
-	for iter.Next() {
-		iter.Get(cl.storable)
-		if cl.cond(cl.storable) {
-			cl.storage.Delete(cl.storable)
-			n = n + 1
-		}
-	}
-
-	if n > 0 && cl.Log != nil {
-		cl.Log.Info.Printf("Deleted %d entries of %T\n", n, cl.storable)
-	}
-
-	return nil
-}
-
-func NewStorageCleaner(s Storage, t Storable, cond func(t Storable) bool) (*StorageCleaner, error) {
-	if !s.Ready() {
-		return nil, ErrStorageClosed
-	}
-	if !s.CanStore(t) {
-		return nil, ErrUnregisteredStorable
-	}
-	return &StorageCleaner{
-		storage:  s,
-		storable: t,
-		cond:     cond,
 	}, nil
 }
