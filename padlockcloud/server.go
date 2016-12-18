@@ -160,6 +160,7 @@ func (server *Server) Authenticate(r *http.Request) (*AuthToken, error) {
 	authToken.LastUsed = time.Now()
 	// Update client version
 	authToken.ClientVersion = r.Header.Get("X-Client-Version")
+	authToken.ClientPlatform = r.Header.Get("X-Client-Platform")
 
 	acc.UpdateAuthToken(authToken)
 

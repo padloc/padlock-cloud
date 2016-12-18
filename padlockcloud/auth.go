@@ -20,15 +20,16 @@ var authMaxAge = func(authType string) time.Duration {
 
 // A wrapper for an api key containing some meta info like the user and device name
 type AuthToken struct {
-	Email         string
-	Token         string
-	Type          string
-	Id            string
-	Created       time.Time
-	LastUsed      time.Time
-	Expires       time.Time
-	ClientVersion string
-	account       *Account
+	Email          string
+	Token          string
+	Type           string
+	Id             string
+	Created        time.Time
+	LastUsed       time.Time
+	Expires        time.Time
+	ClientVersion  string
+	ClientPlatform string
+	account        *Account
 }
 
 // Returns the account associated with this auth token
