@@ -118,9 +118,10 @@ func (h *RequestAuthToken) Handle(w http.ResponseWriter, r *http.Request, auth *
 		w.Header().Set("Content-Type", "text/html")
 	}
 
+	actLink := fmt.Sprintf("%s/activate/?t=%s", h.BaseUrl(r), authRequest.Token)
 	// Render activation email
 	if err := h.Templates.ActivateAuthTokenEmail.Execute(&emailBody, map[string]interface{}{
-		"activation_link": fmt.Sprintf("%s/activate/?t=%s", h.BaseUrl(r), authRequest.Token),
+		"activation_link": actLink,
 		"token":           authRequest.AuthToken,
 	}); err != nil {
 		return err
@@ -135,6 +136,12 @@ func (h *RequestAuthToken) Handle(w http.ResponseWriter, r *http.Request, auth *
 		}()
 	} else {
 		return &RateLimitExceeded{}
+	}
+
+	// When in test mode, return activation link directly with request so the client can continue
+	// with the authentication flow directly
+	if h.Config.Test {
+		w.Header().Set("X-Test-Act-Url", actLink)
 	}
 
 	h.Info.Printf("%s - auth_token:request - %s:%s:%s\n", FormatRequest(r), email, tType, authRequest.AuthToken.Id)

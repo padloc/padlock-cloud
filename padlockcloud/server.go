@@ -1,16 +1,19 @@
 package padlockcloud
 
-import "net/http"
-import "net/http/httputil"
-import "fmt"
-import "encoding/base64"
-import "regexp"
-import "bytes"
-import "strings"
-import "time"
-import "strconv"
-import "path/filepath"
-import "gopkg.in/tylerb/graceful.v1"
+import (
+	"bytes"
+	"encoding/base64"
+	"fmt"
+	"github.com/rs/cors"
+	"gopkg.in/tylerb/graceful.v1"
+	"net/http"
+	"net/http/httputil"
+	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+)
 
 const (
 	ApiVersion = 1
@@ -90,6 +93,8 @@ type ServerConfig struct {
 	Secret string `yaml:"secret"`
 	// Enable Cross-Origin Resource Sharing
 	Cors bool `yaml:"cors"`
+	// Test mode
+	Test bool `yaml:"test"`
 }
 
 // The Server type holds all the contextual data and logic used for running a Padlock Cloud instances
@@ -279,6 +284,7 @@ func (server *Server) InitEndpoints() {
 			"GET":    &ReadStore{server},
 			"HEAD":   &ReadStore{server},
 			"PUT":    &WriteStore{server},
+			"POST":   &WriteStore{server},
 			"DELETE": &RequestDeleteStore{server},
 		},
 		Version:  ApiVersion,
@@ -344,7 +350,16 @@ func (server *Server) InitHandler() {
 	}
 
 	if server.Config.Cors {
-		server.Handler = Cors(mux)
+		exposedHeaders := []string{"X-Sub-Required", "X-Sub-Status", "X-Sub-Trial-End"}
+		if server.Config.Test {
+			exposedHeaders = append(exposedHeaders, "X-Test-Act-Url")
+		}
+		server.Handler = cors.New(cors.Options{
+			AllowedOrigins: []string{"*"},
+			AllowedMethods: []string{"HEAD", "GET", "POST", "PUT", "DELETE"},
+			AllowedHeaders: []string{"Authorization", "Accept", "Content-Type", "X-Client-Version"},
+			ExposedHeaders: exposedHeaders,
+		}).Handler(mux)
 	} else {
 		server.Handler = mux
 	}
@@ -388,6 +403,10 @@ func (server *Server) SendDeprecatedVersionEmail(r *http.Request) error {
 
 func (server *Server) Init() error {
 	var err error
+
+	if err := server.Log.Init(); err != nil {
+		return err
+	}
 
 	if server.Config.Secret != "" {
 		if s, err := base64.StdEncoding.DecodeString(server.Config.Secret); err != nil {

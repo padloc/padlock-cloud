@@ -33,33 +33,59 @@ func (c *CliConfig) LoadFromFile(path string) error {
 type CliApp struct {
 	*cli.App
 	*Log
-	Storage    *LevelDBStorage
-	Email      *EmailSender
+	Storage    Storage
 	Server     *Server
 	Config     *CliConfig
 	ConfigPath string
 }
 
-func (cliApp *CliApp) InitConfig() {
-	cliApp.Config = &CliConfig{}
-	cliApp.Log.Config = &cliApp.Config.Log
-	cliApp.Storage.Config = &cliApp.Config.LevelDB
-	cliApp.Email.Config = &cliApp.Config.Email
-	cliApp.Server.Config = &cliApp.Config.Server
+func (cliApp *CliApp) InitWithConfig(config *CliConfig) error {
+	cliApp.Config = config
+	cliApp.Storage = &LevelDBStorage{
+		Config: &config.LevelDB,
+	}
+
+	return nil
 }
 
 func (cliApp *CliApp) RunServer(context *cli.Context) error {
-	cfg, _ := yaml.Marshal(cliApp.Config)
-	cliApp.Server.Info.Printf("Running server with the following configuration:\n%s", cfg)
+	var storage Storage
+	var sender Sender
+	logger := NewLog(&cliApp.Config.Log, nil)
 
-	if cliApp.Config.Server.BaseUrl == "" {
-		fmt.Printf("\nWARNING: No --base-url option provided for constructing urls. The 'Host' header\n" +
-			"from incoming requests will be used instead which makes the server vulnerable to URL\n" +
-			"spoofing attacks! See the README for details.\n\n")
+	if cliApp.Config.Server.Test {
+		storage = &MemoryStorage{}
+		sender = &RecordSender{}
+		// Also use CORS when in test mode
+		cliApp.Config.Server.Cors = true
+	} else {
+		storage = cliApp.Storage
+		sender = &EmailSender{
+			Config: &cliApp.Config.Email,
+		}
+		logger.Sender = sender
 	}
+
+	cliApp.Server = NewServer(
+		logger,
+		storage,
+		sender,
+		&cliApp.Config.Server,
+	)
 
 	if err := cliApp.Server.Init(); err != nil {
 		return err
+	}
+
+	cfg, _ := yaml.Marshal(cliApp.Config)
+	cliApp.Server.Info.Printf("Running server with the following configuration:\n%s", cfg)
+
+	if cliApp.Server.Config.Test {
+		fmt.Println("*** TEST MODE ***")
+	} else if cliApp.Server.Config.BaseUrl == "" {
+		fmt.Printf("\nWARNING: No --base-url option provided for constructing urls. The 'Host' header\n" +
+			"from incoming requests will be used instead which makes the server vulnerable to URL\n" +
+			"spoofing attacks! See the README for details.\n\n")
 	}
 
 	return cliApp.Server.Start()
@@ -169,26 +195,10 @@ func (cliApp *CliApp) GenSecret(context *cli.Context) error {
 }
 
 func NewCliApp() *CliApp {
-	storage := &LevelDBStorage{}
-	email := &EmailSender{}
-	logger := &Log{
-		Sender: email,
-	}
-	server := NewServer(
-		logger,
-		storage,
-		email,
-		nil,
-	)
+	config := &CliConfig{}
 	cliApp := &CliApp{
-		App:     cli.NewApp(),
-		Log:     logger,
-		Storage: storage,
-		Email:   email,
-		Server:  server,
+		App: cli.NewApp(),
 	}
-	cliApp.InitConfig()
-	config := cliApp.Config
 
 	cliApp.Name = "padlock-cloud"
 	cliApp.Version = Version
@@ -306,6 +316,12 @@ func NewCliApp() *CliApp {
 					EnvVar:      "PC_CORS",
 					Destination: &config.Server.Cors,
 				},
+				cli.BoolFlag{
+					Name:        "test",
+					Usage:       "Enable test mode",
+					EnvVar:      "PC_TEST",
+					Destination: &config.Server.Test,
+				},
 			},
 			Action: cliApp.RunServer,
 		},
@@ -348,15 +364,15 @@ func NewCliApp() *CliApp {
 
 			fmt.Printf("Loading config from %s - all other flags and environment variables will be ignored!\n", absPath)
 			// Replace original config object to prevent flags from being applied
-			cliApp.InitConfig()
+			config = &CliConfig{}
 			err := cliApp.Config.LoadFromFile(cliApp.ConfigPath)
 			if err != nil {
 				return err
 			}
 		}
 
-		// Reinitializing log since log config may have changed
-		if err := cliApp.Log.Init(); err != nil {
+		if err := cliApp.InitWithConfig(config); err != nil {
+			fmt.Println(err)
 			return err
 		}
 
