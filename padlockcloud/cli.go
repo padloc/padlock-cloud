@@ -48,7 +48,7 @@ func (cliApp *CliApp) InitWithConfig(config *CliConfig) error {
 	return nil
 }
 
-func (cliApp *CliApp) RunServer(context *cli.Context) error {
+func (cliApp *CliApp) InitServer() error {
 	var storage Storage
 	var sender Sender
 	logger := NewLog(&cliApp.Config.Log, nil)
@@ -73,7 +73,11 @@ func (cliApp *CliApp) RunServer(context *cli.Context) error {
 		&cliApp.Config.Server,
 	)
 
-	if err := cliApp.Server.Init(); err != nil {
+	return cliApp.Server.Init()
+}
+
+func (cliApp *CliApp) RunServer(context *cli.Context) error {
+	if err := cliApp.InitServer(); err != nil {
 		return err
 	}
 
@@ -365,8 +369,7 @@ func NewCliApp() *CliApp {
 			fmt.Printf("Loading config from %s - all other flags and environment variables will be ignored!\n", absPath)
 			// Replace original config object to prevent flags from being applied
 			config = &CliConfig{}
-			err := cliApp.Config.LoadFromFile(cliApp.ConfigPath)
-			if err != nil {
+			if err := config.LoadFromFile(cliApp.ConfigPath); err != nil {
 				return err
 			}
 		}
