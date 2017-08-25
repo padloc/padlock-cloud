@@ -32,9 +32,33 @@ type RequestAuthToken struct {
 // multipart/form-data or application/x-www-urlencoded parameters
 func (h *RequestAuthToken) Handle(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
 	create := r.Method == "POST"
-	email := r.PostFormValue("email")
-	tType := r.PostFormValue("type")
-	redirect := r.PostFormValue("redirect")
+	contentType := r.Header.Get("Content-Type")
+	var tType string
+	var redirect string
+	var email string
+	var device *Device
+
+	if contentType == "application/json" {
+		decoder := json.NewDecoder(r.Body)
+		var t struct {
+			Email  string  `json:"email"`
+			Device *Device `json:"device"`
+		}
+		err := decoder.Decode(&t)
+		if err != nil {
+			return err
+		}
+
+		defer r.Body.Close()
+
+		email = t.Email
+		device = t.Device
+	} else {
+		email = r.PostFormValue("email")
+		tType = r.PostFormValue("type")
+		redirect = r.PostFormValue("redirect")
+	}
+
 	if tType == "" {
 		tType = "api"
 	}
@@ -74,7 +98,7 @@ func (h *RequestAuthToken) Handle(w http.ResponseWriter, r *http.Request, auth *
 		}
 	}
 
-	authRequest, err := NewAuthRequest(email, tType)
+	authRequest, err := NewAuthRequest(email, tType, device)
 	if err != nil {
 		return err
 	}
@@ -189,6 +213,19 @@ func (h *ActivateAuthToken) Activate(authRequest *AuthRequest) error {
 		return err
 	}
 
+	// Revoke existing tokens with the same device UUID
+	if at.Device != nil && at.Device.UUID != "" {
+		t := &AuthToken{
+			Device: &Device{
+				UUID: at.Device.UUID,
+			},
+		}
+
+		// Do this until no more tokens with the same UUID are found
+		for acc.RemoveAuthToken(t) {
+		}
+	}
+
 	// Add the new key to the account
 	acc.AddAuthToken(at)
 
@@ -229,7 +266,7 @@ func (h *ActivateAuthToken) Success(w http.ResponseWriter, r *http.Request, auth
 
 	if at.Type == "api" {
 		// If auth type is "api" also log them in so they can be redirected to dashboard
-		login, err := NewAuthRequest(at.Email, "web")
+		login, err := NewAuthRequest(at.Email, "web", nil)
 		if err != nil {
 			return err
 		}
@@ -344,7 +381,7 @@ func (h *RequestDeleteStore) Handle(w http.ResponseWriter, r *http.Request, auth
 	acc := auth.Account()
 
 	// Create AuthRequest
-	authRequest, err := NewAuthRequest(acc.Email, "web")
+	authRequest, err := NewAuthRequest(acc.Email, "web", nil)
 	if err != nil {
 		return err
 	}

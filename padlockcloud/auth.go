@@ -18,6 +18,15 @@ var authMaxAge = func(authType string) time.Duration {
 	}
 }
 
+type Device struct {
+	Platform     string `json:"platform"`
+	UUID         string `json:"uuid"`
+	OSVersion    string `json:"osVersion"`
+	Manufacturer string `json:"manufacturer"`
+	Model        string `json:"model"`
+	HostName     string `json:"hostName"`
+}
+
 // A wrapper for an api key containing some meta info like the user and device name
 type AuthToken struct {
 	Email          string
@@ -29,6 +38,7 @@ type AuthToken struct {
 	Expires        time.Time
 	ClientVersion  string
 	ClientPlatform string
+	Device         *Device
 	account        *Account
 }
 
@@ -101,7 +111,7 @@ func AuthTokenFromRequest(r *http.Request) (*AuthToken, error) {
 }
 
 // Creates a new auth token for a given `email`
-func NewAuthToken(email string, t string) (*AuthToken, error) {
+func NewAuthToken(email string, t string, device *Device) (*AuthToken, error) {
 	authT, err := token()
 	if err != nil {
 		return nil, err
@@ -129,6 +139,7 @@ func NewAuthToken(email string, t string) (*AuthToken, error) {
 		Created:  time.Now(),
 		LastUsed: time.Now(),
 		Expires:  expires,
+		Device:   device,
 	}, nil
 }
 
@@ -173,13 +184,14 @@ func (a *Account) AddAuthToken(token *AuthToken) {
 // If either Id or Token field is empty, only the other one will compared. If
 // both are empty, nil is returned
 func (a *Account) findAuthToken(at *AuthToken) (int, *AuthToken) {
-	if at.Token == "" && at.Id == "" {
+	if at.Token == "" && at.Id == "" && (at.Device == nil || at.Device.UUID == "") {
 		return -1, nil
 	}
 	for i, t := range a.AuthTokens {
 		if t != nil &&
 			(at.Token == "" || t.Token == at.Token) &&
-			(at.Id == "" || t.Id == at.Id) {
+			(at.Id == "" || t.Id == at.Id) &&
+			(at.Device == nil || at.Device.UUID == "" || t.Device != nil && t.Device.UUID == at.Device.UUID) {
 			return i, t
 			fmt.Println(at, i, t)
 		}
@@ -196,13 +208,16 @@ func (a *Account) UpdateAuthToken(t *AuthToken) {
 }
 
 // Removes the corresponding auth token from the accounts `AuthTokens` slice
-func (a *Account) RemoveAuthToken(t *AuthToken) {
+func (a *Account) RemoveAuthToken(t *AuthToken) bool {
 	if i, _ := a.findAuthToken(t); i != -1 {
 		s := a.AuthTokens
 		s[i] = s[len(s)-1]
 		s[len(s)-1] = nil
 		a.AuthTokens = s[:len(s)-1]
+		return true
 	}
+
+	return false
 }
 
 // Filters out auth tokens that have been expired for 7 days or more
@@ -258,9 +273,9 @@ func (ar *AuthRequest) Serialize() ([]byte, error) {
 }
 
 // Creates a new `AuthRequest` with a given `email`
-func NewAuthRequest(email string, tType string) (*AuthRequest, error) {
+func NewAuthRequest(email string, tType string, device *Device) (*AuthRequest, error) {
 	// Create new auth token
-	authToken, err := NewAuthToken(email, tType)
+	authToken, err := NewAuthToken(email, tType, device)
 	if err != nil {
 		return nil, err
 	}
