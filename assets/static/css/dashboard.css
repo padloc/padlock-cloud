@@ -1,12 +1,33 @@
 ul.paired-devices li {
     padding: 15px 20px;
-    border: solid 1px #eee;
     margin: 10px 0;
     font-size: 90%;
+    display: block;
 }
 
-.expired {
-    opacity: 0.5;
+.revoke {
+    float: right;
+}
+
+.revoke button {
+    padding: 0;
+}
+
+th, td {
+    font-size: 90%;
+    padding: 0;
+}
+
+.device-name {
+    font-weight: bold;
+    display: inline-block;
+    margin: 0 10px 10px 0;
+}
+
+.conn-id {
+    color: #aaa;
+    display: inline-block;
+    margin-bottom: 10px;
 }
 
 .expired-label {
