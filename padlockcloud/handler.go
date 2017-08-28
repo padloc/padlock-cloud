@@ -32,36 +32,14 @@ type RequestAuthToken struct {
 // multipart/form-data or application/x-www-urlencoded parameters
 func (h *RequestAuthToken) Handle(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
 	create := r.Method == "POST"
-	contentType := r.Header.Get("Content-Type")
+
 	var tType string
-	var redirect string
-	var email string
-	var device *Device
-
-	if contentType == "application/json" {
-		decoder := json.NewDecoder(r.Body)
-		var t struct {
-			Email  string  `json:"email"`
-			Device *Device `json:"device"`
-		}
-		err := decoder.Decode(&t)
-		if err != nil {
-			return err
-		}
-
-		defer r.Body.Close()
-
-		email = t.Email
-		device = t.Device
-	} else {
-		email = r.PostFormValue("email")
-		tType = r.PostFormValue("type")
-		redirect = r.PostFormValue("redirect")
-	}
-
-	if tType == "" {
+	if tType = r.PostFormValue("type"); tType == "" {
 		tType = "api"
 	}
+	email := r.PostFormValue("email")
+	redirect := r.PostFormValue("redirect")
+	device := DeviceFromRequest(r)
 
 	// Make sure email field is set
 	if email == "" {

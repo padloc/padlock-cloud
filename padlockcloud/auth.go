@@ -18,15 +18,6 @@ var authMaxAge = func(authType string) time.Duration {
 	}
 }
 
-type Device struct {
-	Platform     string `json:"platform"`
-	UUID         string `json:"uuid"`
-	OSVersion    string `json:"osVersion"`
-	Manufacturer string `json:"manufacturer"`
-	Model        string `json:"model"`
-	HostName     string `json:"hostName"`
-}
-
 // A wrapper for an api key containing some meta info like the user and device name
 type AuthToken struct {
 	Email          string
@@ -73,6 +64,14 @@ func (t *AuthToken) String() string {
 // Returns true if `t` is expires, false otherwise
 func (t *AuthToken) Expired() bool {
 	return !t.Expires.IsZero() && t.Expires.Before(time.Now())
+}
+
+func (t *AuthToken) Description() string {
+	if t.Device != nil {
+		return t.Device.Description()
+	} else {
+		return PlatformDisplayName(t.ClientPlatform) + " Device"
+	}
 }
 
 // Creates an auth token from it's string representation of the form "AuthToken base64(t.Email):t.Token"

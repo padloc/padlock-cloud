@@ -18,15 +18,8 @@ th, td {
     padding: 0;
 }
 
-.device-name {
+.device-description {
     font-weight: bold;
-    display: inline-block;
-    margin: 0 10px 10px 0;
-}
-
-.conn-id {
-    color: #aaa;
-    display: inline-block;
     margin-bottom: 10px;
 }
 

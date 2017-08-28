@@ -78,21 +78,7 @@
 
             {{- end }}
 
-            <div>
-                {{- with .Device -}}
-                  <div class="device-name">
-                    {{- if .HostName -}}
-                      {{- .HostName -}}
-                    {{- else if .Model -}}
-                      {{- .Model -}}
-                    {{- else -}}
-                      {{ .Platform }} Device
-                    {{- end -}}
-                  </div>
-                {{- end -}}
-
-                <div class="conn-id">{{ .Id }}</div>
-            </div>
+            <div class="device-description">{{- .Description -}}</div>
 
             <table>
               <tr><th>Paired:</th><td>{{ .Created.Format "Jan 2 2006 - 15:04:05 MST" }}</td></tr>
