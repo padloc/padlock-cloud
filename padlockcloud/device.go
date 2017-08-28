@@ -104,10 +104,14 @@ func (d *Device) Description() string {
 	var desc string
 
 	if desc = d.HostName; desc == "" {
-		if m, ok := IOS_DEVICES[d.Model]; ok {
-			desc = m
+		if d.Model != "" {
+			if m, ok := IOS_DEVICES[d.Model]; ok {
+				desc = m
+			} else {
+				desc = d.Model
+			}
 		} else {
-			desc = d.Model
+			desc = PlatformDisplayName(d.Platform) + " Device"
 		}
 	}
 
