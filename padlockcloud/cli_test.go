@@ -70,9 +70,12 @@ func TestCliFlags(t *testing.T) {
 
 	time.Sleep(time.Millisecond * 100)
 
-	if app.Log.Config.LogFile != cfg.Log.LogFile ||
-		app.Storage.Config.Path != cfg.LevelDB.Path ||
-		app.Email.Config.User != cfg.Email.User ||
+	// t.Logf("%v, %v, %v, %v", app.Log, app.Storage, app.Sender, app.Server)
+	t.Logf("teting %+v", app)
+
+	if app.Server.Log.Config.LogFile != cfg.Log.LogFile ||
+		app.Storage.(*LevelDBStorage).Config.Path != cfg.LevelDB.Path ||
+		app.Server.Sender.(*EmailSender).Config.User != cfg.Email.User ||
 		app.Server.Config.Port != cfg.Server.Port {
 		t.Fatal("Values provided via flags should be carried over into corresponding configs")
 	}
@@ -112,10 +115,10 @@ func TestCliConfigFile(t *testing.T) {
 
 	time.Sleep(time.Millisecond * 100)
 
-	if !reflect.DeepEqual(*app.Log.Config, cfg.Log) ||
-		!reflect.DeepEqual(*app.Storage.Config, cfg.LevelDB) ||
+	if !reflect.DeepEqual(*app.Server.Log.Config, cfg.Log) ||
+		!reflect.DeepEqual(*app.Storage.(*LevelDBStorage).Config, cfg.LevelDB) ||
 		!reflect.DeepEqual(*app.Server.Config, cfg.Server) ||
-		!reflect.DeepEqual(*app.Sender.(*EmailSender).Config, cfg.Email) {
+		!reflect.DeepEqual(*app.Server.Sender.(*EmailSender).Config, cfg.Email) {
 		yamlData2, _ := yaml.Marshal(app.Config)
 		t.Fatalf("Config file not loaded correctly. \n\nExpected: \n\n%s\n\n Got: \n\n%s\n", yamlData, yamlData2)
 	}

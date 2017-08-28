@@ -32,7 +32,6 @@ func (c *CliConfig) LoadFromFile(path string) error {
 
 type CliApp struct {
 	*cli.App
-	*Log
 	Storage    Storage
 	Server     *Server
 	Config     *CliConfig

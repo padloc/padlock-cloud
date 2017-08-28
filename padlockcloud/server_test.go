@@ -1,20 +1,23 @@
 package padlockcloud
 
-import "testing"
-import "fmt"
-import "html/template"
-import "net/http"
-import "net/http/cookiejar"
-import "net/http/httptest"
-import "net/url"
-import "log"
-import "io/ioutil"
-import "regexp"
-import "bytes"
-import "encoding/json"
-import "errors"
-import "time"
-import "github.com/gorilla/csrf"
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"github.com/gorilla/csrf"
+	"html/template"
+	"io/ioutil"
+	"log"
+	"net/http"
+	"net/http/cookiejar"
+	"net/http/httptest"
+	"net/url"
+	"reflect"
+	"regexp"
+	"testing"
+	"time"
+)
 
 const (
 	testEmail = "martin@padlock.io"
@@ -40,6 +43,7 @@ type serverTestContext struct {
 	host              string
 	authToken         *AuthToken
 	capturedAuthToken *AuthToken
+	device            *Device
 }
 
 func (ctx *serverTestContext) resetStorage() {
@@ -88,6 +92,16 @@ func (ctx *serverTestContext) request(method string, url string, body string, ve
 
 	if ctx.authToken != nil && ctx.authToken.Type == "api" {
 		req.Header.Add("Authorization", ctx.authToken.String())
+	}
+
+	if ctx.device != nil {
+		req.Header.Add("X-Device-Platform", ctx.device.Platform)
+		req.Header.Add("X-Device-Model", ctx.device.Model)
+		req.Header.Add("X-Device-Hostname", ctx.device.HostName)
+		req.Header.Add("X-Device-App-Version", ctx.device.AppVersion)
+		req.Header.Add("X-Device-OS-Version", ctx.device.OSVersion)
+		req.Header.Add("X-Device-UUID", ctx.device.UUID)
+		req.Header.Add("X-Device-Manufacturer", ctx.device.Manufacturer)
 	}
 
 	return ctx.client.Do(req)
@@ -218,12 +232,11 @@ func newServerTestContext() *serverTestContext {
 	}
 
 	logger := &Log{Config: &LogConfig{}}
-	logger.Init()
-	logger.Info.SetOutput(ioutil.Discard)
-	logger.Error.SetOutput(ioutil.Discard)
 	server := NewServer(logger, storage, sender, &ServerConfig{})
 	server.Templates = templates
 	server.Init()
+	logger.Info.SetOutput(ioutil.Discard)
+	logger.Error.SetOutput(ioutil.Discard)
 
 	server.Endpoints["/csrftest/"] = &Endpoint{
 		AuthType: "web",
@@ -581,30 +594,6 @@ func TestStore(t *testing.T) {
 		testResponse(t, res, http.StatusOK, fmt.Sprintf("^%s$", testData))
 	})
 
-	t.Run("request delete", func(t *testing.T) {
-		// Send data reset request. Response should have status code 202 - ACCEPTED
-		if res, err = ctx.request("DELETE", ctx.host+"/store/", "", ApiVersion); err != nil {
-			t.Fatal(err)
-		}
-		testResponse(t, res, http.StatusAccepted, "")
-
-		// Activation message should be sent to the correct email
-		if ctx.sender.Recipient != testEmail {
-			t.Fatalf("Expected confirm delete message to be sent to %s, instead got %s", testEmail, ctx.sender.Recipient)
-		}
-
-		link, err := ctx.extractActivationLink()
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		// 'visit' link, should log in and redirect to delete store form
-		if res, err = ctx.request("GET", link, "", 0); err != nil {
-			t.Fatal(err)
-		}
-		testResponse(t, res, http.StatusOK, fmt.Sprintf("^dashboard$"))
-	})
-
 	t.Run("reset data", func(t *testing.T) {
 		ctx.loginWeb(testEmail, "")
 
@@ -742,7 +731,7 @@ func TestRevokeAuthToken(t *testing.T) {
 func TestMethodNotAllowed(t *testing.T) {
 	ctx := newServerTestContext()
 	// Requests with unsupported HTTP methods should return with 405 - method not allowed
-	if res, err := ctx.request("POST", ctx.host+"/store/", "", ApiVersion); err != nil {
+	if res, err := ctx.request("GET", ctx.host+"/auth/", "", ApiVersion); err != nil {
 		t.Fatal(err)
 	} else {
 		testError(t, res, &MethodNotAllowed{})
@@ -942,4 +931,49 @@ func TestEmailRateLimit(t *testing.T) {
 		testResponse(t, res, http.StatusAccepted, "")
 	})
 
+}
+
+func TestDeviceData(t *testing.T) {
+	ctx := newServerTestContext()
+
+	ctx.device = &Device{
+		Platform:     "darwin",
+		UUID:         "uuid123",
+		Manufacturer: "google",
+		Model:        "Pixel",
+		OSVersion:    "1.2.3",
+		HostName:     "My Device",
+		AppVersion:   "2.3.4",
+	}
+
+	ctx.loginApi(testEmail)
+
+	acc := &Account{Email: testEmail}
+	ctx.storage.Get(acc)
+
+	var token *AuthToken
+	if _, token = acc.findAuthToken(&AuthToken{Device: &Device{UUID: ctx.device.UUID}}); token == nil {
+		t.Error("Should find auth token with the same device UUID")
+	}
+
+	if !reflect.DeepEqual(ctx.device, token.Device) {
+		t.Errorf("Device data not saved correctly! Expected: %+v, got: %+v", ctx.device, token.Device)
+	}
+
+	ctx.device.OSVersion = "2.0.0"
+	ctx.device.AppVersion = "3.0.0"
+	ctx.device.HostName = "Some Hostname"
+
+	ctx.request("GET", ctx.host+"/store/", "", 0)
+
+	acc = &Account{Email: testEmail}
+	ctx.storage.Get(acc)
+
+	if _, token = acc.findAuthToken(&AuthToken{Device: &Device{UUID: ctx.device.UUID}}); token == nil {
+		t.Error("Should find auth token with the same device UUID")
+	}
+
+	if !reflect.DeepEqual(ctx.device, token.Device) {
+		t.Errorf("Device data not updated correctly! Expected: %+v, got: %+v", ctx.device, token.Device)
+	}
 }
