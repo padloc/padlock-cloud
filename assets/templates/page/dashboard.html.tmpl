@@ -7,10 +7,10 @@
 {{ define "dashboard-notice" -}}
 
   {{- with .paired -}}
-    <p class="note">Device paired successfully!</p>
+    <div class="note"><strong>{{ .Description }}</strong> paired successfully!</div>
   {{- end -}}
   {{- with .revoked -}}
-    <p class="note">Device access revoced successfully!</p>
+    <div class="note">Access for <strong>{{ .Description }}</strong> revoced successfully!</div>
   {{- end -}}
 
 {{- end }}

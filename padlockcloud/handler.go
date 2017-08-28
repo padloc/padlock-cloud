@@ -424,11 +424,21 @@ type Dashboard struct {
 func (h *Dashboard) Handle(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
 	acc := auth.Account()
 
+	var pairedToken *AuthToken
+	if paired := r.URL.Query().Get("paired"); paired != "" {
+		_, pairedToken = acc.findAuthToken(&AuthToken{Id: paired})
+	}
+
+	var revokedToken *AuthToken
+	if revoked := r.URL.Query().Get("revoked"); revoked != "" {
+		_, revokedToken = acc.findAuthToken(&AuthToken{Id: revoked})
+	}
+
 	var b bytes.Buffer
 	if err := h.Templates.Dashboard.Execute(&b, map[string]interface{}{
 		"account":       acc,
-		"paired":        r.URL.Query().Get("paired"),
-		"revoked":       r.URL.Query().Get("revoked"),
+		"paired":        pairedToken,
+		"revoked":       revokedToken,
 		"datareset":     r.URL.Query().Get("datareset"),
 		"action":        r.URL.Query().Get("action"),
 		CSRFTemplateTag: CSRFTemplateField(r),
