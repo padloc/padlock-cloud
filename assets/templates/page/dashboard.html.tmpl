@@ -61,41 +61,36 @@
 
       {{ with .account.AuthTokensByType "api" -}}
 
-        {{- range . }}
-          <li class="card">
+        {{- range . -}}
+          {{- if not .Expired -}}
 
-            {{ if .Expired -}}
-
-              <div class="expired-label">Expired / Revoked</div>
-
-            {{- else -}}
-
+            <li class="card">
               <form action="/revoke/" method="POST" class="revoke">
                 <input name="id" type="hidden" value="{{ .Id }}">
                 {{ $csrfField }}
                 <button class="plain">Revoke</button>
               </form>
 
-            {{- end }}
+              <div class="device-description">{{- .Description -}}</div>
 
-            <div class="device-description">{{- .Description -}}</div>
+              <table>
+                <tr><th>Paired:</th><td>{{ .Created.Format "Jan 2 2006 - 15:04:05 MST" }}</td></tr>
+                <tr><th>Last Used:</th><td>{{ .LastUsed.Format "Jan 2 2006 - 15:04:05 MST" }}</td></tr>
 
-            <table>
-              <tr><th>Paired:</th><td>{{ .Created.Format "Jan 2 2006 - 15:04:05 MST" }}</td></tr>
-              <tr><th>Last Used:</th><td>{{ .LastUsed.Format "Jan 2 2006 - 15:04:05 MST" }}</td></tr>
+                {{ if not .Expired -}}
+                  <tr><th>Expires:</th><td>
+                    {{- if .Expires.IsZero -}}
+                      Never
+                    {{- else -}}
+                      {{ .Expires.Format "Jan 2 2006" }}
+                    {{- end -}}
+                  </td></tr>
+                {{- end }}
+              </table>
+            </li>
 
-              {{ if not .Expired -}}
-                <tr><th>Expires:</th><td>
-                  {{- if .Expires.IsZero -}}
-                    Never
-                  {{- else -}}
-                    {{ .Expires.Format "Jan 2 2006" }}
-                  {{- end -}}
-                </td></tr>
-              {{- end }}
-            </table>
-          </li>
-        {{ end }}
+          {{ end -}}
+        {{- end -}}
 
       {{- else -}}
         <p>
