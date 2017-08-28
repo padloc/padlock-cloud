@@ -350,58 +350,6 @@ func (h *DeleteStore) Handle(w http.ResponseWriter, r *http.Request, auth *AuthT
 	return nil
 }
 
-type RequestDeleteStore struct {
-	*Server
-}
-
-// Handler function for requesting a data reset for a given account
-func (h *RequestDeleteStore) Handle(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
-	acc := auth.Account()
-
-	// Create AuthRequest
-	authRequest, err := NewAuthRequest(acc.Email, "web", nil)
-	if err != nil {
-		return err
-	}
-
-	// After logging in, redirect to delete store page
-	authRequest.Redirect = "/dashboard/?action=resetdata"
-
-	// Save authrequest
-	if err := h.Storage.Put(authRequest); err != nil {
-		return err
-	}
-
-	// Render confirmation email
-	var buff bytes.Buffer
-	if err := h.Templates.ActivateAuthTokenEmail.Execute(&buff, map[string]interface{}{
-		"token":           authRequest.AuthToken,
-		"activation_link": fmt.Sprintf("%s/activate/?t=%s", h.BaseUrl(r), authRequest.Token),
-	}); err != nil {
-		return err
-	}
-
-	body := buff.String()
-
-	if !h.emailRateLimiter.RateLimit(getIp(r), acc.Email) {
-		// Send email with activation link
-		go func() {
-			if err := h.Sender.Send(acc.Email, "Padlock Cloud Delete Request", body); err != nil {
-				h.LogError(&ServerError{err}, r)
-			}
-		}()
-	} else {
-		return &RateLimitExceeded{}
-	}
-
-	h.Info.Printf("%s - data_store:request_delete - %s", FormatRequest(r), acc.Email)
-
-	// Send ACCEPTED status code
-	w.WriteHeader(http.StatusAccepted)
-
-	return nil
-}
-
 type LoginPage struct {
 	*Server
 }

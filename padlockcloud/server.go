@@ -285,11 +285,10 @@ func (server *Server) InitEndpoints() {
 	// Endpoint for reading / writing and deleting a store
 	server.Endpoints["/store/"] = &Endpoint{
 		Handlers: map[string]Handler{
-			"GET":    &ReadStore{server},
-			"HEAD":   &ReadStore{server},
-			"PUT":    &WriteStore{server},
-			"POST":   &WriteStore{server},
-			"DELETE": &RequestDeleteStore{server},
+			"GET":  &ReadStore{server},
+			"HEAD": &ReadStore{server},
+			"PUT":  &WriteStore{server},
+			"POST": &WriteStore{server},
 		},
 		Version:  ApiVersion,
 		AuthType: "api",
