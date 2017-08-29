@@ -69,8 +69,13 @@ func (t *AuthToken) Expired() bool {
 func (t *AuthToken) Description() string {
 	if t.Device != nil {
 		return t.Device.Description()
-	} else {
+	} else if t.ClientPlatform != "" {
 		return PlatformDisplayName(t.ClientPlatform) + " Device"
+	} else {
+		// Older versions of the Padlock Client that didn't send device data
+		// were mostly only available on iOS and Android, so "Mobile Device"
+		// is the best guess we have in this case
+		return "Mobile Device"
 	}
 }
 
