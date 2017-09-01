@@ -163,9 +163,13 @@ func (server *Server) Authenticate(r *http.Request) (*AuthToken, error) {
 
 	// If everything checks out, update the `LastUsed` field with the current time
 	authToken.LastUsed = time.Now()
-	// Update client version
-	authToken.ClientVersion = r.Header.Get("X-Client-Version")
-	authToken.ClientPlatform = r.Header.Get("X-Client-Platform")
+
+	// Update device meta data
+	if authToken.Device == nil {
+		authToken.Device = DeviceFromRequest(r)
+	} else {
+		authToken.Device.UpdateFromRequest(r)
+	}
 
 	acc.UpdateAuthToken(authToken)
 
@@ -281,11 +285,10 @@ func (server *Server) InitEndpoints() {
 	// Endpoint for reading / writing and deleting a store
 	server.Endpoints["/store/"] = &Endpoint{
 		Handlers: map[string]Handler{
-			"GET":    &ReadStore{server},
-			"HEAD":   &ReadStore{server},
-			"PUT":    &WriteStore{server},
-			"POST":   &WriteStore{server},
-			"DELETE": &RequestDeleteStore{server},
+			"GET":  &ReadStore{server},
+			"HEAD": &ReadStore{server},
+			"PUT":  &WriteStore{server},
+			"POST": &WriteStore{server},
 		},
 		Version:  ApiVersion,
 		AuthType: "api",
@@ -357,7 +360,16 @@ func (server *Server) InitHandler() {
 		server.Handler = cors.New(cors.Options{
 			AllowedOrigins: []string{"*"},
 			AllowedMethods: []string{"HEAD", "GET", "POST", "PUT", "DELETE"},
-			AllowedHeaders: []string{"Authorization", "Accept", "Content-Type", "X-Client-Version"},
+			AllowedHeaders: []string{
+				"Authorization", "Accept", "Content-Type", "X-Client-Version", "X-Client-Platform",
+				"X-Device-App-Version",
+				"X-Device-Platform",
+				"X-Device-UUID",
+				"X-Device-Manufacturer",
+				"X-Device-OS-Version",
+				"X-Device-Model",
+				"X-Device-Hostname",
+			},
 			ExposedHeaders: exposedHeaders,
 		}).Handler(mux)
 	} else {

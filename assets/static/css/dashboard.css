@@ -1,25 +1,29 @@
 ul.paired-devices li {
     padding: 15px 20px;
-    border: solid 1px #eee;
     margin: 10px 0;
     font-size: 90%;
+    display: block;
 }
 
-.expired {
-    opacity: 0.5;
-}
-
-.expired-label {
+.revoke {
     float: right;
-    color: red;
+}
+
+.revoke button {
+    padding: 0;
+}
+
+th, td {
+    font-size: 90%;
+    padding: 0;
+}
+
+.device-description {
+    font-weight: bold;
+    margin-bottom: 10px;
 }
 
 @media (max-width: 500px) {
-    .expired-label {
-        float: none;
-        margin: 0 3px;
-    }
-
     tr {
         display: flex;
         flex-direction: column;

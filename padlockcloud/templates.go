@@ -34,25 +34,25 @@ func ExtendTemplate(base *t.Template, path string) (*t.Template, error) {
 func LoadTemplates(tt *Templates, p string) error {
 	var err error
 
-	if tt.BaseEmail, err = t.ParseFiles(fp.Join(p, "email/base.txt")); err != nil {
+	if tt.BaseEmail, err = t.ParseFiles(fp.Join(p, "email/base.txt.tmpl")); err != nil {
 		return err
 	}
-	if tt.BasePage, err = t.ParseFiles(fp.Join(p, "page/base.html")); err != nil {
+	if tt.BasePage, err = t.ParseFiles(fp.Join(p, "page/base.html.tmpl")); err != nil {
 		return err
 	}
-	if tt.ActivateAuthTokenEmail, err = ExtendTemplate(tt.BaseEmail, fp.Join(p, "email/activate-auth-token.txt")); err != nil {
+	if tt.ActivateAuthTokenEmail, err = ExtendTemplate(tt.BaseEmail, fp.Join(p, "email/activate-auth-token.txt.tmpl")); err != nil {
 		return err
 	}
-	if tt.DeprecatedVersionEmail, err = ExtendTemplate(tt.BaseEmail, fp.Join(p, "email/deprecated-version.txt")); err != nil {
+	if tt.DeprecatedVersionEmail, err = ExtendTemplate(tt.BaseEmail, fp.Join(p, "email/deprecated-version.txt.tmpl")); err != nil {
 		return err
 	}
-	if tt.ErrorPage, err = ExtendTemplate(tt.BasePage, fp.Join(p, "page/error.html")); err != nil {
+	if tt.ErrorPage, err = ExtendTemplate(tt.BasePage, fp.Join(p, "page/error.html.tmpl")); err != nil {
 		return err
 	}
-	if tt.LoginPage, err = ExtendTemplate(tt.BasePage, fp.Join(p, "page/login.html")); err != nil {
+	if tt.LoginPage, err = ExtendTemplate(tt.BasePage, fp.Join(p, "page/login.html.tmpl")); err != nil {
 		return err
 	}
-	if tt.Dashboard, err = ExtendTemplate(tt.BasePage, fp.Join(p, "page/dashboard.html")); err != nil {
+	if tt.Dashboard, err = ExtendTemplate(tt.BasePage, fp.Join(p, "page/dashboard.html.tmpl")); err != nil {
 		return err
 	}
 

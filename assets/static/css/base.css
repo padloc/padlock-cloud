@@ -4,6 +4,7 @@ body {
     font-family: "Clear Sans", "Helvetica Neue", Helvetica, sans-serif;
     font-size: 18px;
     color: #333;
+    background: #f1f1f1;
     font-weight: 300;
     -webkit-tap-highlight-color: transparent;
 }
@@ -15,12 +16,10 @@ body, input, button {
 input:not([type="checkbox"]), button {
     -webkit-appearance: none;
     -moz-appearance: none;
-    border-radius: 0;
     font-size: inherit;
     font-family: inherit;
     padding: 10px 15px;
-    background: #fff;
-    border: solid 1px #ccc;
+    border: none;
     min-width: 0;
 }
 
@@ -29,21 +28,22 @@ input[type="checkbox"] {
     cursor: pointer;
 }
 
-button {
+button, a.btn {
+    display: inline-block;
     border: none;
-    background: #59c6ff;
-    color: #fff;
+    color: #59c6ff;
     cursor: pointer;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    padding: 10px 20px;
+    text-align: center;
+    background: none;
 }
 
-button.light {
-    background: none;
-    color: #59c6ff;
-    padding: 0;
-    margin: 5px 0 0 2px;
+button.primary, a.btn.primary, form button:not(.plain) {
+    background: #59c6ff;
+    color: #fff;
 }
 
 *:focus {
@@ -123,7 +123,7 @@ header {
     z-index: 1;
     padding: 0 10px;
     box-sizing: border-box;
-    border-bottom: solid 1px #ccc;
+    box-shadow: rgba(0, 0, 0, 0.2) 0 1px 1px;
 }
 
 header .inner {
@@ -167,9 +167,14 @@ header .inner, main {
 }
 
 .note {
-    background: rgba(89, 198, 255, 0.1);
     padding: 20px;
-    border: solid 1px #59c6ff;
+    text-align: center;
+}
+
+input, button:not(.plain), a.btn, .note, .card {
+    background: #fff;
+    border-radius: 4px;
+    box-shadow: rgba(0, 0, 0, 0.3) 0 1px 2px;
 }
 
 @media (max-width: 500px) {
