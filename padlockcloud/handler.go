@@ -369,7 +369,7 @@ type Dashboard struct {
 	*Server
 }
 
-func (h *Dashboard) Handle(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
+func DashboardParams(r *http.Request, auth *AuthToken) map[string]interface{} {
 	acc := auth.Account()
 
 	var pairedToken *AuthToken
@@ -382,18 +382,21 @@ func (h *Dashboard) Handle(w http.ResponseWriter, r *http.Request, auth *AuthTok
 		_, revokedToken = acc.findAuthToken(&AuthToken{Id: revoked})
 	}
 
-	var b bytes.Buffer
-	if err := h.Templates.Dashboard.Execute(&b, map[string]interface{}{
+	return map[string]interface{}{
 		"account":       acc,
 		"paired":        pairedToken,
 		"revoked":       revokedToken,
 		"datareset":     r.URL.Query().Get("datareset"),
 		"action":        r.URL.Query().Get("action"),
 		CSRFTemplateTag: CSRFTemplateField(r),
-	}); err != nil {
+	}
+}
+
+func (h *Dashboard) Handle(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
+	var b bytes.Buffer
+	if err := h.Templates.Dashboard.Execute(&b, DashboardParams(r, auth)); err != nil {
 		return err
 	}
-
 	b.WriteTo(w)
 	return nil
 }
