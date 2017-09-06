@@ -271,6 +271,13 @@ func NewCliApp() *CliApp {
 			EnvVar:      "PC_EMAIL_PASSWORD",
 			Destination: &config.Email.Password,
 		},
+		cli.StringFlag{
+			Name:        "whitelist-path",
+			Value:       "",
+			Usage:       "File containing line-separated email whitelist",
+			EnvVar:      "PC_WHITELIST_PATH",
+			Destination: &config.Server.WhitelistPath,
+		},
 	}
 
 	cliApp.Commands = []cli.Command{

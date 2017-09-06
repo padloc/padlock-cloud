@@ -47,6 +47,11 @@ func (h *RequestAuthToken) Handle(w http.ResponseWriter, r *http.Request, auth *
 		return &BadRequest{"no email provided"}
 	}
 
+	if h.whitelist != nil && h.whitelist.IsWhitelisted(email) == false {
+		// used account not found error to mimic
+		return &BadRequest{"invalid email address"}
+	}
+
 	if tType != "api" && tType != "web" {
 		return &BadRequest{"unsupported auth token type"}
 	}
