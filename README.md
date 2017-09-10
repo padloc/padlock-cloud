@@ -159,9 +159,9 @@ where they will usually be if you installed `padlock-cloud` via `go get`.
 docker volume create --name padlock
 docker run -p 443:3000 --name padlock-cloud \
    -v padlock:/db --restart always \
-  -e BASE_URL=<BASE_URL> -e NOTIFY_EMAIL=<NOTIFY_EMAIL> \
-  -e MAIL_SERVER=<MAIL_SERVER> -e MAIL_PORT=<MAIL_PORT> \
-  -e MAIL_USER=<MAIL_USER> -e MAIL_PASSWORD=<MAIL_PASSWORD> \
+  -e PC_BASE_URL=<BASE_URL> -e PC_NOTIFY_ERRORS=<NOTIFY_EMAIL> \
+  -e PC_EMAIL_SERVER=<MAIL_SERVER> -e PC_EMAIL_PORT=<MAIL_PORT> \
+  -e PC_EMAIL_USER=<MAIL_USER> -e PC_EMAIL_PASSWORD=<MAIL_PASSWORD> \
   -v <path-to-certs>:/etc/ssl/certs:ro  \
   -d padlock/padlock-cloud --tls-cert <path-to-cert> --tls-key <path-to-key>
 ```
