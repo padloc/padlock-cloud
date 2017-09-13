@@ -95,6 +95,8 @@ type ServerConfig struct {
 	Cors bool `yaml:"cors"`
 	// Test mode
 	Test bool `yaml:"test"`
+	// Whitelisted path
+	WhitelistPath string `yaml:"whitelist_path"`
 }
 
 // The Server type holds all the contextual data and logic used for running a Padlock Cloud instances
@@ -111,6 +113,7 @@ type Server struct {
 	secret            []byte
 	emailRateLimiter  *EmailRateLimiter
 	cleanAuthRequests *Job
+	whitelist         *Whitelist
 }
 
 func (server *Server) BaseUrl(r *http.Request) string {
@@ -488,6 +491,15 @@ func (server *Server) Init() error {
 	}
 
 	server.cleanAuthRequests.Start(24 * time.Hour)
+
+	if server.Config.WhitelistPath != "" {
+		whitelist, err := NewWhitelist(server.Config.WhitelistPath)
+		if err != nil {
+			return err
+		}
+		server.whitelist = whitelist
+		server.Log.Info.Printf("%d Whitelist emails set.\n", len(whitelist.Emails))
+	}
 
 	return nil
 }
