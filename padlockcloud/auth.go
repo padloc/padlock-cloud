@@ -193,6 +193,7 @@ func (a *Account) findAuthToken(at *AuthToken) (int, *AuthToken) {
 	}
 	for i, t := range a.AuthTokens {
 		if t != nil &&
+			(at.Type == "" || t.Type == at.Type) &&
 			(at.Token == "" || t.Token == at.Token) &&
 			(at.Id == "" || t.Id == at.Id) &&
 			(at.Device == nil || at.Device.UUID == "" || t.Device != nil && t.Device.UUID == at.Device.UUID) {
