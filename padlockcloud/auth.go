@@ -174,7 +174,6 @@ func (acc *Account) Serialize() ([]byte, error) {
 	if acc.Created.IsZero() {
 		acc.Created = time.Now()
 	}
-	acc.RemoveOldAuthTokens()
 	return json.Marshal(acc)
 }
 
@@ -226,7 +225,7 @@ func (a *Account) RemoveAuthToken(t *AuthToken) bool {
 }
 
 // Filters out auth tokens that have been expired for 7 days or more
-func (a *Account) RemoveOldAuthTokens() {
+func (a *Account) RemoveExpiredAuthTokens() {
 	s := a.AuthTokens[:0]
 
 	for _, t := range a.AuthTokens {
@@ -236,6 +235,20 @@ func (a *Account) RemoveOldAuthTokens() {
 			maxAge = 7 * 24 * time.Hour
 		}
 		if t.Expires.IsZero() || t.Expires.After(time.Now().Add(-maxAge)) {
+			s = append(s, t)
+		}
+	}
+
+	a.AuthTokens = s
+}
+
+// Expires auth tokens that haven't been used in a while
+func (a *Account) ExpireUnusedAuthTokens() {
+	maxIdle := 30 * 24 * time.Hour
+	s := a.AuthTokens[:0]
+
+	for _, t := range a.AuthTokens {
+		if t.LastUsed.After(time.Now().Add(-maxIdle)) {
 			s = append(s, t)
 		}
 	}

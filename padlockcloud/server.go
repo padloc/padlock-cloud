@@ -150,6 +150,9 @@ func (server *Server) Authenticate(r *http.Request) (*AuthToken, error) {
 		}
 	}
 
+	acc.ExpireUnusedAuthTokens()
+	acc.RemoveExpiredAuthTokens()
+
 	// Find the fully populated auth token struct on account. If not found, the value will be nil
 	// and we know that the provided token is not valid
 	if !authToken.Validate(acc) {
