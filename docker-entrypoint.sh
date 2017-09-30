@@ -2,7 +2,7 @@
 set -e
 
 if [ "${1:0:1}" = '-' ]; then
-	set -- padlock-cloud runserver "$@"
+	set -- padlock-cloud "$@"
 fi
 
 if [ "$1" = 'padlock-cloud' ]; then
