@@ -1,5 +1,7 @@
 # Padlock Cloud
 
+## What is Padlock Cloud
+
 Padlock Cloud is a cloud storage service for the
 [Padlock app](https://github.com/maklesoft/padlock/) implemented in Go. It
 provides a (mostly) RESTful api for storing and retrieving user data. Padlock
@@ -7,20 +9,6 @@ Cloud does NOT implement any kind of diffing algorithm, nor does it attempt to
 provide any kind of cryptographic functionality. Any encryption, decryption and
 data consolidation should happen on the client side. Padlock Cloud merely
 provides a cloud-based storage for encrypted user data.
-
-## How to install/build
-
-First, you'll need to have [Go](https://golang.org/) installed on your system.
-Then simply run
-
-```sh
-go get github.com/maklesoft/padlock-cloud
-```
-
-This will download the source code into your `$GOPATH` and automatically build
-and install the `padlock-cloud` binary into `$GOPATH/bin`. Assuming you have
-`$GOPATH/bin` added to your path, you should be the be able to simply run the
-`padlock-cloud` command from anywhere.
 
 ## Usage
 
@@ -49,14 +37,80 @@ run
 padlock-cloud command --help
 ```
 
-### Config file
+## Commands
 
-The `--config` flag offers the option of using a configuration file instead of
-command line flags. The provided file should be in the
+### runserver
+Starts a Padlock Cloud server instance
+
+#### Environment Variables, Flags, Configuration File Variables
+| Environment Variable | Flag                   | Configuration File   | Description                                  |
+|----------------------|------------------------|----------------------|----------------------------------------------|
+| `PC_PORT`            | `--port` &#124; `-p`   | `server.port`        | Port to listen on                            |
+| `PC_ASSETS_PATH`     | `--assets-path`        | `server.assets_path` | Path to assets directory                     |
+| `PC_TLS_CERT`        | `--tls-cert`           | `server.tls_cert`    | Path to TLS certification file               |
+| `PC_TLS_KEY`         | `--tls-key`            | `server.tls_key`     | Path to TLS key file                         |
+| `PC_BASE_URL`        | `--base-url`           | `server.base_url`    | Base url for constructing urls               |
+| `PC_CORS`            | `--cors`               | `server.cors`        | Enable Cross-Origin Resource Sharing         |
+| `PC_TEST`            | `--test`               |                      | Enable test mode                             |
+
+### accounts
+Commands for managing accounts.
+
+#### list
+List existing accounts.
+
+#### create
+Create new account.
+
+#### display
+Display account.
+
+#### delete
+Delete account.
+
+### gensecret
+Generate random 32 byte secret.
+
+## Configuration
+This image provides multiple options to configure the application. 
+
+### Precedence
+The precedence for flag value sources is as follows (highest to lowest):
+
+1. Command line flag value from user
+2. Environment variable (if specified)
+3. Configuration file (if specified)
+4. Default defined on the flag
+
+### Environment Variables, Flags, Configuration File Variables
+
+| Environment Variable | Flag                   | Configuration File   | Description                                  |
+|----------------------|------------------------|----------------------|----------------------------------------------|
+| Global                                                                                                              |
+| `PC_CONFIG_PATH`     | `--config` &#124; `-c` |                      | Path to configuration file.                  |
+| `PC_LOG_FILE`        | `--log-file`           | `log.log_file`       | Path to log file                             |
+| `PC_ERR_FILE`        | `--err-file`           | `log.err_file`       | Path to error log file                       |
+| `PC_NOTIFY_ERRORS`   | `--notify-errors`      | `log.notify_errors`  | Email address to send unexpected errors to   |
+| `PC_LEVELDB_PATH`    | `--db-path`            | `leveldb.path`       | Path to LevelDB database                     |
+| `PC_EMAIL_SERVER`    | `--email-server`       | `email.server`       | Mail server for sending emails               |
+| `PC_EMAIL_PORT`      | `--email-port`         | `email.port`         | Port to use with mail server                 |
+| `PC_EMAIL_USER`      | `--email-user`         | `email.user`         | Username for authentication with mail server |
+| `PC_EMAIL_PASSWORD`  | `--email-password`     | `email.password`     | Password for authentication with mail server |
+| Command: runserver                                                                                                  |
+| `PC_PORT`            | `--port` &#124; `-p`   | `server.port`        | Port to listen on                            |
+| `PC_ASSETS_PATH`     | `--assets-path`        | `server.assets_path` | Path to assets directory                     |
+| `PC_TLS_CERT`        | `--tls-cert`           | `server.tls_cert`    | Path to TLS certification file               |
+| `PC_TLS_KEY`         | `--tls-key`            | `server.tls_key`     | Path to TLS key file                         |
+| `PC_BASE_URL`        | `--base-url`           | `server.base_url`    | Base url for constructing urls               |
+| `PC_CORS`            | `--cors`               | `server.cors`        | Enable Cross-Origin Resource Sharing         |
+| `PC_TEST`            | `--test`               |                      | Enable test mode                             |
+
+### Configuration File
+
+The provided file should be in the
 [YAML format](http://yaml.org/). Here is an example configuration file:
 
 ```yaml
----
 server:
   assets_path: assets
   port: 5555
@@ -78,8 +132,85 @@ log:
   notify_errors: admin@example.com
 ```
 
-**NOTE**: If you are using a config file, all other flags and environment
-variables will be ignored.
+## Docker
+[![Docker Build Status](https://img.shields.io/docker/build/nols1000/padlock-cloud.svg?style=flat-square)](https://hub.docker.com/r/nols1000/padlock-cloud/)
+[![Docker Automated Build](https://img.shields.io/docker/automated/nols1000/padlock-cloud.svg?style=flat-square)](https://hub.docker.com/r/nols1000/padlock-cloud/)
+[![Docker Pulls](https://img.shields.io/docker/pulls/nols1000/padlock-cloud.svg?style=flat-square)](https://hub.docker.com/r/nols1000/padlock-cloud/)
+[![Docker Stars](https://img.shields.io/docker/stars/nols1000/padlock-cloud.svg?style=flat-square)](https://hub.docker.com/r/nols1000/padlock-cloud/)
+
+### About
+
+This is a unofficial Docker-Image of 
+[Padlock Cloud](https://github.com/MaKleSoft/padlock-cloud) by 
+[MaKleSoft](https://github.com/MaKleSoft). It is is build upon the 
+[golang:alpine](https://hub.docker.com/_/golang)-image.
+
+### Getting Started with Docker
+**NOTE**: As padlock is build upon chrome we need a valid certificate issued
+by a trusted source. For now let us assume we have a certificate named
+`cert.pem` and a key named `key.pem` in the directory `./ssl/`.
+
+**NOTE**: The email-settings can be found out by searching for 
+`[email-provider] smtp login`.
+
+```sh
+docker run -p 443:8443 -v ssl:/opt/padlock-cloud/ssl -e PC_PORT=8443 \
+-e PC_BASE_URL=[base-url] -e PC_EMAIL_SERVER=smtp.googlemail.com \
+-e PC_EMAIL_PORT=587 -e PC_EMAIL_USER=user@gmail.com \
+-e PC_EMAIL_PASSWORD=userpassword1234 \
+-e PC_TLS_CERT=/opt/padlock-cloud/ssl/cert.pem \
+-e PC_TLS_KEY=/opt/padlock-cloud/ssl/key.pem nols1000/padlock-cloud
+```
+
+### Usage with Docker
+This image can be used like the cli. Just prepend `docker run`.
+
+### Volumes
+**NOTE**: This image uses a user `padlock-cloud` with uid `1000` and group 
+`padlock-cloud` with gid `1000` to run padlock-cloud. You should check your 
+permission before mounting a volume.  
+**NOTE**: This image will try to change the ownership of it's WORKDIR to 
+`1000:1000`. This won't work when mounting a volume from Windows.  
+
+This image contains 4 volumes.
+#### /opt/padlock-cloud/assets
+Contains assets used by padlock-cloud to render the frontend and the emails.
+
+#### /opt/padlock-cloud/db
+Contains the data stored in the cloud.
+
+#### /opt/padlock-cloud/logs
+Contains the logs.
+
+#### /opt/padlock-cloud/ssl
+Contains the certificate and key.
+
+### Bindings
+This image exposes ports `8080` and `8443`, because this image uses a non-root
+user. By default the padlock-cloud listens at port `8080`, because it doesn't
+use SSL by default. It is highly suggested to provide a TLS-Certificate and
+Key to enable SSL and listen at `8443`. This could be done by setting `PC_PORT`
+to `8443`.
+
+### Security
+This image uses a user `padlock-cloud` with uid `1000` and group 
+`padlock-cloud` with gid `1000` to run padlock-cloud.  
+**It will try to change the ownership of your mounted volumes to 
+`1000:1000`.**  
+
+## How to install/build
+
+First, you'll need to have [Go](https://golang.org/) installed on your system.
+Then simply run
+
+```sh
+go get github.com/maklesoft/padlock-cloud
+```
+
+This will download the source code into your `$GOPATH` and automatically build
+and install the `padlock-cloud` binary into `$GOPATH/bin`. Assuming you have
+`$GOPATH/bin` added to your path, you should be the be able to simply run the
+`padlock-cloud` command from anywhere.
 
 ## Security Considerations
 
@@ -139,6 +270,8 @@ support. In order to enable it, simple use the `cors` option. E.g.:
 ```sh
 padlock-cloud runserver --cors
 ```
+
+**NOTE**: CORS is enabled by default when using this Docker-Image.
 
 ### Failed to load templates
 

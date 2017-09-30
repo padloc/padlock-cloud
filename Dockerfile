@@ -32,7 +32,7 @@ RUN addgroup -g 1000 -S padlock-cloud &&\
     adduser -u 1000 -D -S -G padlock-cloud padlock-cloud
 
 RUN mkdir -p ${WORKDIR} && mkdir -p ${WORKDIR}/db && mkdir -p ${WORKDIR}/logs &&\
-    touch ${WORKDIR}/logs/info.log && touch ${WORKDIR}/logs/error.log
+    mkdir -p ${WORKDIR}/ssl && touch ${WORKDIR}/logs/info.log && touch ${WORKDIR}/logs/error.log
 
 WORKDIR ${WORKDIR}
 
@@ -41,7 +41,7 @@ RUN apk --no-cache add git su-exec && go get github.com/maklesoft/padlock-cloud 
 
 COPY . ${WORKDIR}
 
-VOLUME ["$WORKDIR/assets", "$WORKDIR/db", "$WORKDIR/logs"]
+VOLUME ["$WORKDIR/assets", "$WORKDIR/db", "$WORKDIR/logs", "$WORKDIR/ssl"]
 
 ENTRYPOINT ["/bin/sh", "./docker-entrypoint.sh"]
 
