@@ -38,7 +38,7 @@ func versionFromRequest(r *http.Request) int {
 	return version
 }
 
-func getIp(r *http.Request) string {
+func IPFromRequest(r *http.Request) string {
 	ip := r.Header.Get("X-Real-IP")
 	if ip == "" {
 		ip = r.RemoteAddr
@@ -47,7 +47,7 @@ func getIp(r *http.Request) string {
 }
 
 func FormatRequest(r *http.Request) string {
-	return fmt.Sprintf("%s %s %s", getIp(r), r.Method, r.URL)
+	return fmt.Sprintf("%s %s %s", IPFromRequest(r), r.Method, r.URL)
 }
 
 func formatRequestVerbose(r *http.Request) string {
@@ -398,7 +398,7 @@ func (server *Server) SendDeprecatedVersionEmail(r *http.Request) error {
 		email = r.PostFormValue("email")
 	}
 
-	if email != "" && !server.emailRateLimiter.RateLimit(getIp(r), email) {
+	if email != "" && !server.emailRateLimiter.RateLimit(IPFromRequest(r), email) {
 		var buff bytes.Buffer
 		if err := server.Templates.DeprecatedVersionEmail.Execute(&buff, nil); err != nil {
 			return err

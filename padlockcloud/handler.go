@@ -133,7 +133,7 @@ func (h *RequestAuthToken) Handle(w http.ResponseWriter, r *http.Request, auth *
 
 	// No need to send and activation email if the client is preauthorized
 	if !preauth {
-		if h.emailRateLimiter.RateLimit(getIp(r), email) {
+		if h.emailRateLimiter.RateLimit(IPFromRequest(r), email) {
 			return &RateLimitExceeded{}
 		}
 
