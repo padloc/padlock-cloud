@@ -262,7 +262,13 @@ func (h *ActivateAuthToken) Success(w http.ResponseWriter, r *http.Request, auth
 		}
 
 		h.SetAuthCookie(w, login.AuthToken)
-		redirect = redirect + fmt.Sprintf("?paired=%s", at.Id)
+
+		if u, err := url.Parse(redirect); err == nil {
+			q := u.Query()
+			q.Set("paired", at.Id)
+			u.RawQuery = q.Encode()
+			redirect = u.String()
+		}
 	}
 
 	http.Redirect(w, r, redirect, http.StatusFound)
