@@ -7,6 +7,7 @@ import "strings"
 import "github.com/gorilla/csrf"
 
 var CSRFTemplateTag = csrf.TemplateTag
+var CSRFToken = csrf.Token
 var CSRFTemplateField = csrf.TemplateField
 
 type MiddleWare interface {

@@ -1,8 +1,11 @@
 package padlockcloud
 
-import fp "path/filepath"
-import t "html/template"
-import "errors"
+import (
+	"encoding/json"
+	"errors"
+	t "html/template"
+	fp "path/filepath"
+)
 
 // Wrapper for holding references to template instances used for rendering emails, webpages etc.
 type Templates struct {
@@ -40,6 +43,12 @@ func LoadTemplates(tt *Templates, p string) error {
 	if tt.BasePage, err = t.ParseFiles(fp.Join(p, "page/base.html.tmpl")); err != nil {
 		return err
 	}
+	tt.BasePage = tt.BasePage.Funcs(t.FuncMap{
+		"jsonify": func(obj interface{}) string {
+			val, _ := json.Marshal(obj)
+			return string(val)
+		},
+	})
 	if tt.ActivateAuthTokenEmail, err = ExtendTemplate(tt.BaseEmail, fp.Join(p, "email/activate-auth-token.txt.tmpl")); err != nil {
 		return err
 	}

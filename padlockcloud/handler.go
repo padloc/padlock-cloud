@@ -265,7 +265,8 @@ func (h *ActivateAuthToken) Success(w http.ResponseWriter, r *http.Request, auth
 
 		if u, err := url.Parse(redirect); err == nil {
 			q := u.Query()
-			q.Set("paired", at.Id)
+			q.Set("action", "paired")
+			q.Set("token-id", at.Id)
 			u.RawQuery = q.Encode()
 			redirect = u.String()
 		}
@@ -360,7 +361,7 @@ func (h *DeleteStore) Handle(w http.ResponseWriter, r *http.Request, auth *AuthT
 		return err
 	}
 
-	http.Redirect(w, r, "/dashboard/?datareset=1", http.StatusFound)
+	http.Redirect(w, r, "/dashboard/?action=reset", http.StatusFound)
 	return nil
 }
 
@@ -386,25 +387,20 @@ type Dashboard struct {
 func DashboardParams(r *http.Request, auth *AuthToken) map[string]interface{} {
 	acc := auth.Account()
 
-	var pairedToken *AuthToken
-	if paired := r.URL.Query().Get("paired"); paired != "" {
-		_, pairedToken = acc.findAuthToken(&AuthToken{Id: paired})
-	}
-
-	var revokedToken *AuthToken
-	if revoked := r.URL.Query().Get("revoked"); revoked != "" {
-		_, revokedToken = acc.findAuthToken(&AuthToken{Id: revoked})
-	}
-
-	return map[string]interface{}{
+	params := map[string]interface{}{
 		"auth":          auth,
 		"account":       acc,
-		"paired":        pairedToken,
-		"revoked":       revokedToken,
-		"datareset":     r.URL.Query().Get("datareset"),
 		"action":        r.URL.Query().Get("action"),
 		CSRFTemplateTag: CSRFTemplateField(r),
+		"csrfToken":     CSRFToken(r),
 	}
+
+	if tokenId := r.URL.Query().Get("token-id"); tokenId != "" {
+		_, token := acc.findAuthToken(&AuthToken{Id: tokenId})
+		params["token"] = token
+	}
+
+	return params
 }
 
 func (h *Dashboard) Handle(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
@@ -465,7 +461,7 @@ func (h *Revoke) Handle(w http.ResponseWriter, r *http.Request, auth *AuthToken)
 		return err
 	}
 
-	http.Redirect(w, r, fmt.Sprintf("/dashboard/?revoked=%s", t.Id), http.StatusFound)
+	http.Redirect(w, r, fmt.Sprintf("/dashboard/?action=revoked&token-id=%s", t.Id), http.StatusFound)
 
 	return nil
 }

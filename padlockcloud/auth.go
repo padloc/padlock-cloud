@@ -79,6 +79,23 @@ func (t *AuthToken) Description() string {
 	}
 }
 
+func (t *AuthToken) MarshalJSON() ([]byte, error) {
+	return json.Marshal(map[string]interface{}{
+		"Email":          t.Email,
+		"Token":          t.Token,
+		"Type":           t.Type,
+		"Id":             t.Id,
+		"Created":        t.Created,
+		"LastUsed":       t.LastUsed,
+		"Expires":        t.Expires,
+		"ClientVersion":  t.ClientVersion,
+		"ClientPlatform": t.ClientPlatform,
+		"Device":         t.Device,
+		"Description":    t.Description(),
+		"Expired":        t.Expired(),
+	})
+}
+
 // Creates an auth token from it's string representation of the form "AuthToken base64(t.Email):t.Token"
 func AuthTokenFromString(str string) (*AuthToken, error) {
 	// Check if the Authorization header exists and is well formed

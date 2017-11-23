@@ -4,41 +4,18 @@
         <title>{{- block "title" . -}} Padlock Cloud {{ end }}</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
         <meta http-equiv="Content-Security-Policy" content="
-            {{- block "csp" . -}}default-src 'none'; style-src 'self'; img-src 'self'; font-src 'self'{{- end -}}
+            {{- block "csp" . -}}default-src 'none'; style-src 'self' 'unsafe-inline'; img-src 'self'; font-src 'self'{{- end -}}
         ">
 
-        <link rel="shortcut icon" type="image/png" href="/static/img/favicon.png?v=3"/>
-
-        <link href="/static/css/fonts.css" rel="stylesheet" type="text/css">
-        <link href="/static/css/base.css" rel="stylesheet" type="text/css">
+        <link rel="shortcut icon" type="image/png" href="/static/img/favicon.png?v=4"/>
 
         {{ block "css" . }}
         {{ end }}
+
+        {{ block "js" . }}
+        {{ end }}
     </head>
     <body>
-    <header>
-        <div class="inner">
-            <a href="/dashboard/" class="home">
-                <img src="/static/img/padlock-cloud.svg" class="logo">
-                <div class="type">Padlock Cloud</div>
-            </a>
-            <div class="spacer"></div>
-            {{ with .account }}
-            <div class="account-email">{{ .Email }}</div>
-            <nav>
-                <ul>
-                    <li><a href="/logout/">Logout</a></li>
-                </ul>
-            </nav>
-            {{ else }}
-            <nav>
-                <ul>
-                    <li><a href="/login/">Login</a></li>
-                </ul>
-            </nav>
-            {{ end }}
-        </div>
-    </header>
         <main>
             {{ block "main" . }}
             {{ end }}
