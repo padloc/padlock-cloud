@@ -1,8 +1,5 @@
 {{ define "csp" -}}
-    default-src 'self';
-    script-src 'self' 'unsafe-inline' https://js.stripe.com;
-    frame-src 'self' https://js.stripe.com;
-    style-src 'self' 'unsafe-inline'; img-src 'self'; font-src 'self'
+    default-src 'self'; script-src 'self' 'unsafe-inline' https://js.stripe.com; frame-src 'self' https://js.stripe.com; style-src 'self' 'unsafe-inline'; img-src 'self'; font-src 'self'
 {{- end }}
 
 {{ define "css" }}
@@ -24,7 +21,6 @@
 
     <pl-cloud-dashboard
         account='{{ jsonify .account }}'
-        sub-account='{{ jsonify .subAccount }}'
         action="{{ .action }}"
         token='{{ jsonify .token }}'
         csrf-token="{{ .csrfToken }}"

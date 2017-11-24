@@ -79,21 +79,11 @@ func (t *AuthToken) Description() string {
 	}
 }
 
-func (t *AuthToken) MarshalJSON() ([]byte, error) {
-	return json.Marshal(map[string]interface{}{
-		"Email":          t.Email,
-		"Token":          t.Token,
-		"Type":           t.Type,
-		"Id":             t.Id,
-		"Created":        t.Created,
-		"LastUsed":       t.LastUsed,
-		"Expires":        t.Expires,
-		"ClientVersion":  t.ClientVersion,
-		"ClientPlatform": t.ClientPlatform,
-		"Device":         t.Device,
-		"Description":    t.Description(),
-		"Expired":        t.Expired(),
-	})
+func (t *AuthToken) ToMap() map[string]interface{} {
+	return map[string]interface{}{
+		"description": t.Description(),
+		"tokenId":     t.Id,
+	}
 }
 
 // Creates an auth token from it's string representation of the form "AuthToken base64(t.Email):t.Token"
@@ -281,6 +271,23 @@ func (a *Account) AuthTokensByType(typ string) []*AuthToken {
 		}
 	}
 	return tokens
+}
+
+func (a *Account) ToMap() map[string]interface{} {
+	obj := map[string]interface{}{
+		"email": a.Email,
+	}
+
+	var devices []map[string]interface{}
+
+	for _, at := range a.AuthTokensByType("api") {
+		if !at.Expired() {
+			devices = append(devices, at.ToMap())
+		}
+	}
+
+	obj["devices"] = devices
+	return obj
 }
 
 // AuthRequest represents an api key - activation token pair used to activate a given api key
