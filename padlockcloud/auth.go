@@ -278,7 +278,7 @@ func (a *Account) ToMap() map[string]interface{} {
 		"email": a.Email,
 	}
 
-	var devices []map[string]interface{}
+	devices := make([]map[string]interface{}, 0)
 
 	for _, at := range a.AuthTokensByType("api") {
 		if !at.Expired() {

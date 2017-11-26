@@ -373,6 +373,8 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
 
 //# sourceMappingURL=apply-shim.min.js.map
 (function() {
+  'use strict';
+
   const userPolymer = window.Polymer;
 
   /**
@@ -389,7 +391,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
    */
   window.Polymer = function(info) {
     return window.Polymer._polymerFn(info);
-  }
+  };
 
   // support user settings on the Polymer object
   if (userPolymer) {
@@ -408,10 +410,10 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
    */
   window.Polymer._polymerFn = function(info) { // eslint-disable-line no-unused-vars
     throw new Error('Load polymer.html to use the Polymer() function.');
-  }
+  };
   /* eslint-enable */
 
-  window.Polymer.version = '2.0.1';
+  window.Polymer.version = '2.1.1';
 
   /* eslint-disable no-unused-vars */
   /*
@@ -420,7 +422,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
   */
   window.JSCompiler_renameProperty = function(prop, obj) {
     return prop;
-  }
+  };
   /* eslint-enable */
 
 })();
@@ -565,7 +567,61 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
    */
   Polymer.setRootPath = function(path) {
     Polymer.rootPath = path;
-  }
+  };
+
+  /**
+   * A global callback used to sanitize any value before inserting it into the DOM. The callback signature is:
+   *
+   *     Polymer = {
+   *       sanitizeDOMValue: function(value, name, type, node) { ... }
+   *     }
+   *
+   * Where:
+   *
+   * `value` is the value to sanitize.
+   * `name` is the name of an attribute or property (for example, href).
+   * `type` indicates where the value is being inserted: one of property, attribute, or text.
+   * `node` is the node where the value is being inserted.
+   *
+   * @type {(function(*,string,string,Node):*)|undefined}
+   * @memberof Polymer
+   */
+  let sanitizeDOMValue = Polymer.sanitizeDOMValue;
+
+  // This is needed for tooling
+  Polymer.sanitizeDOMValue = sanitizeDOMValue;
+
+  /**
+   * Sets the global sanitizeDOMValue available via `Polymer.sanitizeDOMValue`.
+   *
+   * @memberof Polymer
+   * @param {(function(*,string,string,Node):*)|undefined} newSanitizeDOMValue the global sanitizeDOMValue callback
+   */
+  Polymer.setSanitizeDOMValue = function(newSanitizeDOMValue) {
+    Polymer.sanitizeDOMValue = newSanitizeDOMValue;
+  };
+
+  /**
+   * Globally settable property to make Polymer Gestures use passive TouchEvent listeners when recognizing gestures.
+   * When set to `true`, gestures made from touch will not be able to prevent scrolling, allowing for smoother
+   * scrolling performance.
+   * Defaults to `false` for backwards compatibility.
+   *
+   * @memberof Polymer
+   */
+  let passiveTouchGestures = false;
+
+  Polymer.passiveTouchGestures = passiveTouchGestures;
+
+  /**
+   * Sets `passiveTouchGestures` globally for all elements using Polymer Gestures.
+   *
+   * @memberof Polymer
+   * @param {boolean} usePassive enable or disable passive touch gestures globally
+   */
+  Polymer.setPassiveTouchGestures = function(usePassive) {
+    Polymer.passiveTouchGestures = usePassive;
+  };
 })();
 (function() {
 
@@ -587,7 +643,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
   /* eslint-disable valid-jsdoc */
   /**
    * Wraps an ES6 class expression mixin such that the mixin is only applied
-   * if it has not already been applied its base argument.  Also memoizes mixin
+   * if it has not already been applied its base argument. Also memoizes mixin
    * applications.
    *
    * @memberof Polymer
@@ -687,10 +743,11 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
   const INCLUDE_ATTR = 'include';
 
   function importModule(moduleId) {
-    if (!Polymer.DomModule) {
+    const /** Polymer.DomModule */ PolymerDomModule = customElements.get('dom-module');
+    if (!PolymerDomModule) {
       return null;
     }
-    return Polymer.DomModule.import(moduleId);
+    return PolymerDomModule.import(moduleId);
   }
 
   /** @typedef {{assetpath: string}} */
@@ -716,7 +773,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
      * @this {StyleGather}
      */
     cssFromModules(moduleIds) {
-      let modules = moduleIds.trim().split(' ');
+      let modules = moduleIds.trim().split(/\s+/);
       let cssText = '';
       for (let i=0; i < modules.length; i++) {
         cssText += this.cssFromModule(modules[i]);
@@ -740,14 +797,13 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
     cssFromModule(moduleId) {
       let m = importModule(moduleId);
       if (m && m._cssText === undefined) {
-        let cssText = '';
+        // module imports: <link rel="import" type="css">
+        let cssText = this._cssFromModuleImports(m);
         // include css from the first template in the module
         let t = m.querySelector('template');
         if (t) {
-          cssText += this.cssFromTemplate(t, /** @type {templateWithAssetPath }*/(m).assetpath);
+          cssText += this.cssFromTemplate(t, /** @type {templateWithAssetPath} */(m).assetpath);
         }
-        // module imports: <link rel="import" type="css">
-        cssText += this.cssFromModuleImports(moduleId);
         m._cssText = cssText || null;
       }
       if (!m) {
@@ -787,7 +843,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
     },
 
     /**
-     * Returns CSS text from stylsheets loaded via `<link rel="import" type="css">`
+     * Returns CSS text from stylesheets loaded via `<link rel="import" type="css">`
      * links within the specified `dom-module`.
      *
      * @memberof Polymer.StyleGather
@@ -796,12 +852,18 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
      * @this {StyleGather}
      */
     cssFromModuleImports(moduleId) {
-      let cssText = '';
       let m = importModule(moduleId);
-      if (!m) {
-        return cssText;
-      }
-      let p$ = m.querySelectorAll(MODULE_STYLE_LINK_SELECTOR);
+      return m ? this._cssFromModuleImports(m) : '';
+    },
+    /**
+     * @memberof Polymer.StyleGather
+     * @this {StyleGather}
+     * @param {!HTMLElement} module dom-module element that could contain `<link rel="import" type="css">` styles
+     * @return {string} Concatenated CSS content from links in the dom-module
+     */
+    _cssFromModuleImports(module) {
+      let cssText = '';
+      let p$ = module.querySelectorAll(MODULE_STYLE_LINK_SELECTOR);
       for (let i=0; i < p$.length; i++) {
         let p = p$[i];
         if (p.import) {
@@ -853,7 +915,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
    *
    * Then in code in some other location that cannot access the dom-module above
    *
-   *     let img = document.createElement('dom-module').import('foo', 'img');
+   *     let img = customElements.get('dom-module').import('foo', 'img');
    *
    * @customElement
    * @extends HTMLElement
@@ -864,7 +926,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
    */
   class DomModule extends HTMLElement {
 
-    static get observedAttributes() { return ['id'] }
+    static get observedAttributes() { return ['id']; }
 
     /**
      * Retrieves the element specified by the css `selector` in the module
@@ -1237,7 +1299,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
         try {
           cb();
         } catch (e) {
-          setTimeout(() => { throw e });
+          setTimeout(() => { throw e; });
         }
       }
     }
@@ -1276,9 +1338,9 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
        */
       after(delay) {
         return  {
-          run(fn) { return setTimeout(fn, delay) },
+          run(fn) { return setTimeout(fn, delay); },
           cancel: window.clearTimeout.bind(window)
-        }
+        };
       },
       /**
        * Enqueues a function called in the next task.
@@ -1357,7 +1419,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
     },
 
     /**
-     * Async interface for enqueueing callbacks that run at microtask timing.
+     * Async interface for enqueuing callbacks that run at microtask timing.
      *
      * Note that microtask timing is achieved via a single `MutationObserver`,
      * and thus callbacks enqueued with this API will all run in a single
@@ -1367,7 +1429,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
      *
      * @namespace
      * @memberof Polymer.Async
-     * @summary Async interface for enqueueing callbacks that run at microtask
+     * @summary Async interface for enqueuing callbacks that run at microtask
      *   timing.
      */
     microTask: {
@@ -1470,8 +1532,8 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
    * the standard `static get observedAttributes()`, implement `_propertiesChanged`
    * on the class, and then call `MyClass.createPropertiesForAttributes()` once
    * on the class to generate property accessors for each observed attribute
-   * prior to instancing.  Last, call `this._flushProperties()` once to enable
-   * the accessors.
+   * prior to instancing. Last, call `this._enableProperties()` in the element's
+   * `connectedCallback` to enable the accessors.
    *
    * Any `observedAttributes` will automatically be
    * deserialized via `attributeChangedCallback` and set to the associated
@@ -1750,7 +1812,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
 
           case Object:
             try {
-              outValue = JSON.parse(/** @type string */(value));
+              outValue = JSON.parse(/** @type {string} */(value));
             } catch(x) {
               // allow non-JSON literals like Strings and Numbers
             }
@@ -1758,7 +1820,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
 
           case Array:
             try {
-              outValue = JSON.parse(/** @type string */(value));
+              outValue = JSON.parse(/** @type {string} */(value));
             } catch(x) {
               outValue = null;
               console.warn(`Polymer::Attributes: couldn't decode Array as JSON: ${value}`);
@@ -1834,7 +1896,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
 
       /**
        * Updates the local storage for a property (via `_setPendingProperty`)
-       * and enqueues a `_proeprtiesChanged` callback.
+       * and enqueues a `_propertiesChanged` callback.
        *
        * @param {string} property Name of the property
        * @param {*} value Value to set
@@ -1859,7 +1921,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
        */
       _setPendingProperty(property, value) {
         let old = this.__data[property];
-        let changed = this._shouldPropertyChange(property, value, old)
+        let changed = this._shouldPropertyChange(property, value, old);
         if (changed) {
           if (!this.__dataPending) {
             this.__dataPending = {};
@@ -1919,7 +1981,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
             this._initializeInstanceProperties(this.__dataInstanceProps);
             this.__dataInstanceProps = null;
           }
-          this.ready()
+          this.ready();
         }
       }
 
@@ -1992,16 +2054,12 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
        * @param {*} value New property value
        * @param {*} old Previous property value
        * @return {boolean} Whether the property should be considered a change
-       *   and enqueue a `_proeprtiesChanged` callback
+       *   and enqueue a `_propertiesChanged` callback
        * @protected
        */
       _shouldPropertyChange(property, value, old) {
-        return (
-          // Strict equality check
-          (old !== value &&
-           // This ensures (old==NaN, value==NaN) always returns false
-           (old === old || value === value))
-        );
+        // check equality, and ensure (old == NaN, value == NaN) always returns false
+        return old !== value && (old === old || value === value);
       }
 
     }
@@ -2226,7 +2284,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
        */
       static _parseTemplateNode(node, templateInfo, nodeInfo) {
         let noted;
-        let element = /** @type Element */(node);
+        let element = /** @type {Element} */(node);
         if (element.localName == 'template' && !element.hasAttribute('preserve-content')) {
           noted = this._parseTemplateNestedTemplate(element, templateInfo, nodeInfo) || noted;
         } else if (element.localName === 'slot') {
@@ -2255,6 +2313,9 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
        * @param {!NodeInfo} nodeInfo Node metadata for current template.
        */
       static _parseTemplateChildNodes(root, templateInfo, nodeInfo) {
+        if (root.localName === 'script' || root.localName === 'style') {
+          return;
+        }
         for (let node=root.firstChild, parentIndex=0, next; node; node=next) {
           // Wrap templates
           if (node.localName == 'template') {
@@ -2417,7 +2478,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
         let templateInfo = this.constructor._parseTemplate(template);
         let nodeInfo = templateInfo.nodeInfoList;
         let content = templateInfo.content || template.content;
-        let dom = /** @type DocumentFragment */ (document.importNode(content, true));
+        let dom = /** @type {DocumentFragment} */ (document.importNode(content, true));
         // NOTE: ShadyDom optimization indicating there is an insertion point
         dom.__noInsertionPoint = !templateInfo.hasInsertionPoint;
         let nodes = dom.nodeList = new Array(nodeInfo.length);
@@ -2428,7 +2489,8 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
           applyTemplateContent(this, node, info);
           applyEventListener(this, node, info);
         }
-        return /** @type {!StampedTemplate} */(dom);
+        dom = /** @type {!StampedTemplate} */(dom); // eslint-disable-line no-self-assign
+        return dom;
       }
 
       /**
@@ -2502,7 +2564,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
     PROPAGATE: '__propagateEffects',
     OBSERVE: '__observeEffects',
     READ_ONLY: '__readOnly'
-  }
+  };
 
   /**
    * @typedef {{
@@ -3083,7 +3145,8 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
     if (binding.kind !== 'attribute') {
       // Some browsers serialize `undefined` to `"undefined"`
       if (binding.target === 'textContent' ||
-          (node.localName == 'input' && binding.target == 'value')) {
+          (binding.target === 'value' &&
+            (node.localName === 'input' || node.localName === 'textarea'))) {
         value = value == undefined ? '' : value;
       }
     }
@@ -3873,7 +3936,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
        * The dirty-check is important to prevent cycles due to two-way
        * notification, but paths and objects are only dirty checked against any
        * previous value set during this turn via a "temporary cache" that is
-       * cleared when the last `_propertiesChaged` exits. This is so:
+       * cleared when the last `_propertiesChanged` exits. This is so:
        * a. any cached array paths (e.g. 'array.3.prop') may be invalidated
        *    due to array mutations like shift/unshift/splice; this is fine
        *    since path changes are dirty-checked at user entry points like `set`
@@ -4180,7 +4243,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
        *     this.items.splice(1, 1, {name: 'Sam'});
        *     this.items.push({name: 'Bob'});
        *     this.notifySplices('items', [
-       *       { index: 1, removed: [{name: 'Todd'}], addedCount: 1, obect: this.items, type: 'splice' },
+       *       { index: 1, removed: [{name: 'Todd'}], addedCount: 1, object: this.items, type: 'splice' },
        *       { index: 3, removed: [], addedCount: 1, object: this.items, type: 'splice'}
        *     ]);
        *
@@ -4269,7 +4332,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
        * This method notifies other paths to the same array that a
        * splice occurred to the array.
        *
-       * @param {string} path Path to array.
+       * @param {string | !Array<string|number>} path Path to array.
        * @param {...*} items Items to push onto array
        * @return {number} New length of the array.
        * @public
@@ -4294,7 +4357,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
        * This method notifies other paths to the same array that a
        * splice occurred to the array.
        *
-       * @param {string} path Path to array.
+       * @param {string | !Array<string|number>} path Path to array.
        * @return {*} Item that was removed.
        * @public
        */
@@ -4319,7 +4382,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
        * This method notifies other paths to the same array that a
        * splice occurred to the array.
        *
-       * @param {string} path Path to array.
+       * @param {string | !Array<string|number>} path Path to array.
        * @param {number} start Index from which to start removing/inserting.
        * @param {number} deleteCount Number of items to remove.
        * @param {...*} items Items to insert into array.
@@ -4354,7 +4417,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
        * This method notifies other paths to the same array that a
        * splice occurred to the array.
        *
-       * @param {string} path Path to array.
+       * @param {string | !Array<string|number>} path Path to array.
        * @return {*} Item that was removed.
        * @public
        */
@@ -4378,7 +4441,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
        * This method notifies other paths to the same array that a
        * splice occurred to the array.
        *
-       * @param {string} path Path to array.
+       * @param {string | !Array<string|number>} path Path to array.
        * @param {...*} items Items to insert info array
        * @return {number} New length of the array.
        * @public
@@ -4439,7 +4502,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
         if (protectedSetter) {
           this['_set' + upper(property)] = /** @this {PropertyEffects} */function(value) {
             this._setProperty(property, value);
-          }
+          };
         }
       }
 
@@ -4514,7 +4577,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
         let attr = CaseMap.camelToDashCase(property);
         if (attr[0] === '-') {
           console.warn('Property ' + property + ' cannot be reflected to attribute ' +
-            attr + ' because "-" is not a valid starting attribute name. Use a lowercase first letter for the property thisead.');
+            attr + ' because "-" is not a valid starting attribute name. Use a lowercase first letter for the property instead.');
         } else {
           this._addPropertyEffect(property, TYPES.REFLECT, {
             fn: runReflectEffect,
@@ -4553,15 +4616,15 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
        * roughly corresponds to a phase in effect processing.  The effect
        * metadata should be in the following form:
        *
-       *   {
-       *     fn: effectFunction, // Reference to function to call to perform effect
-       *     info: { ... }       // Effect metadata passed to function
-       *     trigger: {          // Optional triggering metadata; if not provided
-       *       name: string      // the property is treated as a wildcard
-       *       structured: boolean
-       *       wildcard: boolean
+       *     {
+       *       fn: effectFunction, // Reference to function to call to perform effect
+       *       info: { ... }       // Effect metadata passed to function
+       *       trigger: {          // Optional triggering metadata; if not provided
+       *         name: string      // the property is treated as a wildcard
+       *         structured: boolean
+       *         wildcard: boolean
+       *       }
        *     }
-       *   }
        *
        * Effects are called from `_propertiesChanged` in the following order by
        * type:
@@ -4574,7 +4637,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
        *
        * Effect functions are called with the following signature:
        *
-       *   effectFunction(inst, path, props, oldProps, info, hasPaths)
+       *     effectFunction(inst, path, props, oldProps, info, hasPaths)
        *
        * @param {string} property Property that should trigger the effect
        * @param {string} type Effect type, from this.PROPERTY_EFFECT_TYPES
@@ -4600,7 +4663,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
 
       /**
        * Creates a multi-property "method observer" based on the provided
-       * expression, which should be a string in the form of a normal Javascript
+       * expression, which should be a string in the form of a normal JavaScript
        * function signature: `'methodName(arg1, [..., argn])'`.  Each argument
        * should correspond to a property or path in the context of this
        * prototype (or instance), or may be a literal string or number.
@@ -4659,7 +4722,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
        * Creates a computed property whose value is set to the result of the
        * method described by the given `expression` each time one or more
        * arguments to the method changes.  The expression should be a string
-       * in the form of a normal Javascript function signature:
+       * in the form of a normal JavaScript function signature:
        * `'methodName(arg1, [..., argn])'`
        *
        * @param {string} property Name of computed property to set
@@ -4859,7 +4922,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
           if (parts) {
             // Initialize the textContent with any literal parts
             // NOTE: default to a space here so the textNode remains; some browsers
-            // (IE) evacipate an empty textNode following cloneNode/importNode.
+            // (IE) omit an empty textNode following cloneNode/importNode.
             node.textContent = literalFromParts(parts) || ' ';
             addBinding(this, templateInfo, nodeInfo, 'text', 'textContent', parts);
             noted = true;
@@ -4880,6 +4943,8 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
        * @param {Element} node Node to parse
        * @param {TemplateInfo} templateInfo Template metadata for current template
        * @param {NodeInfo} nodeInfo Node metadata for current template node
+       * @param {string} name Attribute name
+       * @param {string} value Attribute value
        * @return {boolean} `true` if the visited node added node-specific
        *   metadata to `nodeInfo`
        * @protected
@@ -5091,7 +5156,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
   });
 
   /**
-   * Helper api for enqueing client dom created by a host element.
+   * Helper api for enqueuing client dom created by a host element.
    *
    * By default elements are flushed via `_flushProperties` when
    * `connectedCallback` is called. Elements attach their client dom to
@@ -5147,7 +5212,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
       }
     }
 
-  }
+  };
 
 })();
 (function() {
@@ -5235,7 +5300,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
 
     /**
      * Returns the `properties` object specifically on `klass`. Use for:
-     * (1) super chain mixes togther to make `propertiesForClass` which is
+     * (1) super chain mixes together to make `propertiesForClass` which is
      * then used to make `observedAttributes`.
      * (2) properties effects and observers are created from it at `finalize` time.
      *
@@ -5248,7 +5313,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
         JSCompiler_renameProperty('__ownProperties', klass))) {
         klass.__ownProperties =
           klass.hasOwnProperty(JSCompiler_renameProperty('properties', klass)) ?
-          /** @type PolymerElementConstructor */ (klass).properties : {};
+          /** @type {PolymerElementConstructor} */ (klass).properties : {};
       }
       return klass.__ownProperties;
     }
@@ -5266,7 +5331,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
         JSCompiler_renameProperty('__ownObservers', klass))) {
         klass.__ownObservers =
           klass.hasOwnProperty(JSCompiler_renameProperty('observers', klass)) ?
-          /** @type PolymerElementConstructor */ (klass).observers : [];
+          /** @type {PolymerElementConstructor} */ (klass).observers : [];
       }
       return klass.__ownObservers;
     }
@@ -5310,7 +5375,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
         let superCtor = Object.getPrototypeOf(klass.prototype).constructor;
         if (superCtor.prototype instanceof PolymerElement) {
           klass.__classProperties = Object.assign(
-            Object.create(propertiesForClass(/** @type PolymerElementConstructor */(superCtor))),
+            Object.create(propertiesForClass(/** @type {PolymerElementConstructor} */(superCtor))),
             klass.__classProperties);
         }
       }
@@ -5364,7 +5429,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
      * @private
      */
     function finalizeClassAndSuper(klass) {
-      let proto = /** @type PolymerElementConstructor */ (klass).prototype;
+      let proto = /** @type {PolymerElementConstructor} */ (klass).prototype;
       let superCtor = Object.getPrototypeOf(proto).constructor;
       if (superCtor.prototype instanceof PolymerElement) {
         superCtor.finalize();
@@ -5373,7 +5438,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
     }
 
     /**
-     * Configures a `klass` based on a staic `klass.config` object and
+     * Configures a `klass` based on a static `klass.config` object and
      * a `template`. This includes creating accessors and effects
      * for properties in `config` and the `template` as well as preparing the
      * `template` for stamping.
@@ -5383,7 +5448,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
      */
     function finalizeClass(klass) {
       klass.__finalized = true;
-      let proto = /** @type PolymerElementConstructor */ (klass).prototype;
+      let proto = /** @type {PolymerElementConstructor} */ (klass).prototype;
       if (klass.hasOwnProperty(
         JSCompiler_renameProperty('is', klass)) && klass.is) {
         Polymer.telemetry.register(proto);
@@ -5397,7 +5462,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
         finalizeObservers(proto, observers, props);
       }
       // note: create "working" template that is finalized at instance time
-      let template = /** @type PolymerElementConstructor */ (klass).template;
+      let template = /** @type {PolymerElementConstructor} */ (klass).template;
       if (template) {
         if (typeof template === 'string') {
           let t = document.createElement('template');
@@ -5458,7 +5523,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
      *
      * * `type`: {function} type to which an attribute matching the property
      * is deserialized. Note the property is camel-cased from a dash-cased
-     * attribute. For example, 'foo-bar' attribute is dersialized to a
+     * attribute. For example, 'foo-bar' attribute is deserialized to a
      * property named 'fooBar'.
      *
      * * `readOnly`: {boolean} creates a readOnly property and
@@ -5472,7 +5537,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
      * 'foo' property changes by executing the 'compute' method. This method
      * must return the computed value.
      *
-     * * `reflectToAttriute`: {boolean} If true, the property value is reflected
+     * * `reflectToAttribute`: {boolean} If true, the property value is reflected
      * to an attribute of the same name. Note, the attribute is dash-cased
      * so a property named 'fooBar' is reflected as 'foo-bar'.
      *
@@ -5548,8 +5613,8 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
     function finalizeTemplate(proto, template, baseURI, is, ext) {
       // support `include="module-name"`
       let cssText =
-        Polymer.StyleGather.cssFromTemplate(template, baseURI) +
-        Polymer.StyleGather.cssFromModuleImports(is);
+        Polymer.StyleGather.cssFromModuleImports(is) +
+        Polymer.StyleGather.cssFromTemplate(template, baseURI);
       if (cssText) {
         let style = document.createElement('style');
         style.textContent = cssText;
@@ -5647,11 +5712,11 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
       static get template() {
         if (!this.hasOwnProperty(JSCompiler_renameProperty('_template', this))) {
           this._template = Polymer.DomModule && Polymer.DomModule.import(
-            /** @type PolymerElementConstructor*/ (this).is, 'template') ||
+            /** @type {PolymerElementConstructor}*/ (this).is, 'template') ||
             // note: implemented so a subclass can retrieve the super
             // template; call the super impl this way so that `this` points
             // to the superclass.
-            Object.getPrototypeOf(/** @type PolymerElementConstructor*/ (this).prototype).constructor.template;
+            Object.getPrototypeOf(/** @type {PolymerElementConstructor}*/ (this).prototype).constructor.template;
         }
         return this._template;
       }
@@ -5669,11 +5734,27 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
        */
       static get importPath() {
         if (!this.hasOwnProperty(JSCompiler_renameProperty('_importPath', this))) {
-            const module = Polymer.DomModule && Polymer.DomModule.import(/** @type PolymerElementConstructor */ (this).is);
+            const module = Polymer.DomModule && Polymer.DomModule.import(/** @type {PolymerElementConstructor} */ (this).is);
             this._importPath = module ? module.assetpath : '' ||
-            Object.getPrototypeOf(/** @type PolymerElementConstructor*/ (this).prototype).constructor.importPath;
+            Object.getPrototypeOf(/** @type {PolymerElementConstructor}*/ (this).prototype).constructor.importPath;
         }
         return this._importPath;
+      }
+
+      constructor() {
+        super();
+        /** @type {HTMLTemplateElement} */
+        this._template;
+        /** @type {string} */
+        this._importPath;
+        /** @type {string} */
+        this.rootPath;
+        /** @type {string} */
+        this.importPath;
+        /** @type {StampedTemplate | HTMLElement | ShadowRoot} */
+        this.root;
+        /** @type {!Object<string, !Node>} */
+        this.$;
       }
 
       /**
@@ -5776,7 +5857,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
        */
       _readyClients() {
         if (this._template) {
-          this.root = this._attachDom(this.root);
+          this.root = this._attachDom(/** @type {StampedTemplate} */(this.root));
         }
         // The super._readyClients here sets the clients initialized flag.
         // We must wait to do this until after client dom is created/attached
@@ -5794,8 +5875,8 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
        *
        * @throws {Error}
        * @suppress {missingReturn}
-       * @param {NodeList} dom to attach to the element.
-       * @return {Node} node to which the dom has been attached.
+       * @param {StampedTemplate} dom to attach to the element.
+       * @return {ShadowRoot} node to which the dom has been attached.
        */
       _attachDom(dom) {
         if (this.attachShadow) {
@@ -5821,7 +5902,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
        *
        * By default, attributes declared in `properties` metadata are
        * deserialized using their `type` information to properties of the
-       * same name.  "Dash-cased" attributes are deserialzed to "camelCase"
+       * same name.  "Dash-cased" attributes are deserialized to "camelCase"
        * properties.
        *
        * @param {string} name Name of attribute.
@@ -5924,7 +6005,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
      * @private
      */
     _regLog: function(prototype) {
-      console.log('[' + prototype.is + ']: registered')
+      console.log('[' + prototype.is + ']: registered');
     },
     /**
      * Registers a class prototype for telemetry purposes.
@@ -5998,7 +6079,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
       this._callback = callback;
       this._timer = this._asyncModule.run(() => {
         this._timer = null;
-        this._callback()
+        this._callback();
       });
     }
     /**
@@ -6098,22 +6179,44 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
     }
   })();
 
+  /**
+   * @param {string} name Possible mouse event name
+   * @return {boolean} true if mouse event, false if not
+   */
+  function isMouseEvent(name) {
+    return MOUSE_EVENTS.indexOf(name) > -1;
+  }
+
   /* eslint no-empty: ["error", { "allowEmptyCatch": true }] */
   // check for passive event listeners
   let SUPPORTS_PASSIVE = false;
   (function() {
     try {
-      let opts = Object.defineProperty({}, 'passive', {get: function() {SUPPORTS_PASSIVE = true;}})
+      let opts = Object.defineProperty({}, 'passive', {get() {SUPPORTS_PASSIVE = true;}});
       window.addEventListener('test', null, opts);
       window.removeEventListener('test', null, opts);
     } catch(e) {}
   })();
 
+  /**
+   * Generate settings for event listeners, dependant on `Polymer.passiveTouchGestures`
+   *
+   * @return {{passive: boolean} | undefined} Options to use for addEventListener and removeEventListener
+   */
+  function PASSIVE_TOUCH() {
+    if (HAS_NATIVE_TA && SUPPORTS_PASSIVE && Polymer.passiveTouchGestures) {
+      return {passive: true};
+    } else {
+      return;
+    }
+  }
+
   // Check for touch-only devices
   let IS_TOUCH_ONLY = navigator.userAgent.match(/iP(?:[oa]d|hone)|Android/);
 
   let GestureRecognizer = function(){}; // eslint-disable-line no-unused-vars
-  GestureRecognizer.prototype.reset = function(){};
+  /** @type {function()} */
+  GestureRecognizer.prototype.reset;
   /** @type {function(MouseEvent) | undefined} */
   GestureRecognizer.prototype.mousedown;
   /** @type {(function(MouseEvent) | undefined)} */
@@ -6198,7 +6301,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
   function hasLeftMouseButton(ev) {
     let type = ev.type;
     // exit early if the event is not a mouse event
-    if (MOUSE_EVENTS.indexOf(type) === -1) {
+    if (!isMouseEvent(type)) {
       return false;
     }
     // ev.button is not reliable for mousemove (0 is overloaded as both left button and no buttons)
@@ -6347,7 +6450,8 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
     _findOriginalTarget: function(ev) {
       // shadowdom
       if (ev.composedPath) {
-        return /** @type {EventTarget} */(ev.composedPath()[0]);
+        const target = /** @type {EventTarget} */(ev.composedPath()[0]);
+        return target;
       }
       // shadydom
       return ev.target;
@@ -6395,10 +6499,9 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
       if (handled.skip) {
         return;
       }
-      let recognizers = Gestures.recognizers;
       // reset recognizer state
-      for (let i = 0, r; i < recognizers.length; i++) {
-        r = recognizers[i];
+      for (let i = 0, r; i < Gestures.recognizers.length; i++) {
+        r = Gestures.recognizers[i];
         if (gs[r.name] && !handled[r.name]) {
           if (r.flow && r.flow.start.indexOf(ev.type) > -1 && r.reset) {
             r.reset();
@@ -6406,8 +6509,8 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
         }
       }
       // enforce gesture recognizer order
-      for (let i = 0, r; i < recognizers.length; i++) {
-        r = recognizers[i];
+      for (let i = 0, r; i < Gestures.recognizers.length; i++) {
+        r = Gestures.recognizers[i];
         if (gs[r.name] && !handled[r.name]) {
           handled[r.name] = true;
           r[type](ev);
@@ -6509,7 +6612,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
       for (let i = 0, dep, gd; i < deps.length; i++) {
         dep = deps[i];
         // don't add mouse handlers on iOS because they cause gray selection overlays
-        if (IS_TOUCH_ONLY && MOUSE_EVENTS.indexOf(dep) > -1 && dep !== 'click') {
+        if (IS_TOUCH_ONLY && isMouseEvent(dep) && dep !== 'click') {
           continue;
         }
         gd = gobj[dep];
@@ -6517,7 +6620,8 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
           gobj[dep] = gd = {_count: 0};
         }
         if (gd._count === 0) {
-          node.addEventListener(dep, this._handleNative);
+          let options = !isMouseEvent(dep) && PASSIVE_TOUCH();
+          node.addEventListener(dep, this._handleNative, options);
         }
         gd[name] = (gd[name] || 0) + 1;
         gd._count = (gd._count || 0) + 1;
@@ -6550,7 +6654,8 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
             gd[name] = (gd[name] || 1) - 1;
             gd._count = (gd._count || 1) - 1;
             if (gd._count === 0) {
-              node.removeEventListener(dep, this._handleNative);
+              let options = !isMouseEvent(dep) && PASSIVE_TOUCH();
+              node.removeEventListener(dep, this._handleNative, options);
             }
           }
         }
@@ -6971,13 +7076,14 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
     },
     /**
      * @this {GestureRecognizer}
-     * @param {Event} e
-     * @param {Function} preventer
+     * @param {Event | Touch} e
+     * @param {Event=} preventer
      */
     forward: function(e, preventer) {
       let dx = Math.abs(e.clientX - this.info.x);
       let dy = Math.abs(e.clientY - this.info.y);
-      let t = Gestures._findOriginalTarget(e);
+      // find original target from `preventer` for TouchEvents, or `e` for MouseEvents
+      let t = Gestures._findOriginalTarget(/** @type {Event} */(preventer || e));
       // dx,dy can be NaN if `click` has been simulated and there was no `down` for `start`
       if (isNaN(dx) || isNaN(dy) || (dx <= TAP_DISTANCE && dy <= TAP_DISTANCE) || isSyntheticClick(e)) {
         // prevent taps from being generated if an event has canceled them
@@ -7106,12 +7212,12 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
       link.setAttribute('async', '');
     }
     // NOTE: the link may now be in 3 states: (1) pending insertion,
-    // (2) inflight, (3) already laoded. In each case, we need to add
+    // (2) inflight, (3) already loaded. In each case, we need to add
     // event listeners to process callbacks.
     let cleanup = function() {
       link.removeEventListener('load', loadListener);
       link.removeEventListener('error', errorListener);
-    }
+    };
     let loadListener = function(event) {
       cleanup();
       // In case of a successful load, cache the load event on the link so
@@ -7193,7 +7299,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
     } catch(e) {
       setTimeout(() => {
         throw e;
-      })
+      });
     }
   }
 
@@ -7588,7 +7694,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
      * of items added at this location.
      */
     calculateSplices
-  }
+  };
 
 })();
 (function() {
@@ -7644,11 +7750,13 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
     */
     static getFlattenedNodes(node) {
       if (isSlot(node)) {
-        return /** @type {HTMLSlotElement} */ (node).assignedNodes({flatten: true});
+        node = /** @type {HTMLSlotElement} */(node); // eslint-disable-line no-self-assign
+        return node.assignedNodes({flatten: true});
       } else {
-        return Array.from(node.childNodes).map(node => {
+        return Array.from(node.childNodes).map((node) => {
           if (isSlot(node)) {
-            return /** @type {HTMLSlotElement} */ (node).assignedNodes({flatten: true});
+            node = /** @type {HTMLSlotElement} */(node); // eslint-disable-line no-self-assign
+            return node.assignedNodes({flatten: true});
           } else {
             return [node];
           }
@@ -7675,7 +7783,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
       /** @type {function()} */
       this._boundSchedule = () => {
         this._schedule();
-      }
+      };
       this.connect();
       this._schedule();
     }
@@ -7841,7 +7949,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
    */
   Polymer.enqueueDebouncer = function(debouncer) {
     debouncerQueue.push(debouncer);
-  }
+  };
 
   function flushDebouncers() {
     const didFlush = Boolean(debouncerQueue.length);
@@ -7873,7 +7981,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
       }
       debouncers = flushDebouncers();
     } while (shadyDOM || debouncers);
-  }
+  };
 
 })();
 (function() {
@@ -7898,7 +8006,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
    */
   const matchesSelector = function(node, selector) {
     return normalizedMatchesSelector.call(node, selector);
-  }
+  };
 
   /**
    * Node API wrapper class returned from `Polymer.dom.(target)` when
@@ -8060,7 +8168,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
       let method = methods[i];
       proto[method] = /** @this {DomApi} */ function() {
         return this.node[method].apply(this.node, arguments);
-      }
+      };
     }
   }
 
@@ -8069,7 +8177,8 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
       let name = properties[i];
       Object.defineProperty(proto, name, {
         get: function() {
-          return /** @type {DomApi} */ (this).node[name];
+          const domApi = /** @type {DomApi} */(this);
+          return domApi.node[name];
         },
         configurable: true
       });
@@ -8081,7 +8190,8 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
       let name = properties[i];
       Object.defineProperty(proto, name, {
         get: function() {
-          return /** @type {DomApi} */ (this).node[name];
+          const domApi = /** @type {DomApi} */(this);
+          return domApi.node[name];
         },
         set: function(value) {
           /** @type {DomApi} */ (this).node[name] = value;
@@ -8253,6 +8363,12 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
       constructor() {
         super();
         this.root = this;
+        /** @type {boolean} */
+        this.isAttached;
+        /** @type {WeakMap<!Element, !Object<string, !Function>>} */
+        this.__boundListeners;
+        /** @type {Object<string, Function>} */
+        this._debouncers;
         this.created();
       }
 
@@ -8375,7 +8491,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
        * add any required element event listeners.
        * In performance critical elements, the work done here should be kept
        * to a minimum since it is done before the element is rendered. In
-       * these elements, consider adding listeners asychronously so as not to
+       * these elements, consider adding listeners asynchronously so as not to
        * block render.
        * @protected
        */
@@ -8422,7 +8538,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
        *
        * @param {string} property Property name to reflect.
        * @param {string=} attribute Attribute name to reflect.
-       * @param {*=} value Property value to refect.
+       * @param {*=} value Property value to reflect.
        */
       reflectPropertyToAttribute(property, attribute, value) {
         this._propertyToAttribute(property, attribute, value);
@@ -8544,7 +8660,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
         });
         event.detail = detail;
         let node = options.node || this;
-        node.dispatchEvent(event)
+        node.dispatchEvent(event);
         return event;
       }
 
@@ -8557,7 +8673,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
        * @param {string} methodName Name of handler method on `this` to call.
        */
       listen(node, eventName, methodName) {
-        node = /** @type {Element} */ (node || this);
+        node = /** @type {!Element} */ (node || this);
         let hbl = this.__boundListeners ||
           (this.__boundListeners = new WeakMap());
         let bl = hbl.get(node);
@@ -8582,7 +8698,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
        anymore.
        */
       unlisten(node, eventName, methodName) {
-        node = /** @type {Element} */ (node || this);
+        node = /** @type {!Element} */ (node || this);
         let bl = this.__boundListeners && this.__boundListeners.get(node);
         let key = eventName + methodName;
         let handler = bl && bl[key];
@@ -8651,10 +8767,11 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
        * any `<content>` elements are replaced with the list of nodes distributed
        * to the `<content>`, the result of its `getDistributedNodes` method.
        * @this {Element}
-       * @return {Array<Node>} List of effctive child nodes.
+       * @return {Array<Node>} List of effective child nodes.
        */
       getEffectiveChildNodes() {
-        return /** @type {Polymer.DomApi} */ (Polymer.dom(this)).getEffectiveChildNodes();
+        const domApi = /** @type {Polymer.DomApi} */(Polymer.dom(this));
+        return domApi.getEffectiveChildNodes();
       }
 
       /**
@@ -8666,7 +8783,8 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
        * @return {Array<Node>} List of distributed elements that match selector.
        */
       queryDistributedElements(selector) {
-        return /** @type {Polymer.DomApi} */ (Polymer.dom(this)).queryDistributedElements(selector);
+        const domApi = /** @type {Polymer.DomApi} */(Polymer.dom(this));
+        return domApi.queryDistributedElements(selector);
       }
 
       /**
@@ -8675,7 +8793,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
        * any `<content>` elements are replaced with the list of elements
        * distributed to the `<content>`.
        *
-       * @return {Array<Node>} List of effctive children.
+       * @return {Array<Node>} List of effective children.
        */
       getEffectiveChildren() {
         let list = this.getEffectiveChildNodes();
@@ -8689,7 +8807,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
        * text content's of the element's effective childNodes (the elements
        * returned by <a href="#getEffectiveChildNodes>getEffectiveChildNodes</a>.
        *
-       * @return {string} List of effctive children.
+       * @return {string} List of effective children.
        */
       getEffectiveTextContent() {
         let cn = this.getEffectiveChildNodes();
@@ -8756,9 +8874,10 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
        * @suppress {invalidCasts}
        */
       getContentChildren(slctr) {
-        return /** @type {Array<HTMLElement>} */(this.getContentChildNodes(slctr).filter(function(n) {
+        let children = /** @type {Array<HTMLElement>} */(this.getContentChildNodes(slctr).filter(function(n) {
           return (n.nodeType === Node.ELEMENT_NODE);
         }));
+        return children;
       }
 
       /**
@@ -8812,7 +8931,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
        *       } 100);
        *     }
        *
-       * @param {string} jobName String to indentify the debounce job.
+       * @param {string} jobName String to identify the debounce job.
        * @param {function()} callback Function that is called (with `this`
        *   context) when the wait time elapses.
        * @param {number} wait Optional wait time in milliseconds (ms) after the
@@ -8862,7 +8981,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
        * @param {string} jobName The name of the debouncer started with `debounce`
        */
       cancelDebouncer(jobName) {
-        this._debouncers = this._debouncers || {}
+        this._debouncers = this._debouncers || {};
         let debouncer = this._debouncers[jobName];
         if (debouncer) {
           debouncer.cancel();
@@ -8870,7 +8989,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
       }
 
       /**
-       * Runs a callback function asyncronously.
+       * Runs a callback function asynchronously.
        *
        * By default (if no waitTime is specified), async callbacks are run at
        * microtask timing, which will occur before paint.
@@ -9102,7 +9221,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
        * @param {...*} args Array of strings or objects to log
        */
       _error(...args) {
-        this._logger('error', args)
+        this._logger('error', args);
       }
 
       /**
@@ -9140,7 +9259,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
       attributeChanged: true,
       // meta objects
       behaviors: true
-    }
+    };
 
     /**
      * Applies a "legacy" behavior or array of behaviors to the provided class.
@@ -9158,9 +9277,10 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
      */
     function mixinBehaviors(behaviors, klass) {
       if (!behaviors) {
-        return /** @type {HTMLElement} */(klass);
+        klass = /** @type {HTMLElement} */(klass); // eslint-disable-line no-self-assign
+        return klass;
       }
-      // NOTE: ensure the bahevior is extending a class with
+      // NOTE: ensure the behavior is extending a class with
       // legacy element api. This is necessary since behaviors expect to be able
       // to access 1.x legacy api.
       klass = Polymer.LegacyElementMixin(klass);
@@ -9277,7 +9397,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
             // next look for superclass template (note: use superclass symbol
             // to ensure correct `this.is`)
             Base.template ||
-            // finally fall back to `_template` in element's protoype.
+            // finally fall back to `_template` in element's prototype.
             this.prototype._template ||
             null;
         }
@@ -9356,7 +9476,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
        }
       }
 
-      PolymerGenerated.generatedFrom = info
+      PolymerGenerated.generatedFrom = info;
 
       for (let p in info) {
         // NOTE: cannot copy `metaProps` methods onto prototype at least because
@@ -9451,7 +9571,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
       // decorate klass with registration info
       klass.is = info.is;
       return klass;
-    }
+    };
 
     Polymer.mixinBehaviors = mixinBehaviors;
 
@@ -9866,12 +9986,12 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
         let model = this.__parentModel;
         if (!model) {
           let options;
-          model = this
+          model = this;
           do {
             // A template instance's `__dataHost` is a <template>
             // `model.__dataHost.__dataHost` is the template's host
             model = model.__dataHost.__dataHost;
-          } while ((options = model.__templatizeOptions) && !options.parentModel)
+          } while ((options = model.__templatizeOptions) && !options.parentModel);
           this.__parentModel = model;
         }
         return model;
@@ -9918,7 +10038,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
        * @constructor
        * @extends {base}
        */
-      let klass = class extends base { }
+      let klass = class extends base { };
       klass.prototype.__templatizeOptions = options;
       klass.prototype._bindTemplate(template);
       addNotifyEffects(klass, template, templateInfo, options);
@@ -9936,7 +10056,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
         if (!klass) {
           let base = options.mutableData ? MutableDataTemplate : DataTemplate;
           klass = templateInfo.templatizeTemplateClass =
-            class TemplatizedTemplate extends base {}
+            class TemplatizedTemplate extends base {};
           // Add template - >instances effects
           // and host <- template effects
           let hostProps = templateInfo.hostProps;
@@ -9968,7 +10088,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
       return function forwardHostProp(template, prop, props) {
         userForwardHostProp.call(template.__templatizeOwner,
           prop.substring('_host_'.length), props[prop]);
-      }
+      };
     }
 
     function addNotifyEffects(klass, template, templateInfo, options) {
@@ -9986,7 +10106,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
         for (let hprop in hostProps) {
           klass.prototype._addPropertyEffect(hprop,
             klass.prototype.PROPERTY_EFFECT_TYPES.NOTIFY,
-            {fn: createNotifyHostPropEffect()})
+            {fn: createNotifyHostPropEffect()});
         }
       }
     }
@@ -9995,13 +10115,13 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
       return function notifyInstanceProp(inst, prop, props) {
         userNotifyInstanceProp.call(inst.__templatizeOwner,
           inst, prop, props[prop]);
-      }
+      };
     }
 
     function createNotifyHostPropEffect() {
       return function notifyHostProp(inst, prop, props) {
         inst.__dataHost._setPendingPropertyOrPath('_host_' + prop, props[prop], true, true);
-      }
+      };
     }
 
     /**
@@ -10029,7 +10149,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
      * the host, and whether the instance should be decorated as a "parent model"
      * of any event handlers.
      *
-     *     // Customze property forwarding and event model decoration
+     *     // Customize property forwarding and event model decoration
      *     let TemplateClass = Polymer.Templatize.templatize(template, this, {
      *       parentModel: true,
      *       instanceProps: {...},
@@ -10129,7 +10249,8 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
         klass.prototype.__dataHost = template;
         klass.prototype.__templatizeOwner = owner;
         klass.prototype.__hostProps = templateInfo.hostProps;
-        return /** @type {function(new:TemplateInstanceBase)} */(klass);
+        klass = /** @type {function(new:TemplateInstanceBase)} */(klass); //eslint-disable-line no-self-assign
+        return klass;
       },
 
       /**
@@ -10175,7 +10296,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
         }
         return null;
       }
-    }
+    };
 
     Polymer.Templatize = Templatize;
     Polymer.TemplateInstanceBase = TemplateInstanceBase;
@@ -10357,7 +10478,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
      */
     class DomBind extends domBindBase {
 
-      static get observedAttributes() { return ['mutable-data'] }
+      static get observedAttributes() { return ['mutable-data']; }
 
       constructor() {
         super();
@@ -10372,6 +10493,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
       }
 
       connectedCallback() {
+        this.style.display = 'none';
         this.render();
       }
 
@@ -10409,7 +10531,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
               } else {
                 throw new Error('dom-bind requires a <template> child');
               }
-            })
+            });
             observer.observe(this, {childList: true});
             return;
           }
@@ -10431,6 +10553,8 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
     }
 
     customElements.define('dom-bind', DomBind);
+
+    Polymer.DomBind = DomBind;
 
   })();
 (function() {
@@ -10665,7 +10789,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
          * When using a `filter` or `sort` function, the `delay` property
          * determines a debounce time after a change to observed item
          * properties that must pass before the filter or sort is re-run.
-         * This is useful in rate-limiting shuffing of the view when
+         * This is useful in rate-limiting shuffling of the view when
          * item changes may be frequent.
          */
         delay: Number,
@@ -10712,12 +10836,12 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
           computed: '__computeFrameTime(targetFramerate)'
         }
 
-      }
+      };
 
     }
 
     static get observers() {
-      return [ '__itemsChanged(items.*)' ]
+      return [ '__itemsChanged(items.*)' ];
     }
 
     constructor() {
@@ -10747,6 +10871,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
 
     connectedCallback() {
       super.connectedCallback();
+      this.style.display = 'none';
       // only perform attachment if the element was previously detached.
       if (this.__isDetached) {
         this.__isDetached = false;
@@ -10772,7 +10897,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
             } else {
               throw new Error('dom-repeat requires a <template> child');
             }
-          })
+          });
           observer.observe(this, {childList: true});
           return false;
         }
@@ -10890,7 +11015,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
         console.warn('dom-repeat expected array for `items`, found', this.items);
       }
       // If path was to an item (e.g. 'items.3' or 'items.3.foo'), forward the
-      // path to that instance synchronously (retuns false for non-item paths)
+      // path to that instance synchronously (returns false for non-item paths)
       if (!this.__handleItemPath(change.path, change.value)) {
         // Otherwise, the array was reset ('items') or spliced ('items.splices'),
         // so queue a full refresh
@@ -11151,7 +11276,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
    * data-binding and declarative event features when used in the context of
    * a Polymer element's template.
    *
-   * When `if` becomes falsey, the stamped content is hidden but not
+   * When `if` becomes falsy, the stamped content is hidden but not
    * removed from dom. When `if` subsequently becomes truthy again, the content
    * is simply re-shown. This approach is used due to its favorable performance
    * characteristics: the expense of creating template content is paid only
@@ -11207,7 +11332,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
           observer: '__debounceRender'
         }
 
-      }
+      };
 
     }
 
@@ -11255,6 +11380,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
 
     connectedCallback() {
       super.connectedCallback();
+      this.style.display = 'none';
       if (this.if) {
         this.__debounceRender();
       }
@@ -11308,7 +11434,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
               } else {
                 throw new Error('dom-if requires a <template> child');
               }
-            })
+            });
             observer.observe(this, {childList: true});
             return false;
           }
@@ -11489,11 +11615,11 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
             value: false
           }
 
-        }
+        };
       }
 
       static get observers() {
-        return ['__updateSelection(multi, items.*)']
+        return ['__updateSelection(multi, items.*)'];
       }
 
       constructor() {
@@ -11606,7 +11732,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
         // order: selected array index
         this.__selectedMap = new Map();
         // Initialize selection
-        this.selected = this.multi ? [] : null
+        this.selected = this.multi ? [] : null;
         this.selectedItem = null;
       }
 
@@ -11800,7 +11926,7 @@ ta)}window.ShadyCSS.ApplyShim=T;}).call(this);
   class ArraySelector extends baseArraySelector {
     // Not needed to find template; can be removed once the analyzer
     // can find the tag name from customElements.define call
-    static get is() { return 'array-selector' }
+    static get is() { return 'array-selector'; }
   }
   customElements.define(ArraySelector.is, ArraySelector);
   Polymer.ArraySelector = ArraySelector;
@@ -11829,17 +11955,44 @@ Object.defineProperties(t.prototype,{transformCallback:{get:function(){return r}
 
   /**
    * Custom element for defining styles in the main document that can take
-   * advantage of several special features of Polymer's styling system:
+   * advantage of [shady DOM](https://github.com/webcomponents/shadycss) shims
+   * for style encapsulation, custom properties, and custom mixins.
    *
-   * - Document styles defined in a custom-style are shimmed to ensure they
+   * - Document styles defined in a `<custom-style>` are shimmed to ensure they
    *   do not leak into local DOM when running on browsers without native
    *   Shadow DOM.
-   * - Custom properties used by Polymer's shim for cross-scope styling may
-   *   be defined in an custom-style. Use the :root selector to define custom
-   *   properties that apply to all custom elements.
+   * - Custom properties can be defined in a `<custom-style>`. Use the `html` selector
+   *   to define custom properties that apply to all custom elements.
+   * - Custom mixins can be defined in a `<custom-style>`, if you import the optional
+   *   [apply shim](https://github.com/webcomponents/shadycss#about-applyshim)
+   *   (`shadycss/apply-shim.html`).
    *
-   * To use, simply wrap an inline `<style>` tag in the main document whose
-   * CSS uses these features with a `<custom-style>` element.
+   * To use:
+   *
+   * - Import `custom-style.html`.
+   * - Place a `<custom-style>` element in the main document, wrapping an inline `<style>` tag that
+   *   contains the CSS rules you want to shim.
+   *
+   * For example:
+   *
+   * ```
+   * <!-- import apply shim--only required if using mixins -->
+   * <link rel="import href="bower_components/shadycss/apply-shim.html">
+   * <!-- import custom-style element -->
+   * <link rel="import" href="bower_components/polymer/lib/elements/custom-style.html">
+   * ...
+   * <custom-style>
+   *   <style>
+   *     html {
+   *       --custom-color: blue;
+   *       --custom-mixin: {
+   *         font-weight: bold;
+   *         color: red;
+   *       };
+   *     }
+   *   </style>
+   * </custom-style>
+   * ```
    *
    * @customElement
    * @extends HTMLElement
@@ -11874,6 +12027,19 @@ Object.defineProperties(t.prototype,{transformCallback:{get:function(){return r}
         style.removeAttribute(attr);
         style.textContent = Polymer.StyleGather.cssFromModules(include) + style.textContent;
       }
+      /*
+      HTML Imports styling the main document are deprecated in Chrome
+      https://crbug.com/523952
+
+      If this element is not in the main document, then it must be in an HTML Import document.
+      In that case, move the custom style to the main document.
+
+      The ordering of `<custom-style>` should stay the same as when loaded by HTML Imports, but there may be odd
+      cases of ordering w.r.t the main document styles.
+      */
+      if (this.ownerDocument !== window.document) {
+        window.document.head.appendChild(this);
+      }
       return this._style;
     }
   }
@@ -11885,9 +12051,8 @@ Object.defineProperties(t.prototype,{transformCallback:{get:function(){return r}
   'use strict';
 
   let mutablePropertyChange;
-  (
-    /** @suppress {missingProperties} */
-    function() {
+  /** @suppress {missingProperties} */
+  (() => {
     mutablePropertyChange = Polymer.MutableData._mutablePropertyChange;
   })();
 
@@ -13381,11 +13546,22 @@ padlock.NotificationMixin = (baseClass) => {
 };
 
 })();
-/* global Stripe */
+/* global Stripe, mixpanel */
 (() => {
 
 const { LocaleMixin, DialogMixin, NotificationMixin, AnimationMixin, BaseElement } = padlock;
 const { applyMixins } = padlock.util;
+
+function track(event, data) {
+    if (typeof mixpanel === "undefined") {
+        return Promise.resolve();
+    }
+
+    return new Promise((resolve) => {
+        mixpanel.track(event, data, resolve);
+        setTimeout(resolve, 300);
+    });
+}
 
 let stripe;
 
@@ -13405,6 +13581,7 @@ class Dashboard extends applyMixins(
         token: Object,
         csrfToken: String,
         stripePubKey: String,
+        referer: String,
         _cardError: {
             type: String,
             value: ""
@@ -13485,6 +13662,8 @@ class Dashboard extends applyMixins(
                     }
                 });
         }
+
+        track("Dashboard: Finish Loading");
     }
 
     _setupPayment() {
@@ -13527,12 +13706,27 @@ class Dashboard extends applyMixins(
         this._submittingCard = true;
 
         stripe.createToken(this._cardElement).then((result) => {
+            const edata = {
+                "Action": this._changingPaymentSource ? "Change Payment Source" : "Buy Subscription",
+                "Source": this.referer
+            };
+
+            if (result.error) {
+                Object.assign(edata, {
+                    "Error Code": result.error.code,
+                    "Error Type": result.error.type,
+                    "Error Message": result.error.message
+                });
+            }
+
+            const trackPromise = track("Dashboard: Submit Payment Source", edata);
+
             if (result.error) {
                 this.$.submitButton.fail();
                 this._submittingCard = false;
             } else {
                 this._paymentToken = result.token;
-                this.$.paymentForm.submit();
+                trackPromise.then(() => this.$.paymentForm.submit());
             }
         });
     }
@@ -13613,8 +13807,10 @@ class Dashboard extends applyMixins(
 
     _buySubscription() {
         this._submitCardLabel = $l("Pay 12.00 USD");
-        this._changingPaymentMethod = false;
+        this._changingPaymentSource = false;
         this.$.cardDialog.open = true;
+
+        track("Dashboard: Open Payment Dialog", { "Action": "Buy Subscription", "Source": this.referer });
     }
 
     _cancelSubscription() {
@@ -13623,12 +13819,16 @@ class Dashboard extends applyMixins(
 
     _changePaymentMethod() {
         this._submitCardLabel = $l("Add New Card");
-        this._changingPaymentMethod = true;
+        this._changingPaymentSource = true;
         this.$.cardDialog.open = true;
+
+        track("Dashboard: Open Payment Dialog", { "Action": "Change Payment Source", "Source": this.referer });
     }
 
     _back() {
-        setTimeout(() => window.location = "https://padlock.io/", 200);
+        track("Dashboard: Back", {}).then(() => {
+            setTimeout(() => window.location = "https://padlock.io/", 200);
+        });
         window.location = "padlock://?ref=dashboard";
     }
 

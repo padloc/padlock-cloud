@@ -2519,11 +2519,11 @@ Custom property | Description | Default
         </pl-dialog>
 
         <pl-dialog id="cardDialog">
-            <form id="paymentForm" action="/subscribe/" method="post" on-submit="_submitCard">
+            <form id="paymentForm" action="/subscribe/?ref=[[ referer ]]" method="post" on-submit="_submitCard">
                 <input type="hidden" name="gorilla.csrf.Token" value="[[ csrfToken ]]">
                 <input type="hidden" name="stripeToken" value="[[ _paymentToken.id ]]">
                 <input type="hidden" name="updating" value="[[ _paymentToken.id ]]">
-                <div class="buy-subscription tiles-1" hidden$="[[ _changingPaymentMethod ]]">
+                <div class="buy-subscription tiles-1" hidden$="[[ _changingPaymentSource ]]">
                     <div><strong>[[ $l("Buy Subscription") ]]</strong></div>
                     <div class="price">[[ $l("{0}/month", "$1") ]]</div>
                     <div class="small">[[ $l("(billed annually)") ]]</div>
