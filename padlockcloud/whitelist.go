@@ -45,6 +45,5 @@ func (w *Whitelist) init(path string) error {
 
 // Returns whether email is whitelisted or not
 func (w *Whitelist) IsWhitelisted(email string) bool {
-	b, ok := w.Emails[email]
-	return b && ok
+	return w.Emails[email]
 }
