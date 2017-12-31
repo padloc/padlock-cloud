@@ -428,9 +428,9 @@ func (server *Server) Init() error {
 
 	if server.Config.Secret != "" {
 		if s, err := base64.StdEncoding.DecodeString(server.Config.Secret); err != nil {
-			server.secret = s
-		} else {
 			return err
+		} else {
+			server.secret = s
 		}
 	} else {
 		if key, err := randomBytes(32); err != nil {

@@ -2,6 +2,7 @@ package padlockcloud
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1008,5 +1009,14 @@ func TestDeviceData(t *testing.T) {
 
 	if !reflect.DeepEqual(ctx.device, token.Device) {
 		t.Errorf("Device data not updated correctly! Expected: %+v, got: %+v", ctx.device, token.Device)
+	}
+}
+
+func TestSecretInConfig(t *testing.T) {
+	secret := bytes.Repeat([]byte("a"), 32)
+	ctx := newServerTestContextWithConfig(&ServerConfig{Secret: base64.StdEncoding.EncodeToString(secret)})
+
+	if !bytes.Equal(ctx.server.secret, secret) {
+		t.Errorf("User-provided secret not set in server. Expected: %q, got: %q", secret, ctx.server.secret)
 	}
 }
