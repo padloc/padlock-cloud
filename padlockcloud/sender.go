@@ -23,9 +23,20 @@ type EmailConfig struct {
 // EmailSender implements the `Sender` interface for emails
 type EmailSender struct {
 	Config *EmailConfig
+	// Function used to actually send the mail. Same signature as `smtp.SendMail`.
+	SendFunc func(addr string, a smtp.Auth, from string, to []string, msg []byte) error
 }
 
-// Attempts to send an email to a given recipient. Through `smpt.SendMail`
+// NewEmailSender returns an EmailSender which sends mail using `smtp.SendMail`.
+// Its configuration points to the given `EmailConfig`.
+func NewEmailSender(c *EmailConfig) *EmailSender {
+	return &EmailSender{
+		Config:   c,
+		SendFunc: smtp.SendMail,
+	}
+}
+
+// Attempts to send an email to a given recipient.
 func (sender *EmailSender) Send(rec string, subject string, body string) error {
 	auth := smtp.PlainAuth(
 		"",
@@ -35,7 +46,7 @@ func (sender *EmailSender) Send(rec string, subject string, body string) error {
 	)
 
 	message := fmt.Sprintf("Subject: %s\r\nFrom: Padlock Cloud <%s>\r\n\r\n%s", subject, sender.Config.User, body)
-	return smtp.SendMail(
+	return sender.SendFunc(
 		sender.Config.Server+":"+sender.Config.Port,
 		auth,
 		sender.Config.User,
