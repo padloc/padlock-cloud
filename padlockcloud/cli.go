@@ -59,9 +59,7 @@ func (cliApp *CliApp) InitServer() error {
 		cliApp.Config.Server.Cors = true
 	} else {
 		storage = cliApp.Storage
-		sender = &EmailSender{
-			Config: &cliApp.Config.Email,
-		}
+		sender = NewEmailSender(&cliApp.Config.Email)
 		logger.Sender = sender
 	}
 
