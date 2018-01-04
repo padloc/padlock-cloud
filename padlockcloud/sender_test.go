@@ -14,13 +14,14 @@ func TestEmailSenderSendCallsSendMailCorrectly(t *testing.T) {
 		Server:   "test_server",
 		Port:     "test_port",
 		Password: "unused_password",
+		From:     "test_from",
 	})
 	sender.SendFunc = func(addr string, a smtp.Auth, from string, to []string, msg []byte) error {
 		if want := "test_server:test_port"; addr != want {
 			t.Errorf("SendFunc addr: got %q; want %q", addr, want)
 		}
 		// smtp.Auth is tested in a separate test.
-		if want := "test_user"; from != want {
+		if want := "test_from"; from != want {
 			t.Errorf("SendFunc from: got %q; want %q", from, want)
 		}
 		if want := []string{"test_recipient"}; !reflect.DeepEqual(to, want) {
@@ -37,6 +38,26 @@ func TestEmailSenderSendCallsSendMailCorrectly(t *testing.T) {
 	if err := sender.Send("test_recipient", "test_subject", "test_body"); err != nil {
 		t.Errorf("Send() == %v; want nil", err)
 	}
+}
+
+func TestEmailSenderSendFallsBackToUserWhenNoFrom(t *testing.T) {
+	sender := NewEmailSender(&EmailConfig{
+		User:     "test_user",
+		Server:   "unused_server",
+		Port:     "unused_port",
+		Password: "unused_password",
+		// No `From`: fall back to `User`.
+	})
+	sender.SendFunc = func(_ string, _ smtp.Auth, from string, _ []string, _ []byte) error {
+		if want := "test_user"; from != want {
+			t.Errorf("SendFunc from: got %q; want %q", from, want)
+		}
+		return nil
+	}
+	if err := sender.Send("test_recipient", "test_subject", "test_body"); err != nil {
+		t.Errorf("Send() == %v; want nil", err)
+	}
+
 }
 
 // This is tested separately as it relies on implementation details of smtp.PlainAuth.
@@ -64,7 +85,7 @@ func TestEmailSenderSendBuildsPlainAuth(t *testing.T) {
 		}
 		return nil
 	}
-	if err := sender.Send("test_recipient", "test_subject", "test_body"); err != nil {
+	if err := sender.Send("unused_recipient", "unused_subject", "unused_body"); err != nil {
 		t.Errorf("Send() == %v; want nil", err)
 	}
 }
@@ -75,6 +96,7 @@ func TestEmailSenderSendFailsWhenSendMailFails(t *testing.T) {
 		Server:   "server",
 		Port:     "42",
 		Password: "password",
+		From:     "unused_from",
 	})
 	want := errors.New("jabberwock")
 	sender.SendFunc = func(string, smtp.Auth, string, []string, []byte) error {

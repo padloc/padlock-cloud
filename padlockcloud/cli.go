@@ -270,6 +270,13 @@ func NewCliApp() *CliApp {
 			Destination: &config.Email.Password,
 		},
 		cli.StringFlag{
+			Name:        "email-from",
+			Value:       "",
+			Usage:       "Mail address to use as sender of outgoing mails. If empty, email-user is used instead.",
+			EnvVar:      "PC_EMAIL_FROM",
+			Destination: &config.Email.From,
+		},
+		cli.StringFlag{
 			Name:        "whitelist-path",
 			Value:       "",
 			Usage:       "File containing line-separated email whitelist",
