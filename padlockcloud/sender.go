@@ -18,6 +18,8 @@ type EmailConfig struct {
 	Port string `yaml:"port"`
 	// Password used for authentication with the mail server
 	Password string `yaml:"password"`
+	// Sender mail address for outgoing mails. If empty, `User` is used instead.
+	From string `yaml:"from"`
 }
 
 // EmailSender implements the `Sender` interface for emails
@@ -45,11 +47,16 @@ func (sender *EmailSender) Send(rec string, subject string, body string) error {
 		sender.Config.Server,
 	)
 
-	message := fmt.Sprintf("Subject: %s\r\nFrom: Padlock Cloud <%s>\r\n\r\n%s", subject, sender.Config.User, body)
+	from := sender.Config.From
+	if from == "" {
+		from = sender.Config.User
+	}
+
+	message := fmt.Sprintf("Subject: %s\r\nFrom: Padlock Cloud <%s>\r\n\r\n%s", subject, from, body)
 	return sender.SendFunc(
 		sender.Config.Server+":"+sender.Config.Port,
 		auth,
-		sender.Config.User,
+		from,
 		[]string{rec},
 		[]byte(message),
 	)
