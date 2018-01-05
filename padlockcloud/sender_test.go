@@ -90,6 +90,24 @@ func TestEmailSenderSendBuildsPlainAuth(t *testing.T) {
 	}
 }
 
+func TestEmailSenderNoUserNoAuth(t *testing.T) {
+	sender := NewEmailSender(&EmailConfig{
+		// No `User`: disable authentication.
+		Server:   "unused_server",
+		Port:     "unused_port",
+		Password: "unused_password",
+	})
+	sender.SendFunc = func(_ string, a smtp.Auth, _ string, _ []string, _ []byte) error {
+		if a != nil {
+			t.Errorf("SendFunc auth: got %q; want nil", a)
+		}
+		return nil
+	}
+	if err := sender.Send("unused_recipient", "unused_subject", "unused_body"); err != nil {
+		t.Errorf("Send() == %v; want nil", err)
+	}
+}
+
 func TestEmailSenderSendFailsWhenSendMailFails(t *testing.T) {
 	sender := NewEmailSender(&EmailConfig{
 		User:     "user",

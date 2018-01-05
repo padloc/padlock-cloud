@@ -40,12 +40,15 @@ func NewEmailSender(c *EmailConfig) *EmailSender {
 
 // Attempts to send an email to a given recipient.
 func (sender *EmailSender) Send(rec string, subject string, body string) error {
-	auth := smtp.PlainAuth(
-		"",
-		sender.Config.User,
-		sender.Config.Password,
-		sender.Config.Server,
-	)
+	var auth smtp.Auth
+	if sender.Config.User != "" {
+		auth = smtp.PlainAuth(
+			"",
+			sender.Config.User,
+			sender.Config.Password,
+			sender.Config.Server,
+		)
+	}
 
 	from := sender.Config.From
 	if from == "" {
