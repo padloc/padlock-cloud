@@ -68,9 +68,10 @@ leveldb:
   path: path/to/db
 email:
   server: smtp.gmail.com
-  port : "587"
-  user: mail@example.com
+  port: "587"
+  user: mail_user
   password: secret
+  from: mail@example.com
 log:
   log_file: LOG.txt
   err_file: ERR.txt
