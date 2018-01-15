@@ -432,15 +432,19 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
             --font-weight-regular: 400;
             --font-weight-bold: 700;
 
-            --color-primary: #59c6ff;
+            --color-primary: #3bb7f9;
             --color-secondary: #444;
             --color-tertiary: #ffffff;
+            --color-quaternary: #fafafa;
 
             --color-background: var(--color-tertiary);
             --color-foreground: var(--color-secondary);
             --color-highlight: var(--color-primary);
 
             --row-height: 50px;
+
+            --gutter-width: 4px;
+            --border-radius: 8px;
 
             --toaster-easing: cubic-bezier(1, -0.3, 0, 1.3);
 
@@ -659,8 +663,9 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
 
             section {
                 margin: 15px 0;
+                background: var(--color-background);
                 border-top: solid 1px rgba(0, 0, 0, 0.1);
-                border-bottom: solid 1px rgba(0, 0, 0, 0.2);
+                border-bottom: solid 1px rgba(0, 0, 0, 0.1);
             }
 
             section .info {
@@ -679,14 +684,15 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
                 font-size: var(--font-size-default);
                 position: relative;
                 z-index: 1;
-                border-bottom: solid 2px rgba(0, 0, 0, 0.3);
+                border-bottom: solid 1px rgba(0, 0, 0, 0.2);
             }
 
             header > .title {
                 line-height: var(--row-height);
-                padding: 0 15px;
+                padding: 0 10px;
                 flex: 1;
                 font-weight: bold;
+                text-align: center;
                 @apply --ellipsis;
             }
 
@@ -765,6 +771,21 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
 
             .ellipsis {
                 @apply --ellipsis;
+            }
+
+            .rounded-corners {
+                content: "";
+                display: block;
+                position: absolute;
+                left: -10px;
+                right: -10px;
+                top: -10px;
+                bottom: -10px;
+                border: solid 10px var(--color-gutter);
+                border-radius: calc(10px + var(--border-radius));
+                z-index: 1;
+                pointer-events: none;
+                transform: translate3d(0, 0, 0);
             }
 
             @keyframes spin {
@@ -887,7 +908,7 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
             .inner {
                 width: 100%;
                 box-sizing: border-box;
-                max-width: 400px;
+                max-width: var(--pl-dialog-max-width, 400px);
                 z-index: 1;
                 overflow: hidden;
                 --color-background: var(--color-primary);
@@ -895,7 +916,7 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
                 --color-highlight: var(--color-secondary);
                 background: var(--color-background);
                 color: var(--color-foreground);
-                border-radius: 8px;
+                border-radius: var(--border-radius);
                 border-bottom: solid 2px rgb(64, 143, 184);
                 text-shadow: rgba(0, 0, 0, 0.2) 0 2px 0;
                 transform: translate3d(0, 0, 0);
@@ -1123,7 +1144,7 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
                 font-size: inherit;
                 --track-color: var(--slider-track-color, var(--color-foreground));
                 --knob-color: var(--slider-knob-color, var(--color-foreground));
-                --track-size: var(--slider-track-size, 4px);
+                --track-size: var(--slider-track-size, 2px);
                 --knob-size: var(--slider-knob-size, 25px);
             }
 
@@ -1145,7 +1166,7 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
                 width: 100%;
                 height: var(--track-size);
                 cursor: pointer;
-                background: var(--color-background);
+                background: var(--track-color);
                 border-radius: var(--track-size);
             }
 
@@ -1156,7 +1177,7 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
                 margin-top: calc(0.5 * var(--track-size) - 0.5 * var(--knob-size));
                 position: relative;
                 border-radius: 100%;
-                background: var(--color-foreground);
+                background: var(--knob-color);
                 cursor: pointer;
                 border: none;
                 box-sizing: border-box;
@@ -1164,7 +1185,7 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
             }
 
             input[type=range]:active::-webkit-slider-thumb {
-                background: var(--color-highlight);
+                transform: scale(1.1);
             }
 
             label {
@@ -1402,7 +1423,7 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
     <template>
         <style include="shared"></style>
 
-        <pl-dialog open="{{ open }}" prevent-dismiss="">
+        <pl-dialog open="{{ open }}" prevent-dismiss="[[ preventDismiss ]]">
             <template is="dom-if" if="[[ _hasMessage(message) ]]" restamp="">
                 <div class="message tiles-1">[[ message ]]</div>
             </template>
@@ -2171,6 +2192,13 @@ Custom property | Description | Default
                 transition: transform 0.2s cubic-bezier(1, -0.3, 0, 1.3), opacity 0.2s;
             }
 
+            button > .label {
+                @appy --fullbleed;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+
             button.loading .label, button.success .label, button.fail .label,
             button:not(.loading) .spinner,
             button:not(.success) .icon-success,
@@ -2191,7 +2219,7 @@ Custom property | Description | Default
         </style>
 
         <button type="button" class$="[[ _buttonClass(_loading, _success, _fail) ]]" tabindex$="[[ _tabIndex(noTab) ]]">
-            <div class="label">[[ label ]]</div>
+            <div class="label"><slot></slot></div>
             <paper-spinner-lite active="[[ _loading ]]" class="spinner"></paper-spinner-lite>
             <pl-icon icon="check" class="icon-success"></pl-icon>
             <pl-icon icon="cancel" class="icon-fail"></pl-icon>
@@ -2207,7 +2235,6 @@ Custom property | Description | Default
         <style include="shared">
             :host {
                 display: block;
-                --height: 50px;
                 text-align: center;
                 font-weight: bold;
                 transition: transform 0.5s cubic-bezier(1, -0.3, 0, 1.3);
@@ -2221,7 +2248,7 @@ Custom property | Description | Default
             }
 
             :host(:not(.showing)) {
-                transform: translateY(calc(100% + 30px));
+                transform: translateY(130%);
             }
 
             .text {
@@ -2231,7 +2258,7 @@ Custom property | Description | Default
 
             .background {
                 opacity: 0.95;
-                border-radius: 6px;
+                border-radius: var(--border-radius);
                 @apply --fullbleed;
             }
 
@@ -2355,7 +2382,22 @@ Custom property | Description | Default
 
             .buy-subscription {
                 text-align: center;
-                padding: 20px;
+                padding: 30px;
+            }
+
+            .subscription-name {
+                font-weight: bold;
+                font-size: 130%;
+            }
+
+            .subscription-features {
+                list-style: none;
+                padding: 0;
+            }
+
+            .subscription-features li::before {
+                font-family: "FontAwesome";
+                content: "\f00c\ ";
             }
 
             .price {
@@ -2402,6 +2444,10 @@ Custom property | Description | Default
             .card-hint:not([error=""]) {
                 color: #eb1c26;
                 text-shadow: none;
+            }
+
+            #cardDialog {
+                --pl-dialog-max-width: 500px;
             }
 
             #submitButton {
@@ -2524,13 +2570,18 @@ Custom property | Description | Default
                 <input type="hidden" name="stripeToken" value="[[ _paymentToken.id ]]">
                 <input type="hidden" name="updating" value="[[ _paymentToken.id ]]">
                 <div class="buy-subscription tiles-1" hidden$="[[ _changingPaymentSource ]]">
-                    <div><strong>[[ $l("Buy Subscription") ]]</strong></div>
-                    <div class="price">[[ $l("{0}/month", "$1") ]]</div>
-                    <div class="small">[[ $l("(billed annually)") ]]</div>
+                    <div class="subscription-name">[[ account.subscription.plan.name ]]</div>
+                    <ul class="subscription-features">
+                        <li>End-To-End Encryption</li>
+                        <li>Automatic Backups</li>
+                        <li>Unlimited Devices</li>
+                    </ul>
+                    <div class="price">[[ _monthlyPrice(account.subscription) ]]</div>
+                    <div class="small">[[ _billingCycle(account.subscription) ]]</div>
                 </div>
                 <div class="message tiles-2 card-hint" error$="[[ _cardError ]]">[[ _cardHint(_cardError) ]]</div>
                 <div id="cardElement" class="card tiles-3"></div>
-                <pl-loading-button class="tiles-4 tap" id="submitButton" on-click="_submitCard" label="[[ _submitCardLabel ]]"></pl-loading-button>
+                <pl-loading-button class="tiles-4 tap" id="submitButton" on-click="_submitCard">[[ _submitCardLabel ]]</pl-loading-button>
                 <a href="https://stripe.com" target="_blank" class="secure-payment tiles-5">
                     <span>[[ $l("Secure Payment - ") ]]</span>
                     <img src="/static/img/powered_by_stripe.svg">
