@@ -215,3 +215,22 @@ func (e *ServerError) Status() int {
 func (e *ServerError) Message() string {
 	return http.StatusText(e.Status())
 }
+
+type UnauthorizedError struct {
+}
+
+func (e *UnauthorizedError) Code() string {
+	return "unauthorized"
+}
+
+func (e *UnauthorizedError) Error() string {
+	return fmt.Sprintf("%s", e.Code())
+}
+
+func (e *UnauthorizedError) Status() int {
+	return http.StatusUnauthorized
+}
+
+func (e *UnauthorizedError) Message() string {
+	return fmt.Sprintf("%s - %s", http.StatusText(e.Status()), "You are not authorized to view this page.")
+}
