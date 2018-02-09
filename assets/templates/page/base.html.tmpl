@@ -4,7 +4,7 @@
         <title>{{- block "title" . -}} Padlock Cloud {{ end }}</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
         <meta http-equiv="Content-Security-Policy" content="
-            {{- block "csp" . -}}default-src 'none'; style-src 'self' 'unsafe-inline'; img-src 'self'; font-src 'self'{{- end -}}
+            {{- block "csp" . -}}default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; font-src 'self'{{- end -}}
         ">
 
         <link rel="shortcut icon" type="image/png" href="/static/img/favicon.png?v=4"/>
