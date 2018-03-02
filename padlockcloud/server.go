@@ -284,7 +284,8 @@ func (server *Server) InitEndpoints() {
 	// Endpoint for activating auth tokens
 	server.Endpoints["/activate/"] = &Endpoint{
 		Handlers: map[string]Handler{
-			"GET": &ActivateAuthToken{server},
+			"GET":  &ActivateAuthToken{server},
+			"POST": &ActivateAuthToken{server},
 		},
 	}
 

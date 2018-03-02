@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -37,6 +38,9 @@ func (h *RequestAuthToken) Handle(w http.ResponseWriter, r *http.Request, auth *
 	if tType = r.PostFormValue("type"); tType == "" {
 		tType = "api"
 	}
+
+	actType := r.PostFormValue("actType")
+
 	email := r.PostFormValue("email")
 	redirect := r.PostFormValue("redirect")
 	preauth := auth != nil && auth.Type == "api" && auth.Email == email // Client is already authenticated
@@ -82,7 +86,7 @@ func (h *RequestAuthToken) Handle(w http.ResponseWriter, r *http.Request, auth *
 		}
 	}
 
-	authRequest, err := NewAuthRequest(email, tType, device)
+	authRequest, err := NewAuthRequest(email, tType, actType, device)
 	if err != nil {
 		return err
 	}
@@ -118,7 +122,12 @@ func (h *RequestAuthToken) Handle(w http.ResponseWriter, r *http.Request, auth *
 		if response, err = json.Marshal(res); err != nil {
 			return err
 		}
-		emailSubj = "Connect to Padlock Cloud"
+
+		if actType == "code" {
+			emailSubj = fmt.Sprintf("Your Padlock Login Code: %s", authRequest.Code)
+		} else {
+			emailSubj = "Connect to Padlock Cloud"
+		}
 
 		w.Header().Set("Content-Type", "application/json")
 	} else {
@@ -146,6 +155,7 @@ func (h *RequestAuthToken) Handle(w http.ResponseWriter, r *http.Request, auth *
 		if err := h.Templates.ActivateAuthTokenEmail.Execute(&emailBody, map[string]interface{}{
 			"activation_link": actLink,
 			"token":           authRequest.AuthToken,
+			"code":            authRequest.Code,
 		}); err != nil {
 			return err
 		}
@@ -172,14 +182,20 @@ type ActivateAuthToken struct {
 
 func (h *ActivateAuthToken) GetAuthRequest(r *http.Request) (*AuthRequest, error) {
 	token := r.URL.Query().Get("t")
+	email := r.PostFormValue("email")
+	code := r.PostFormValue("code")
 
-	if token == "" {
-		return nil, &BadRequest{"no activation token provided"}
+	if token == "" && (email == "" || code == "") {
+		return nil, &BadRequest{"no activation token or code provided"}
 	}
 
 	// Let's check if an unactivate api key exists for this token. If not,
 	// the token is not valid
-	authRequest := &AuthRequest{Token: token}
+	authRequest := &AuthRequest{
+		Code:      code,
+		Token:     token,
+		AuthToken: &AuthToken{Email: email},
+	}
 	if err := h.Storage.Get(authRequest); err != nil {
 		if err == ErrNotFound {
 			return nil, &BadRequest{"invalid activation token"}
@@ -255,9 +271,10 @@ func (h *ActivateAuthToken) Success(w http.ResponseWriter, r *http.Request, auth
 		redirect = "/dashboard/"
 	}
 
-	if at.Type == "api" {
+	if at.Type == "api" && authRequest.Code == "" {
 		// If auth type is "api" also log them in so they can be redirected to dashboard
-		login, err := NewAuthRequest(at.Email, "web", at.Device)
+		// But only if the activation type is not "code"
+		login, err := NewAuthRequest(at.Email, "web", "", at.Device)
 		if err != nil {
 			return err
 		}
@@ -277,7 +294,9 @@ func (h *ActivateAuthToken) Success(w http.ResponseWriter, r *http.Request, auth
 		}
 	}
 
-	http.Redirect(w, r, redirect, http.StatusFound)
+	if strings.Contains(r.Header.Get("Accept"), "text/html") {
+		http.Redirect(w, r, redirect, http.StatusFound)
+	}
 
 	h.Info.Printf("%s - auth_token:activate - %s:%s:%s\n", FormatRequest(r), at.Email, at.Type, at.Id)
 
