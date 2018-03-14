@@ -273,17 +273,24 @@ func (a *Account) AuthTokensByType(typ string) []*AuthToken {
 	return tokens
 }
 
+func (a *Account) Devices() []*AuthToken {
+	devices := make([]*AuthToken, 0)
+	for _, at := range a.AuthTokensByType("api") {
+		if !at.Expired() {
+			devices = append(devices, at)
+		}
+	}
+	return devices
+}
+
 func (a *Account) ToMap() map[string]interface{} {
 	obj := map[string]interface{}{
 		"email": a.Email,
 	}
 
 	devices := make([]map[string]interface{}, 0)
-
-	for _, at := range a.AuthTokensByType("api") {
-		if !at.Expired() {
-			devices = append(devices, at.ToMap())
-		}
+	for _, at := range a.Devices() {
+		devices = append(devices, at.ToMap())
 	}
 
 	obj["devices"] = devices

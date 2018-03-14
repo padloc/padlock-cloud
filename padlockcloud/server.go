@@ -321,7 +321,7 @@ func (server *Server) InitEndpoints() {
 		Handlers: map[string]Handler{
 			"GET": &Logout{server},
 		},
-		AuthType: "web",
+		AuthType: "universal",
 	}
 
 	// Endpoint for revoking auth tokens
@@ -329,7 +329,15 @@ func (server *Server) InitEndpoints() {
 		Handlers: map[string]Handler{
 			"POST": &Revoke{server},
 		},
-		AuthType: "web",
+		AuthType: "universal",
+	}
+
+	// Account info
+	server.Endpoints["/account/"] = &Endpoint{
+		Handlers: map[string]Handler{
+			"GET": &AccountInfo{server},
+		},
+		AuthType: "api",
 	}
 
 	server.Endpoints["/static/"] = &Endpoint{

@@ -1,10 +1,12 @@
 package padlockcloud
 
-import "net/http"
-import "errors"
-import "fmt"
-import "strings"
-import "github.com/gorilla/csrf"
+import (
+	"errors"
+	"fmt"
+	"github.com/gorilla/csrf"
+	"net/http"
+	"strings"
+)
 
 var CSRFTemplateTag = csrf.TemplateTag
 var CSRFToken = csrf.Token
@@ -57,7 +59,7 @@ func (m *Authenticate) Wrap(h Handler) Handler {
 		}
 
 		// Make sure auth token has the right type
-		if m.Type != "" && auth.Type != m.Type {
+		if m.Type != "" && m.Type != "universal" && auth.Type != m.Type {
 			return &InvalidAuthToken{auth.Email, auth.Token}
 		}
 

@@ -455,7 +455,12 @@ func (h *Logout) Handle(w http.ResponseWriter, r *http.Request, auth *AuthToken)
 		HttpOnly: true,
 		Secure:   h.Secure,
 	})
-	http.Redirect(w, r, "/login/", http.StatusFound)
+
+	if strings.Contains(r.Header.Get("Accept"), "text/html") {
+		http.Redirect(w, r, "/login/", http.StatusFound)
+	}
+
+	h.Info.Printf("%s - data_store:write - %s\n", FormatRequest(r), acc.Email)
 	return nil
 }
 
@@ -485,7 +490,27 @@ func (h *Revoke) Handle(w http.ResponseWriter, r *http.Request, auth *AuthToken)
 		return err
 	}
 
-	http.Redirect(w, r, fmt.Sprintf("/dashboard/?action=revoked&token-id=%s", t.Id), http.StatusFound)
+	if strings.Contains(r.Header.Get("Accept"), "text/html") {
+		http.Redirect(w, r, fmt.Sprintf("/dashboard/?action=revoked&token-id=%s", t.Id), http.StatusFound)
+	}
+
+	return nil
+}
+
+type AccountInfo struct {
+	*Server
+}
+
+func (h *AccountInfo) Handle(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
+	acc := auth.Account()
+
+	res, err := json.Marshal(acc.ToMap())
+	if err != nil {
+		return err
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(res)
 
 	return nil
 }
