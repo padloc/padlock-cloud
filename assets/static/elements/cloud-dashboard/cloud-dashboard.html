@@ -440,6 +440,7 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
             --color-background: var(--color-tertiary);
             --color-foreground: var(--color-secondary);
             --color-highlight: var(--color-primary);
+            --color-error: red;
 
             --row-height: 50px;
 
@@ -535,6 +536,13 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
             --shade-5: {
                 background: var(--shade-5-color);
             };
+
+            --card: {
+                background: var(--color-background);
+                box-shadow: rgba(0, 0, 0, 0.25) 0 0 1px;
+                border-radius: var(--border-radius);
+                overflow: hidden;
+            }
         }
 
     </style>
@@ -667,19 +675,36 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
             }
 
             section {
-                margin: 15px 0;
-                background: var(--color-background);
-                border-top: solid 1px rgba(0, 0, 0, 0.1);
+                --border-color: rgba(0, 0, 0, 0.1);
+                margin: 10px 5px;
+                @apply --card;
+            }
+
+            section > :not(:last-child) {
+                border-bottom: solid 1px var(--border-color);
+            }
+
+            .section-header {
+                text-align: center;
+                font-weight: bold;
+                line-height: var(--row-height);
+            }
+
+            .section-row {
+                display: flex;
+                align-items: center;
                 border-bottom: solid 1px rgba(0, 0, 0, 0.1);
             }
 
-            section .info {
-                display: block;
-                font-size: var(--font-size-small);
-                text-align: center;
-                line-height: normal;
-                padding: 15px;
-                height: auto;
+            .section-row-label {
+                padding: 0 15px;
+                flex: 1;
+                @apply --ellipsis;
+            }
+
+            .section-row pl-icon {
+                width: 50px;
+                height: 50px;
             }
 
             header {
@@ -689,7 +714,8 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
                 font-size: var(--font-size-default);
                 position: relative;
                 z-index: 1;
-                border-bottom: solid 1px rgba(0, 0, 0, 0.2);
+                /* border-bottom: solid 1px rgba(0, 0, 0, 0.2); */
+                box-shadow: rgba(0, 0, 0, 0.1) 0 1px 1px;
             }
 
             header > .title {
@@ -720,7 +746,7 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
                 text-align: center;
             }
 
-            pl-dialog button {
+            pl-dialog button, pl-dialog pl-loading-button {
                 width: 100%;
                 box-sizing: border-box;
                 font-weight: bold;
@@ -793,6 +819,20 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
                 transform: translate3d(0, 0, 0);
             }
 
+            pl-icon[spin] {
+                animation: spin 1s infinite;
+                transform-origin: center 49%;
+            }
+
+            .unlock-feature-hint {
+                padding: 8px;
+                text-align: center;
+                background: var(--color-foreground);
+                color: var(--color-background);
+                font-size: var(--font-size-tiny);
+                font-weight: bold;
+            }
+
             @keyframes spin {
                 to { transform: rotate(360deg); }
             }
@@ -800,6 +840,12 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
             @keyframes slideIn {
                 from { transform: translate(0, 50px); opacity: 0; }
                 to { opacity: 1; }
+            }
+
+            @keyframes rumble {
+                25% {transform: translate(5px, 0);}
+                50% {transform: translate(-5px, -3px);}
+                75% {transform: translate(5px, 2px);}
             }
 
         </style>
@@ -893,7 +939,7 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
                 flex-direction: column;
                 align-items: center;
                 justify-content: center;
-                padding: 15px;
+                padding: 10px;
                 box-sizing: border-box;
             }
 
@@ -904,10 +950,11 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
                 transition: opacity 400ms cubic-bezier(0.6, 0, 0.2, 1);
                 transform: translate3d(0, 0, 0);
                 @apply --fullbleed;
+                position: fixed;
             }
 
             :host(.open) .scrim {
-                opacity: 0.8;
+                opacity: 0.90;
             }
 
             .inner {
@@ -915,41 +962,39 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
                 box-sizing: border-box;
                 max-width: var(--pl-dialog-max-width, 400px);
                 z-index: 1;
-                overflow: hidden;
                 --color-background: var(--color-primary);
                 --color-foreground: var(--color-tertiary);
                 --color-highlight: var(--color-secondary);
                 background: var(--color-background);
                 color: var(--color-foreground);
                 border-radius: var(--border-radius);
-                border-bottom: solid 2px rgb(64, 143, 184);
                 text-shadow: rgba(0, 0, 0, 0.2) 0 2px 0;
+                box-shadow: rgba(0, 0, 0, 0.25) 0 0 5px;
+                overflow: hidden;
+
+                @apply --pl-dialog-inner;
+            }
+
+            .outer {
                 transform: translate3d(0, 0, 0);
+                /* transition: transform 400ms cubic-bezier(1, -0.3, 0, 1.3), opacity 400ms cubic-bezier(0.6, 0, 0.2, 1); */
                 transition: transform 400ms cubic-bezier(0.6, 0, 0.2, 1), opacity 400ms cubic-bezier(0.6, 0, 0.2, 1);
             }
 
-            :host(:not(.open)) .inner {
+            :host(:not(.open)) .outer {
                 opacity: 0;
-                transform: translate3d(0, 0, 0) scale(0.95);
-            }
-
-            @media (min-width: 400px) {
-                :host {
-                    justify-content: center;
-                }
-
-                .inner {
-                    margin-top: 0;
-                }
+                transform: translate3d(0, 0, 0) scale(0.8);
             }
         </style>
 
-        <div class="outer" on-click="dismiss">
-            <div class="scrim"></div>
+        <div class="scrim"></div>
 
-            <div class="inner" on-click="_preventDismiss">
+        <div class="outer" on-click="dismiss">
+            <slot name="before"></slot>
+            <div id="inner" class="inner" on-click="_preventDismiss">
                 <slot></slot>
             </div>
+            <slot name="after"></slot>
         </div>
     </template>
 
@@ -1063,6 +1108,7 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
 
             :host([icon="lock"]) > div::before {
                 content: "\f023";
+                font-size: 120%;
             }
 
             :host([icon="refresh"]) > div::before {
@@ -1113,6 +1159,10 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
                 content: "\f046";
             }
 
+            :host([icon="success"]) > div::before {
+                content: "\f058";
+            }
+
             :host([icon="unchecked"]) > div::before {
                 content: "\f096";
             }
@@ -1123,6 +1173,45 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
 
             :host([icon="logout"]) > div::before {
                 content: "\f08b";
+            }
+
+            :host([icon="mail"]) > div::before {
+                content: "\f0e0";
+            }
+
+            :host([icon="user"]) > div::before {
+                content: "\f2bd";
+            }
+
+            :host([icon="record"]) > div::before {
+                content: "\f15b";
+                font-size: 90%;
+            }
+
+            :host([icon="mobile"]) > div::before {
+                content: "\f10b";
+                font-size: 140%;
+            }
+
+            :host([icon="database"]) > div::before {
+                content: "\f1c0";
+            }
+
+            :host([icon="time"]) > div::before {
+                content: "\f017";
+            }
+
+            :host([icon="error"]) > div::before {
+                content: "\f071";
+            }
+
+            :host([icon="question"]) > div::before {
+                content: "\f059";
+            }
+
+            :host([icon="desktop"]) > div::before {
+                content: "\f109";
+                font-size: 140%;
             }
 
             :host([icon="logo"]) > div::before {
@@ -1147,8 +1236,8 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
                 height: var(--row-height);
                 padding: 0 15px;
                 font-size: inherit;
-                --track-color: var(--slider-track-color, var(--color-foreground));
-                --knob-color: var(--slider-knob-color, var(--color-foreground));
+                --track-color: var(--slider-track-color, rgba(0, 0, 0, 0.1));
+                --knob-color: var(--slider-knob-color, var(--color-highlight));
                 --track-size: var(--slider-track-size, 2px);
                 --knob-size: var(--slider-knob-size, 25px);
             }
@@ -1172,7 +1261,7 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
                 height: var(--track-size);
                 cursor: pointer;
                 background: var(--track-color);
-                border-radius: var(--track-size);
+                border-radius: 100%;
             }
 
             input[type=range]::-webkit-slider-thumb {
@@ -1383,11 +1472,73 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
 <dom-module id="pl-dialog-alert" assetpath="../ui/dialog/">
 
     <template>
-        <style include="shared"></style>
+        <style include="shared">
+            :host {
+                --pl-dialog-inner: {
+                    background: linear-gradient(rgb(89, 198, 255) 0%, rgb(7, 124, 185) 100%);
+                };
+            }
 
-        <pl-dialog id="dialog" open="{{ open }}" on-dialog-close="_dialogClosed">
-            <div class="message tiles-1">{{ message }}</div>
-            <button class="tap tiles-2" on-click="_dismiss">{{ buttonLabel }}</button>
+            :host([type="warning"]) {
+                --pl-dialog-inner: {
+                    background: linear-gradient(180deg, #f49300 0%, #f25b00 100%);
+                };
+            }
+
+            :host([type="plain"]) {
+                --pl-dialog-inner: {
+                    background: var(--color-background);
+                };
+            }
+
+            .info {
+                display: flex;
+                padding: 20px;
+                align-items: center;
+            }
+
+            .info-icon {
+                width: 60px;
+                height: 60px;
+                font-size: 60px;
+                margin-right: 20px;
+            }
+
+            :host([hide-icon]) .info-icon {
+                display: none;
+            }
+
+            :host([hide-icon]) .info-text,
+            :host([hide-icon]) .info-title {
+                text-align: center;
+            }
+
+            .info-body {
+                flex: 1;
+            }
+
+            .info-title {
+                font-size: 120%;
+                font-weight: bold;
+                margin-bottom: 5px;
+            }
+
+            .info-text.small {
+                font-size: var(--font-size-small);
+            }
+        </style>
+
+        <pl-dialog id="dialog" open="{{ open }}" prevent-dismiss="[[ preventDismiss ]]" on-dialog-dismiss="_dialogDismiss">
+            <div class="info">
+                <pl-icon class="info-icon" icon="[[ _icon(type) ]]"></pl-icon>
+                <div class="info-body">
+                    <div class="info-title">[[ title ]]</div>
+                    <div class$="info-text [[ _textClass(title) ]]">[[ message ]]</div>
+                </div>
+            </div>
+            <template is="dom-repeat" items="[[ options ]]">
+                <button on-click="_selectOption" class$="[[ _buttonClass(index) ]]">[[ item ]]</button>
+            </template>
         </pl-dialog>
     </template>
 
@@ -1401,40 +1552,6 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
             <div class="message tiles-1">{{ message }}</div>
             <button class="tap tiles-2" on-click="_confirm">{{ confirmLabel }}</button>
             <button class="tap tiles-3" on-click="_cancel">{{ cancelLabel }}</button>
-        </pl-dialog>
-    </template>
-
-    </dom-module>
-<dom-module id="pl-dialog-prompt" assetpath="../ui/dialog/">
-
-    <template>
-        <style include="shared">
-            pl-input {
-                text-align: center;
-            }
-        </style>
-
-        <pl-dialog open="{{ open }}" prevent-dismiss="">
-            <div class="message tiles-1">[[ message ]]</div>
-            <pl-input class="tiles-2" id="input" type="[[ type ]]" placeholder="[[ placeholder ]]" on-enter="_confirm"></pl-input>
-            <button class="tap tiles-3" on-click="_confirm">[[ confirmLabel ]]</button>
-            <button class="tap tiles-4" on-click="_dismiss">[[ dismissLabel ]]</button>
-        </pl-dialog>
-    </template>
-
-    </dom-module>
-<dom-module id="pl-dialog-options" assetpath="../ui/dialog/">
-
-    <template>
-        <style include="shared"></style>
-
-        <pl-dialog open="{{ open }}" prevent-dismiss="[[ preventDismiss ]]">
-            <template is="dom-if" if="[[ _hasMessage(message) ]]" restamp="">
-                <div class="message tiles-1">[[ message ]]</div>
-            </template>
-            <template is="dom-repeat" items="[[ options ]]">
-                <button class$="[[ _buttonClass(index) ]]" on-click="_selectOption">[[ item ]]</button>
-            </template>
         </pl-dialog>
     </template>
 
@@ -2233,6 +2350,57 @@ Custom property | Description | Default
     </template>
 
     </dom-module>
+<dom-module id="pl-dialog-prompt" assetpath="../ui/dialog/">
+
+    <template>
+        <style include="shared">
+            :host {
+                --pl-dialog-inner: {
+                    background: linear-gradient(rgb(89, 198, 255) 0%, rgb(7, 124, 185) 100%);
+                };
+            }
+
+            pl-input {
+                text-align: center;
+            }
+
+            .validation-message {
+                position: relative;
+                margin-top: 15px;
+                font-weight: bold;
+                font-size: var(--font-size-small);
+                color: var(--color-error);
+                text-shadow: none;
+                text-align: center;
+            }
+        </style>
+
+        <pl-dialog id="dialog" open="{{ open }}" prevent-dismiss="[[ preventDismiss ]]" on-dialog-dismiss="_dismiss">
+            <div class="message tiles-1">[[ message ]]</div>
+            <pl-input class="tiles-2" id="input" type="[[ type ]]" placeholder="[[ placeholder ]]" on-enter="_confirm"></pl-input>
+            <pl-loading-button id="confirmButton" class="tap tiles-3" on-click="_confirm">[[ confirmLabel ]]</pl-loading-button>
+            <button class="tap tiles-4" on-click="_dismiss" hidden$="[[ _hideCancelButton ]]">[[ cancelLabel ]]</button>
+            <div class="validation-message" slot="after">[[ _validationMessage ]]</div>
+        </pl-dialog>
+    </template>
+
+    </dom-module>
+<dom-module id="pl-dialog-options" assetpath="../ui/dialog/">
+
+    <template>
+        <style include="shared"></style>
+
+        <pl-dialog open="{{ open }}" prevent-dismiss="[[ preventDismiss ]]" on-dialog-dismiss="_dismiss">
+            <template is="dom-if" if="[[ _hasMessage(message) ]]" restamp="">
+                <div class="message tiles-1">[[ message ]]</div>
+            </template>
+            <template is="dom-repeat" items="[[ options ]]">
+                <button class$="[[ _buttonClass(index) ]]" on-click="_selectOption">[[ item ]]</button>
+            </template>
+        </pl-dialog>
+    </template>
+
+    </dom-module>
 <dom-module id="pl-notification" assetpath="../ui/notification/">
 
     <template>
@@ -2303,7 +2471,7 @@ Custom property | Description | Default
                 display: flex;
                 flex-direction: column;
                 @apply --fullbleed;
-                background: var(--color-background);
+                background: var(--color-quaternary);
             }
 
             :host:not([ready]) main {
@@ -2493,6 +2661,12 @@ Custom property | Description | Default
                 text-align: center;
             }
 
+            .info {
+                padding: 15px;
+                font-size: var(--font-size-small);
+                text-align: center;
+            }
+
             @media (min-width: 700px) {
                 section {
                     width: 670px;
@@ -2523,7 +2697,7 @@ Custom property | Description | Default
 
                 <template>
 
-                    <section class="tiles" hidden$="[[ !_isTrialing(account.subscription.status) ]]">
+                    <section hidden$="[[ !_isTrialing(account.subscription.status) ]]">
                         <div class="info">
                             <div>[[ $l("Subscription Status:") ]]</div>
                             <div class="subscription-status">[[ $l("Trialing ({0} days left)", _trialDays) ]]</div>
@@ -2532,7 +2706,7 @@ Custom property | Description | Default
                         <button class="tap" on-click="_buySubscription">[[ $l("Buy Subscription") ]]</button>
                     </section>
 
-                    <section class="tiles" hidden$="[[ !_isInactive(account.subscription.status) ]]">
+                    <section hidden$="[[ !_isInactive(account.subscription.status) ]]">
                         <div class="info">
                             <div>[[ $l("Subscription Status:") ]]</div>
                             <div class="subscription-status">[[ $l("Read-Only") ]]</div>
@@ -2541,17 +2715,17 @@ Custom property | Description | Default
                         <button class="tap" on-click="_buySubscription">[[ $l("Buy Subscription") ]]</button>
                     </section>
 
-                    <section class="tiles" hidden$="[[ !_isActive(account.subscription.status) ]]">
+                    <section hidden$="[[ !_isActive(account.subscription.status) ]]">
                         <div class="info">
                             <div>[[ $l("Subscription Status:") ]]</div>
                             <div class="subscription-status">[[ $l("Active") ]]</div>
                             <div>[[ $l("Payment Method") ]]:</div>
                             <div class="payment-method">[[ _paymentMethod(account.paymentSource) ]]</div>
                         </div>
-                        <button class="tiles-2 tap" on-click="_changePaymentMethod">[[ $l("Change Payment Method") ]]</button>
-                        <button class="tiles-3 tap" on-click="_openBillingDialog">[[ $l("Update Billing Info") ]]</button>
-                        <pl-loading-button class="tiles-4 tap" on-click="_showInvoices">[[ $l("Invoices") ]]</pl-loading-button>
-                        <button class="tiles-5 tap" on-click="_cancelSubscription">[[ $l("Cancel Subscription") ]]</button>
+                        <button class="tap" on-click="_changePaymentMethod">[[ $l("Change Payment Method") ]]</button>
+                        <!-- <button class="tiles&#45;3 tap" on&#45;click="_openBillingDialog">[[ $l("Update Billing Info") ]]</button> -->
+                        <!-- <pl&#45;loading&#45;button class="tiles&#45;4 tap" on&#45;click="_showInvoices">[[ $l("Invoices") ]]</pl&#45;loading&#45;button> -->
+                        <button class="tap" on-click="_cancelSubscription">[[ $l("Cancel Subscription") ]]</button>
                     </section>
 
                 </template>
@@ -2560,20 +2734,17 @@ Custom property | Description | Default
 
             <section class="devices">
                 <div class="title">[[ $l("{0} Paired Devices", account.devices.length) ]]</div>
-
-                <div class="tiles tiles-2 device-list">
-                    <dom-repeat items="[[ account.devices ]]">
-                        <template>
-                            <div class="device tiles">
-                                <div class="device-name">[[ item.description ]]</div>
-                                <pl-icon icon="delete" on-click="_revokeDevice"></pl-icon>
-                            </div>
-                        </template>
-                    </dom-repeat>
-                </div>
+                <dom-repeat items="[[ account.devices ]]">
+                    <template>
+                        <div class="device">
+                            <div class="device-name">[[ item.description ]]</div>
+                            <pl-icon icon="delete" on-click="_revokeDevice"></pl-icon>
+                        </div>
+                    </template>
+                </dom-repeat>
             </section>
 
-            <section class="tiles">
+            <section>
                 <div class="info">[[ _resetDataText() ]]</div>
                 <button class="tap" on-click="_resetData">[[ $l("Delete Data") ]]</button>
             </section>
@@ -2610,7 +2781,7 @@ Custom property | Description | Default
                 <input type="hidden" name="gorilla.csrf.Token" value="[[ csrfToken ]]">
                 <input type="hidden" name="stripeToken" id="stripeTokenInput">
                 <div class="buy-subscription tiles-1" hidden$="[[ _changingPaymentSource ]]">
-                    <div class="subscription-name">[[ account.subscription.plan.name ]]</div>
+                    <div class="subscription-name">[[ account.plan.name ]]</div>
                     <ul class="subscription-features">
                         <li>End-To-End Encryption</li>
                         <li>Automatic Backups</li>
