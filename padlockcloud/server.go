@@ -368,7 +368,7 @@ func (server *Server) InitHandler() {
 	}
 
 	if server.Config.Cors {
-		exposedHeaders := []string{"X-Sub-Required", "X-Sub-Status", "X-Sub-Trial-End"}
+		exposedHeaders := []string{"X-Sub-Required", "X-Sub-Status", "X-Sub-Trial-End", "X-Stripe-Pub-Key"}
 		if server.Config.Test {
 			exposedHeaders = append(exposedHeaders, "X-Test-Act-Url")
 		}
