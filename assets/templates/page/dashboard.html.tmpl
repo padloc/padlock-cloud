@@ -43,6 +43,12 @@
         referer="{{ .ref }}"
     ></pl-cloud-dashboard>
 
+    <script>
+      window.customElements = window.customElements || {};
+      window.customElements.forcePolyfill = true;
+      window.ShadyDOM = {force: true};
+    </script>
+
     <script src="/static/elements/webcomponents-lite.js"></script>
     <link rel="import" href="/static/elements/cloud-dashboard/cloud-dashboard.html">
 
