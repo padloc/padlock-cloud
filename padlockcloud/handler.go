@@ -140,7 +140,7 @@ func (h *RequestAuthToken) Handle(w http.ResponseWriter, r *http.Request, auth *
 		}
 
 		response = buff.Bytes()
-		emailSubj = "Log in to Padlock Cloud"
+		emailSubj = "Your Padlock Login Link"
 
 		w.Header().Set("Content-Type", "text/html")
 	}

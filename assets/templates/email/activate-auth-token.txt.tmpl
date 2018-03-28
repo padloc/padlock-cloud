@@ -1,11 +1,11 @@
 {{ define "main" -}}
 {{ if eq .token.Type "web" -}}
-You are receiving this email because you requested to log into your Padlock Cloud account {{ .token.Email }} through your browser. Just click the link below to log in!
+Here is the login link for your account {{ .token.Email }}. Just click the link to log in!
 
-Click to log in: {{ .activation_link }}
+{{ .activation_link }}
 {{- else -}}
 
-You are receiving this email because you requested to pair your Device "{{ .token.Description }}" with the Padlock Cloud account "{{ .token.Email }}".
+You are receiving this email because you requested to pair your Device "{{ .token.Description }}" with the Padlock account "{{ .token.Email }}".
 
 {{- with .code }}
 
