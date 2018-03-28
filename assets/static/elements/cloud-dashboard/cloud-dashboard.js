@@ -18702,7 +18702,12 @@ class Dashboard extends applyMixins(
 
     _buySubscription() {
         this.$.paymentDialog.plan = this.account.plan;
-        this.$.paymentDialog.show(this.referer);
+        this.$.paymentDialog.show(this.referer)
+            .then((success) => {
+                if (success) {
+                    window.location = "/dashboard/?action=subscribed";
+                }
+            });
     }
 
     _cancelSubscription() {
@@ -18711,7 +18716,12 @@ class Dashboard extends applyMixins(
 
     _changePaymentMethod() {
         this.$.paymentDialog.plan = null;
-        this.$.paymentDialog.show("Dashboard");
+        this.$.paymentDialog.show("Dashboard")
+            .then((success) => {
+                if (success) {
+                    window.location = "/dashboard/?action=payment-updated";
+                }
+            });
     }
 
     _back() {
