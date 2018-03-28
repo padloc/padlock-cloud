@@ -18593,7 +18593,7 @@ class Dashboard extends applyMixins(
             ], { title: "Welcome To Your Dashboard!", hideIcon: true });
         }
 
-        if (this.account.coupon) {
+        if (this._hasCoupon()) {
             this.$.paymentDialog.coupon = this.account.coupon;
             this.confirm(
                 $l("The following coupon has been unlocked for your account: '{0}'",
@@ -18752,7 +18752,7 @@ class Dashboard extends applyMixins(
     }
 
     _hasCoupon() {
-        return !!this.account.coupon;
+        return !!this.account.coupon && !this._isActive();
     }
 
     _hasNoDevices() {
