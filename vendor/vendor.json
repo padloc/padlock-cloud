@@ -39,10 +39,10 @@
 			"revisionTime": "2016-02-07T21:47:19Z"
 		},
 		{
-			"checksumSHA1": "Hky3u+8Rqum+wB5BHMj0A8ZmT4g=",
+			"checksumSHA1": "ljd3FhYRJ91cLZz3wsH9BQQ2JbA=",
 			"path": "github.com/pkg/errors",
-			"revision": "17b591df37844cde689f4d5813e5cea0927d8dd2",
-			"revisionTime": "2016-08-22T09:00:10Z"
+			"revision": "816c9085562cd7ee03e7f8188a1cfd942858cded",
+			"revisionTime": "2018-03-11T21:45:15Z"
 		},
 		{
 			"checksumSHA1": "IAg7PcqaEf/TL1KNqZB0FTEb778=",

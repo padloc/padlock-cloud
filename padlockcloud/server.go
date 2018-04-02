@@ -51,7 +51,7 @@ func FormatRequest(r *http.Request) string {
 }
 
 func formatRequestVerbose(r *http.Request) string {
-	dump, _ := httputil.DumpRequest(r, true)
+	dump, _ := httputil.DumpRequest(r, false)
 	return string(dump)
 }
 
@@ -190,7 +190,7 @@ func (server *Server) Authenticate(r *http.Request) (*AuthToken, error) {
 func (server *Server) LogError(err error, r *http.Request) {
 	switch e := err.(type) {
 	case *ServerError, *InvalidCsrfToken:
-		server.Error.Printf("%s - %v\nRequest:\n%s\n", FormatRequest(r), e, formatRequestVerbose(r))
+		server.Error.Printf("%s\n***STACK TRACE***\n%+v\n***REQUEST***\n%s\n", FormatRequest(r), e, formatRequestVerbose(r))
 	default:
 		server.Info.Printf("%s - %v", FormatRequest(r), e)
 	}

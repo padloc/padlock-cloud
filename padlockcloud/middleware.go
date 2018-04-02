@@ -1,9 +1,9 @@
 package padlockcloud
 
 import (
-	"errors"
 	"fmt"
 	"github.com/gorilla/csrf"
+	"github.com/pkg/errors"
 	"net/http"
 	"strings"
 )
@@ -139,9 +139,9 @@ func (m *HandlePanic) Wrap(h Handler) Handler {
 		func() {
 			defer func() {
 				if e := recover(); e != nil {
-					var ok bool
-					err, ok = e.(error)
-					if !ok {
+					if _e, ok := e.(error); ok {
+						err = errors.WithStack(_e)
+					} else {
 						err = errors.New(fmt.Sprintf("%v", e))
 					}
 				}
