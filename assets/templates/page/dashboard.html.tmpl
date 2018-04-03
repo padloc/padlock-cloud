@@ -1,115 +1,55 @@
-{{ define "css" -}}
-
-<link href="/static/css/dashboard.css" rel="stylesheet" type="text/css">
-
+{{ define "csp" -}}
+    default-src 'self'; script-src 'self' 'unsafe-inline' https://js.stripe.com; connect-src 'self'; child-src 'self' https://js.stripe.com; style-src 'self' 'unsafe-inline'; img-src 'self'; font-src 'self'
 {{- end }}
 
-{{ define "dashboard-notice" -}}
+{{ define "css" }}
+    <style>
+        .loading {
+            text-align: center;
+            font-family: sans-serif;
+            font-size: 20px;
+            position: absolute;
+            left:0; right:0; top: 0; bottom: 0;
+            height: 1em;
+            margin: auto;
+        }
+    </style>
+{{ end }}
 
-  {{- with .paired -}}
-    <div class="note"><strong>{{ .Description }}</strong> paired successfully!</div>
-  {{- end -}}
-  {{- with .revoked -}}
-    <div class="note">Access for <strong>{{ .Description }}</strong> revoced successfully!</div>
-  {{- end -}}
+{{ define "js" }}
 
-{{- end }}
+    <script>
+        // Support all recent browser versions except IE and Edge
+        var browserSupported = typeof CSS !== "undefined" && CSS.supports("all", "unset");
 
-{{ define "dashboard-manage-account" -}}
+        if (!browserSupported) {
+            alert("Sorry, but the browser you are using is not supported at this moment. Please download the latest version of Google Chrome, Firefox or Safari!");
+            window.close();
+        }
+    </script>
 
-  <section>
+{{ end }}
 
-    <h2>Manage Account</h2>
+{{ define "main" }}
 
-    {{ if eq .action "resetdata" -}}
+    <div class="loading">Loading Dashboard...</div>
 
-      <p class="note">
-        Are you sure you want to delete all your data on Padlock Cloud?
-        <strong>This action can not be undone!</strong>
-        (Data stored locally on your devices will not be affected)
-      </p>
+    <pl-cloud-dashboard
+        account='{{ jsonify .account }}'
+        action="{{ .action }}"
+        token='{{ jsonify .token }}'
+        csrf-token="{{ .csrfToken }}"
+        stripe-pub-key="{{ .stripePublicKey }}"
+        referer="{{ .ref }}"
+    ></pl-cloud-dashboard>
 
-      <form action="/deletestore/" method="POST">
-        {{ .csrfField }}
-        <button>Reset Data</button>
-      </form>
+    <script>
+      window.customElements = window.customElements || {};
+      window.customElements.forcePolyfill = true;
+      window.ShadyDOM = {force: true};
+    </script>
 
-    {{- else if .datareset -}}
+    <script src="/static/elements/webcomponents-lite.js"></script>
+    <link rel="import" href="/static/elements/cloud-dashboard/cloud-dashboard.html">
 
-      <p class="note">
-        Your data has been reset successfully!
-      </p>
-
-    {{- else -}}
-
-      <a class="btn" href=".?action=resetdata">Reset Data</a>
-
-    {{- end }}
-
-  </section>
-
-{{- end }}
-
-{{ define "dashboard-manage-devices" -}}
-  <section>
-
-    <h2>Paired Devices</h2>
-
-    <ul class="paired-devices">
-
-      {{- $csrfField := .csrfField -}}
-
-      {{ with .account.AuthTokensByType "api" -}}
-
-        {{- range . -}}
-          {{- if not .Expired -}}
-
-            <li class="card">
-              <form action="/revoke/" method="POST" class="revoke">
-                <input name="id" type="hidden" value="{{ .Id }}">
-                {{ $csrfField }}
-                <button class="plain">Revoke</button>
-              </form>
-
-              <div class="device-description">{{- .Description -}}</div>
-
-              <table>
-                <tr><th>Paired:</th><td>{{ .Created.Format "Jan 2 2006 - 15:04:05 MST" }}</td></tr>
-                <tr><th>Last Used:</th><td>{{ .LastUsed.Format "Jan 2 2006 - 15:04:05 MST" }}</td></tr>
-
-                {{ if not .Expired -}}
-                  <tr><th>Expires:</th><td>
-                    {{- if .Expires.IsZero -}}
-                      Never
-                    {{- else -}}
-                      {{ .Expires.Format "Jan 2 2006" }}
-                    {{- end -}}
-                  </td></tr>
-                {{- end }}
-              </table>
-            </li>
-
-          {{ end -}}
-        {{- end -}}
-
-      {{- else -}}
-        <p>
-          You don't have any connected devices yet.<br>
-          <a href="https://padlock.io">Download the app to get started!</a>
-        </p>
-      {{- end -}}
-    </ul>
-  </section>
-
-{{- end }}
-
-{{ define "main" -}}
-
-<section>
-    {{ template "dashboard-notice" . }}
-</section>
-
-{{ template "dashboard-manage-account" . }}
-{{ template "dashboard-manage-devices" . }}
-
-{{- end }}
+{{ end }}

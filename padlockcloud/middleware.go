@@ -1,12 +1,15 @@
 package padlockcloud
 
-import "net/http"
-import "errors"
-import "fmt"
-import "strings"
-import "github.com/gorilla/csrf"
+import (
+	"fmt"
+	"github.com/gorilla/csrf"
+	"github.com/pkg/errors"
+	"net/http"
+	"strings"
+)
 
 var CSRFTemplateTag = csrf.TemplateTag
+var CSRFToken = csrf.Token
 var CSRFTemplateField = csrf.TemplateField
 
 type MiddleWare interface {
@@ -56,7 +59,7 @@ func (m *Authenticate) Wrap(h Handler) Handler {
 		}
 
 		// Make sure auth token has the right type
-		if m.Type != "" && auth.Type != m.Type {
+		if m.Type != "" && m.Type != "universal" && auth.Type != m.Type {
 			return &InvalidAuthToken{auth.Email, auth.Token}
 		}
 
@@ -136,9 +139,9 @@ func (m *HandlePanic) Wrap(h Handler) Handler {
 		func() {
 			defer func() {
 				if e := recover(); e != nil {
-					var ok bool
-					err, ok = e.(error)
-					if !ok {
+					if _e, ok := e.(error); ok {
+						err = errors.WithStack(_e)
+					} else {
 						err = errors.New(fmt.Sprintf("%v", e))
 					}
 				}

@@ -1,6 +1,7 @@
 package padlockcloud
 
 import "encoding/base64"
+import "encoding/hex"
 import "crypto/rand"
 import "os"
 import "path/filepath"
@@ -26,6 +27,16 @@ func randomBase64(nBytes int) (string, error) {
 	}
 
 	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+func randomHex(nBytes int) (string, error) {
+	b, err := randomBytes(nBytes)
+
+	if err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(b), nil
 }
 
 func token() (string, error) {

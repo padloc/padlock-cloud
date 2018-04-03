@@ -37,6 +37,7 @@ func NewSampleConfig(dir string) CliConfig {
 			Password: "emailpassword",
 			Server:   "myemailserver.com",
 			Port:     "4321",
+			From:     "emailfrom",
 		},
 	}
 }

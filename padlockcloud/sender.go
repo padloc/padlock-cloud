@@ -34,17 +34,30 @@ type EmailConfig struct {
 	Port string `yaml:"port"`
 	// Password used for authentication with the mail server
 	Password string `yaml:"password"`
+	// Sender mail address for outgoing mails. If empty, `User` is used instead.
+	From string `yaml:"from"`
 }
 
 // EmailSender implements the `Sender` interface for emails
 type EmailSender struct {
 	Config *EmailConfig
+	// Function used to actually send the mail. Same signature as `smtp.SendMail`.
+	SendFunc func(addr string, a smtp.Auth, from string, to []string, msg []byte) error
 }
 
-// Attempts to send an email to a given recipient. Through `smpt.SendMail`
+// NewEmailSender returns an EmailSender which sends mail using `smtp.SendMail`.
+// Its configuration points to the given `EmailConfig`.
+func NewEmailSender(c *EmailConfig) *EmailSender {
+	return &EmailSender{
+		Config:   c,
+		SendFunc: smtp.SendMail,
+	}
+}
+
+// Attempts to send an email to a given recipient.
 func (sender *EmailSender) Send(rec string, subject string, body string) error {
 
-	// Send Email using SMTP Protocol
+  // Send Email using SMTP Protocol
 	if strings.ToLower(sender.Config.Provider) == "smtp" {
 		//fmt.Println("Sending Email Using SMTP.")
 		log.Print("Using SMTP For Sending Email.")
@@ -54,7 +67,6 @@ func (sender *EmailSender) Send(rec string, subject string, body string) error {
 			sender.Config.Password,
 			sender.Config.Server,
 		)
-
 		message := fmt.Sprintf("Subject: %s\r\nFrom: Padlock Cloud <%s>\r\n\r\n%s", subject, sender.Config.User, body)
 		return smtp.SendMail(
 			sender.Config.Server+":"+sender.Config.Port,
