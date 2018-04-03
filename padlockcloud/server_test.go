@@ -2,6 +2,7 @@ package padlockcloud
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +14,8 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"testing"
@@ -211,7 +214,8 @@ func (ctx *serverTestContext) extractActivationLink() (string, error) {
 	return link, nil
 }
 
-func newServerTestContext() *serverTestContext {
+func newServerTestContextWithConfig(serverConfig *ServerConfig) *serverTestContext {
+
 	var context *serverTestContext
 
 	var captureAuthToken = HandlerFunc(func(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
@@ -232,7 +236,7 @@ func newServerTestContext() *serverTestContext {
 	}
 
 	logger := &Log{Config: &LogConfig{}}
-	server := NewServer(logger, storage, sender, &ServerConfig{})
+	server := NewServer(logger, storage, sender, serverConfig)
 	server.Templates = templates
 	server.Init()
 	logger.Info.SetOutput(ioutil.Discard)
@@ -305,6 +309,10 @@ func newServerTestContext() *serverTestContext {
 	}
 
 	return context
+}
+
+func newServerTestContext() *serverTestContext {
+	return newServerTestContextWithConfig(&ServerConfig{})
 }
 
 // Helper function for checking a `http.Response` object for an expected status code and response body
@@ -515,6 +523,32 @@ func TestAuthentication(t *testing.T) {
 		// An invalid activation token should result in a bad request response
 		res, _ = ctx.request("GET", ctx.host+"/activate/?t=asdf", "", ApiVersion)
 		testError(t, res, &BadRequest{"invalid activation token"})
+	})
+
+	t.Run("whitelist", func(t *testing.T) {
+		dir, err := ioutil.TempDir("", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
+
+		tmpFile := filepath.Join(dir, "tmpFile")
+		d1 := []byte(testEmail + "\n")
+		if err := ioutil.WriteFile(tmpFile, d1, 0644); err != nil {
+			t.Fatalf("Error writing to whitelist file: %s", err.Error())
+		}
+
+		//setup config with whitelist
+		whitelistCtx := newServerTestContextWithConfig(&ServerConfig{WhitelistPath: tmpFile})
+		whitelistCtx.followRedirects(false)
+
+		randomEmail := "random@random.com"
+		res, _ = whitelistCtx.loginApi(randomEmail)
+		testError(t, res, &BadRequest{"invalid email address"})
+
+		if _, err = whitelistCtx.loginApi(testEmail); err != nil {
+			t.Errorf("Should have been able to login because %s is on whitelist: %s", whitelistTestEmail, err.Error())
+		}
 	})
 }
 
@@ -975,5 +1009,14 @@ func TestDeviceData(t *testing.T) {
 
 	if !reflect.DeepEqual(ctx.device, token.Device) {
 		t.Errorf("Device data not updated correctly! Expected: %+v, got: %+v", ctx.device, token.Device)
+	}
+}
+
+func TestSecretInConfig(t *testing.T) {
+	secret := bytes.Repeat([]byte("a"), 32)
+	ctx := newServerTestContextWithConfig(&ServerConfig{Secret: base64.StdEncoding.EncodeToString(secret)})
+
+	if !bytes.Equal(ctx.server.secret, secret) {
+		t.Errorf("User-provided secret not set in server. Expected: %q, got: %q", secret, ctx.server.secret)
 	}
 }

@@ -79,6 +79,13 @@ func (t *AuthToken) Description() string {
 	}
 }
 
+func (t *AuthToken) ToMap() map[string]interface{} {
+	return map[string]interface{}{
+		"description": t.Description(),
+		"tokenId":     t.Id,
+	}
+}
+
 // Creates an auth token from it's string representation of the form "AuthToken base64(t.Email):t.Token"
 func AuthTokenFromString(str string) (*AuthToken, error) {
 	// Check if the Authorization header exists and is well formed
@@ -174,7 +181,6 @@ func (acc *Account) Serialize() ([]byte, error) {
 	if acc.Created.IsZero() {
 		acc.Created = time.Now()
 	}
-	acc.RemoveOldAuthTokens()
 	return json.Marshal(acc)
 }
 
@@ -193,6 +199,7 @@ func (a *Account) findAuthToken(at *AuthToken) (int, *AuthToken) {
 	}
 	for i, t := range a.AuthTokens {
 		if t != nil &&
+			(at.Type == "" || t.Type == at.Type) &&
 			(at.Token == "" || t.Token == at.Token) &&
 			(at.Id == "" || t.Id == at.Id) &&
 			(at.Device == nil || at.Device.UUID == "" || t.Device != nil && t.Device.UUID == at.Device.UUID) {
@@ -225,7 +232,7 @@ func (a *Account) RemoveAuthToken(t *AuthToken) bool {
 }
 
 // Filters out auth tokens that have been expired for 7 days or more
-func (a *Account) RemoveOldAuthTokens() {
+func (a *Account) RemoveExpiredAuthTokens() {
 	s := a.AuthTokens[:0]
 
 	for _, t := range a.AuthTokens {
@@ -235,6 +242,20 @@ func (a *Account) RemoveOldAuthTokens() {
 			maxAge = 7 * 24 * time.Hour
 		}
 		if t.Expires.IsZero() || t.Expires.After(time.Now().Add(-maxAge)) {
+			s = append(s, t)
+		}
+	}
+
+	a.AuthTokens = s
+}
+
+// Expires auth tokens that haven't been used in a while
+func (a *Account) ExpireUnusedAuthTokens() {
+	maxIdle := 30 * 24 * time.Hour
+	s := a.AuthTokens[:0]
+
+	for _, t := range a.AuthTokens {
+		if t.LastUsed.After(time.Now().Add(-maxIdle)) {
 			s = append(s, t)
 		}
 	}
@@ -252,9 +273,34 @@ func (a *Account) AuthTokensByType(typ string) []*AuthToken {
 	return tokens
 }
 
+func (a *Account) Devices() []*AuthToken {
+	devices := make([]*AuthToken, 0)
+	for _, at := range a.AuthTokensByType("api") {
+		if !at.Expired() {
+			devices = append(devices, at)
+		}
+	}
+	return devices
+}
+
+func (a *Account) ToMap() map[string]interface{} {
+	obj := map[string]interface{}{
+		"email": a.Email,
+	}
+
+	devices := make([]map[string]interface{}, 0)
+	for _, at := range a.Devices() {
+		devices = append(devices, at.ToMap())
+	}
+
+	obj["devices"] = devices
+	return obj
+}
+
 // AuthRequest represents an api key - activation token pair used to activate a given api key
 // `AuthRequest.Token` is used to activate the AuthToken through a separate channel (e.g. email)
 type AuthRequest struct {
+	Code      string
 	Token     string
 	AuthToken *AuthToken
 	Created   time.Time
@@ -263,7 +309,11 @@ type AuthRequest struct {
 
 // Implementation of the `Storable.Key` interface method
 func (ar *AuthRequest) Key() []byte {
-	return []byte(ar.Token)
+	if ar.Token != "" {
+		return []byte(ar.Token)
+	} else {
+		return []byte(fmt.Sprintf("%s-%s", ar.AuthToken.Email, ar.Code))
+	}
 }
 
 // Implementation of the `Storable.Deserialize` method
@@ -277,20 +327,32 @@ func (ar *AuthRequest) Serialize() ([]byte, error) {
 }
 
 // Creates a new `AuthRequest` with a given `email`
-func NewAuthRequest(email string, tType string, device *Device) (*AuthRequest, error) {
+func NewAuthRequest(email string, tType string, actType string, device *Device) (*AuthRequest, error) {
+	var authToken *AuthToken
+	var err error
+
 	// Create new auth token
-	authToken, err := NewAuthToken(email, tType, device)
+	if authToken, err = NewAuthToken(email, tType, device); err != nil {
+		return nil, err
+	}
+
+	ar := &AuthRequest{
+		AuthToken: authToken,
+		Created:   time.Now(),
+		Redirect:  "",
+	}
+
+	if actType == "code" {
+		ar.Code, err = randomHex(3)
+	} else {
+		ar.Token, err = token()
+	}
+
 	if err != nil {
 		return nil, err
 	}
 
-	// Create activation token
-	actToken, err := token()
-	if err != nil {
-		return nil, err
-	}
-
-	return &AuthRequest{actToken, authToken, time.Now(), ""}, nil
+	return ar, nil
 }
 
 func init() {

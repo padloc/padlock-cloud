@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -37,13 +38,22 @@ func (h *RequestAuthToken) Handle(w http.ResponseWriter, r *http.Request, auth *
 	if tType = r.PostFormValue("type"); tType == "" {
 		tType = "api"
 	}
+
+	actType := r.PostFormValue("actType")
+
 	email := r.PostFormValue("email")
 	redirect := r.PostFormValue("redirect")
+	preauth := auth != nil && auth.Type == "api" && auth.Email == email // Client is already authenticated
 	device := DeviceFromRequest(r)
 
 	// Make sure email field is set
 	if email == "" {
 		return &BadRequest{"no email provided"}
+	}
+
+	if h.whitelist != nil && h.whitelist.IsWhitelisted(email) == false {
+		// used account not found error to mimic
+		return &BadRequest{"invalid email address"}
 	}
 
 	if tType != "api" && tType != "web" {
@@ -76,7 +86,7 @@ func (h *RequestAuthToken) Handle(w http.ResponseWriter, r *http.Request, auth *
 		}
 	}
 
-	authRequest, err := NewAuthRequest(email, tType, device)
+	authRequest, err := NewAuthRequest(email, tType, actType, device)
 	if err != nil {
 		return err
 	}
@@ -93,19 +103,34 @@ func (h *RequestAuthToken) Handle(w http.ResponseWriter, r *http.Request, auth *
 	var emailBody bytes.Buffer
 	var emailSubj string
 
-	switch tType {
-	case "api":
-		if response, err = json.Marshal(map[string]string{
+	actLink := fmt.Sprintf("%s/activate/?t=%s", h.BaseUrl(r), authRequest.Token)
+
+	// Compose response
+	if tType == "api" || preauth {
+		res := map[string]string{
 			"id":    authRequest.AuthToken.Id,
 			"token": authRequest.AuthToken.Token,
 			"email": authRequest.AuthToken.Email,
-		}); err != nil {
+		}
+
+		// If the client is already preauthenticated, we can send the activation
+		// link back directly with the response
+		if preauth || h.Config.Test {
+			res["actUrl"] = actLink
+		}
+
+		if response, err = json.Marshal(res); err != nil {
 			return err
 		}
-		emailSubj = "Connect to Padlock Cloud"
+
+		if actType == "code" {
+			emailSubj = fmt.Sprintf("Your Padlock Login Code: %s", authRequest.Code)
+		} else {
+			emailSubj = "Connect to Padlock Cloud"
+		}
 
 		w.Header().Set("Content-Type", "application/json")
-	case "web":
+	} else {
 		var buff bytes.Buffer
 		if err := h.Templates.LoginPage.Execute(&buff, map[string]interface{}{
 			"submitted": true,
@@ -115,35 +140,32 @@ func (h *RequestAuthToken) Handle(w http.ResponseWriter, r *http.Request, auth *
 		}
 
 		response = buff.Bytes()
-		emailSubj = "Log in to Padlock Cloud"
+		emailSubj = "Your Padlock Login Link"
 
 		w.Header().Set("Content-Type", "text/html")
 	}
 
-	actLink := fmt.Sprintf("%s/activate/?t=%s", h.BaseUrl(r), authRequest.Token)
-	// Render activation email
-	if err := h.Templates.ActivateAuthTokenEmail.Execute(&emailBody, map[string]interface{}{
-		"activation_link": actLink,
-		"token":           authRequest.AuthToken,
-	}); err != nil {
-		return err
-	}
+	// No need to send and activation email if the client is preauthorized
+	if !preauth {
+		if h.emailRateLimiter.RateLimit(IPFromRequest(r), email) {
+			return &RateLimitExceeded{}
+		}
 
-	if !h.emailRateLimiter.RateLimit(getIp(r), email) {
+		// Render activation email
+		if err := h.Templates.ActivateAuthTokenEmail.Execute(&emailBody, map[string]interface{}{
+			"activation_link": actLink,
+			"token":           authRequest.AuthToken,
+			"code":            authRequest.Code,
+		}); err != nil {
+			return err
+		}
+
 		// Send email with activation link
 		go func() {
 			if err := h.Sender.Send(email, emailSubj, emailBody.String()); err != nil {
 				h.LogError(&ServerError{err}, r)
 			}
 		}()
-	} else {
-		return &RateLimitExceeded{}
-	}
-
-	// When in test mode, return activation link directly with request so the client can continue
-	// with the authentication flow directly
-	if h.Config.Test {
-		w.Header().Set("X-Test-Act-Url", actLink)
 	}
 
 	h.Info.Printf("%s - auth_token:request - %s:%s:%s\n", FormatRequest(r), email, tType, authRequest.AuthToken.Id)
@@ -160,14 +182,20 @@ type ActivateAuthToken struct {
 
 func (h *ActivateAuthToken) GetAuthRequest(r *http.Request) (*AuthRequest, error) {
 	token := r.URL.Query().Get("t")
+	email := r.PostFormValue("email")
+	code := r.PostFormValue("code")
 
-	if token == "" {
-		return nil, &BadRequest{"no activation token provided"}
+	if token == "" && (email == "" || code == "") {
+		return nil, &BadRequest{"no activation token or code provided"}
 	}
 
 	// Let's check if an unactivate api key exists for this token. If not,
 	// the token is not valid
-	authRequest := &AuthRequest{Token: token}
+	authRequest := &AuthRequest{
+		Code:      code,
+		Token:     token,
+		AuthToken: &AuthToken{Email: email},
+	}
 	if err := h.Storage.Get(authRequest); err != nil {
 		if err == ErrNotFound {
 			return nil, &BadRequest{"invalid activation token"}
@@ -194,6 +222,7 @@ func (h *ActivateAuthToken) Activate(authRequest *AuthRequest) error {
 	// Revoke existing tokens with the same device UUID
 	if at.Device != nil && at.Device.UUID != "" {
 		t := &AuthToken{
+			Type: at.Type,
 			Device: &Device{
 				UUID: at.Device.UUID,
 			},
@@ -242,9 +271,10 @@ func (h *ActivateAuthToken) Success(w http.ResponseWriter, r *http.Request, auth
 		redirect = "/dashboard/"
 	}
 
-	if at.Type == "api" {
+	if at.Type == "api" && authRequest.Code == "" {
 		// If auth type is "api" also log them in so they can be redirected to dashboard
-		login, err := NewAuthRequest(at.Email, "web", nil)
+		// But only if the activation type is not "code"
+		login, err := NewAuthRequest(at.Email, "web", "", at.Device)
 		if err != nil {
 			return err
 		}
@@ -254,10 +284,19 @@ func (h *ActivateAuthToken) Success(w http.ResponseWriter, r *http.Request, auth
 		}
 
 		h.SetAuthCookie(w, login.AuthToken)
-		redirect = redirect + fmt.Sprintf("?paired=%s", at.Id)
+
+		if u, err := url.Parse(redirect); err == nil {
+			q := u.Query()
+			q.Set("action", "paired")
+			q.Set("token-id", at.Id)
+			u.RawQuery = q.Encode()
+			redirect = u.String()
+		}
 	}
 
-	http.Redirect(w, r, redirect, http.StatusFound)
+	if strings.Contains(r.Header.Get("Accept"), "text/html") {
+		http.Redirect(w, r, redirect, http.StatusFound)
+	}
 
 	h.Info.Printf("%s - auth_token:activate - %s:%s:%s\n", FormatRequest(r), at.Email, at.Type, at.Id)
 
@@ -346,7 +385,7 @@ func (h *DeleteStore) Handle(w http.ResponseWriter, r *http.Request, auth *AuthT
 		return err
 	}
 
-	http.Redirect(w, r, "/dashboard/?datareset=1", http.StatusFound)
+	http.Redirect(w, r, "/dashboard/?action=reset", http.StatusFound)
 	return nil
 }
 
@@ -372,24 +411,20 @@ type Dashboard struct {
 func DashboardParams(r *http.Request, auth *AuthToken) map[string]interface{} {
 	acc := auth.Account()
 
-	var pairedToken *AuthToken
-	if paired := r.URL.Query().Get("paired"); paired != "" {
-		_, pairedToken = acc.findAuthToken(&AuthToken{Id: paired})
-	}
-
-	var revokedToken *AuthToken
-	if revoked := r.URL.Query().Get("revoked"); revoked != "" {
-		_, revokedToken = acc.findAuthToken(&AuthToken{Id: revoked})
-	}
-
-	return map[string]interface{}{
-		"account":       acc,
-		"paired":        pairedToken,
-		"revoked":       revokedToken,
-		"datareset":     r.URL.Query().Get("datareset"),
+	params := map[string]interface{}{
+		"auth":          auth,
+		"account":       acc.ToMap(),
 		"action":        r.URL.Query().Get("action"),
 		CSRFTemplateTag: CSRFTemplateField(r),
+		"csrfToken":     CSRFToken(r),
 	}
+
+	if tokenId := r.URL.Query().Get("token-id"); tokenId != "" {
+		_, token := acc.findAuthToken(&AuthToken{Id: tokenId})
+		params["token"] = token.ToMap()
+	}
+
+	return params
 }
 
 func (h *Dashboard) Handle(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
@@ -420,7 +455,12 @@ func (h *Logout) Handle(w http.ResponseWriter, r *http.Request, auth *AuthToken)
 		HttpOnly: true,
 		Secure:   h.Secure,
 	})
-	http.Redirect(w, r, "/login/", http.StatusFound)
+
+	if strings.Contains(r.Header.Get("Accept"), "text/html") {
+		http.Redirect(w, r, "/login/", http.StatusFound)
+	}
+
+	h.Info.Printf("%s - data_store:write - %s\n", FormatRequest(r), acc.Email)
 	return nil
 }
 
@@ -450,7 +490,27 @@ func (h *Revoke) Handle(w http.ResponseWriter, r *http.Request, auth *AuthToken)
 		return err
 	}
 
-	http.Redirect(w, r, fmt.Sprintf("/dashboard/?revoked=%s", t.Id), http.StatusFound)
+	if strings.Contains(r.Header.Get("Accept"), "text/html") {
+		http.Redirect(w, r, fmt.Sprintf("/dashboard/?action=revoked&token-id=%s", t.Id), http.StatusFound)
+	}
+
+	return nil
+}
+
+type AccountInfo struct {
+	*Server
+}
+
+func (h *AccountInfo) Handle(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
+	acc := auth.Account()
+
+	res, err := json.Marshal(acc.ToMap())
+	if err != nil {
+		return err
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(res)
 
 	return nil
 }

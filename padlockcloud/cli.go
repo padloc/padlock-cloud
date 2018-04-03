@@ -59,9 +59,7 @@ func (cliApp *CliApp) InitServer() error {
 		cliApp.Config.Server.Cors = true
 	} else {
 		storage = cliApp.Storage
-		sender = &EmailSender{
-			Config: &cliApp.Config.Email,
-		}
+		sender = NewEmailSender(&cliApp.Config.Email)
 		logger.Sender = sender
 	}
 
@@ -270,6 +268,20 @@ func NewCliApp() *CliApp {
 			Usage:       "Password for authentication with mail server",
 			EnvVar:      "PC_EMAIL_PASSWORD",
 			Destination: &config.Email.Password,
+		},
+		cli.StringFlag{
+			Name:        "email-from",
+			Value:       "",
+			Usage:       "Mail address to use as sender of outgoing mails. If empty, email-user is used instead.",
+			EnvVar:      "PC_EMAIL_FROM",
+			Destination: &config.Email.From,
+		},
+		cli.StringFlag{
+			Name:        "whitelist-path",
+			Value:       "",
+			Usage:       "File containing line-separated email whitelist",
+			EnvVar:      "PC_WHITELIST_PATH",
+			Destination: &config.Server.WhitelistPath,
 		},
 	}
 

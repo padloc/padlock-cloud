@@ -1,25 +1,86 @@
 {{ define "css" }}
-    <link href="/static/css/login.css" rel="stylesheet" type="text/css">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            font-size: 18px;
+            background: #fafafa;
+        }
+
+        main {
+            text-align: center;
+            width: 100%;
+            max-width: 400px;
+            margin: auto;
+            height: 300px;
+            position: absolute;
+            left: 0; right: 0; top: 0; bottom: 0;
+            padding: 15px;
+            box-sizing: border-box;
+        }
+
+        p {
+            padding: 0 15px;
+            line-height: 1.5em;
+        }
+
+        form {
+            border-radius: 8px;
+            border: solid 1px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            margin: 30px 0;
+        }
+
+        button, input {
+            border: none;
+            appearance: none;
+            font-size: inherit;
+            text-align: inherit;
+            background: #fff;
+        }
+
+        form > * {
+            padding: 15px;
+            font-size: 16px;
+        }
+
+        form > :not(:last-child) {
+            border-bottom: solid 1px rgba(0, 0, 0, 0.2);
+        }
+
+        form button {
+            margin: 0;
+            background: #fff;
+            font-weight: bold;
+        }
+
+        .close {
+            font-size: 16px;
+            opacity: 0.5;
+        }
+
+    </style>
 {{ end }}
 {{ define "main" }}
     <section class="login">
-        <h1>Log In</h1>
         {{ if .submitted }}
         <p>
-            Wow, that was easy! We've sent and email to <strong>{{ .email }}</strong> with a magic login link.
-            Go ahead, check your inbox! (You can close this window now.)
+            Wow, that was easy! We sent a login link to <strong>{{ .email }}</strong>.
+            Go ahead, check your inbox! 
+        </p>
+        <p class="close">
+            (You can close this window now.)
         </p>
         {{ else }}
         <p>
-            We know, even with a great password manager like Padlock passwords still suck. So we have
-            a much easier way for you to log in! Simply enter your email address and we'll send you a
-            magic login link!
+            Welcome to <strong>Padlock Cloud!</strong> Please enter your email address to log in.
         </p>
         <form action="." method="post" class="login-form">
             <input name="type" type="hidden" value="web" required>
             <input name="api_version" type="hidden" value="1" required>
-            <input name="email" type="email" required placeholder="Enter Your Email">
-            <button>Send Login Link</button>
+            <input name="email" type="email" required placeholder="Enter Email Address">
+            <button>Login</button>
         </form>
         {{ end }}
     </section>

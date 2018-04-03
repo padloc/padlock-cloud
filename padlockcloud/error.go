@@ -213,5 +213,32 @@ func (e *ServerError) Status() int {
 }
 
 func (e *ServerError) Message() string {
-	return http.StatusText(e.Status())
+	return "Something went wrong on our side, sorry! Our team has been notified and will resolve the problem as soon as possible!"
+}
+
+func (e *ServerError) Format(s fmt.State, verb rune) {
+	if err, ok := e.error.(fmt.Formatter); ok {
+		err.Format(s, verb)
+	} else {
+		fmt.Fprintf(s, "%"+string(verb), e)
+	}
+}
+
+type UnauthorizedError struct {
+}
+
+func (e *UnauthorizedError) Code() string {
+	return "unauthorized"
+}
+
+func (e *UnauthorizedError) Error() string {
+	return fmt.Sprintf("%s", e.Code())
+}
+
+func (e *UnauthorizedError) Status() int {
+	return http.StatusUnauthorized
+}
+
+func (e *UnauthorizedError) Message() string {
+	return fmt.Sprintf("%s - %s", http.StatusText(e.Status()), "You are not authorized to view this page.")
 }

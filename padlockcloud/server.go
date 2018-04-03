@@ -38,7 +38,7 @@ func versionFromRequest(r *http.Request) int {
 	return version
 }
 
-func getIp(r *http.Request) string {
+func IPFromRequest(r *http.Request) string {
 	ip := r.Header.Get("X-Real-IP")
 	if ip == "" {
 		ip = r.RemoteAddr
@@ -47,11 +47,11 @@ func getIp(r *http.Request) string {
 }
 
 func FormatRequest(r *http.Request) string {
-	return fmt.Sprintf("%s %s %s", getIp(r), r.Method, r.URL)
+	return fmt.Sprintf("%s %s %s", IPFromRequest(r), r.Method, r.URL)
 }
 
 func formatRequestVerbose(r *http.Request) string {
-	dump, _ := httputil.DumpRequest(r, true)
+	dump, _ := httputil.DumpRequest(r, false)
 	return string(dump)
 }
 
@@ -95,6 +95,8 @@ type ServerConfig struct {
 	Cors bool `yaml:"cors"`
 	// Test mode
 	Test bool `yaml:"test"`
+	// Whitelisted path
+	WhitelistPath string `yaml:"whitelist_path"`
 }
 
 // The Server type holds all the contextual data and logic used for running a Padlock Cloud instances
@@ -111,6 +113,7 @@ type Server struct {
 	secret            []byte
 	emailRateLimiter  *EmailRateLimiter
 	cleanAuthRequests *Job
+	whitelist         *Whitelist
 }
 
 func (server *Server) BaseUrl(r *http.Request) string {
@@ -150,6 +153,9 @@ func (server *Server) Authenticate(r *http.Request) (*AuthToken, error) {
 		}
 	}
 
+	acc.ExpireUnusedAuthTokens()
+	acc.RemoveExpiredAuthTokens()
+
 	// Find the fully populated auth token struct on account. If not found, the value will be nil
 	// and we know that the provided token is not valid
 	if !authToken.Validate(acc) {
@@ -184,7 +190,7 @@ func (server *Server) Authenticate(r *http.Request) (*AuthToken, error) {
 func (server *Server) LogError(err error, r *http.Request) {
 	switch e := err.(type) {
 	case *ServerError, *InvalidCsrfToken:
-		server.Error.Printf("%s - %v\nRequest:\n%s\n", FormatRequest(r), e, formatRequestVerbose(r))
+		server.Error.Printf("%s\n***STACK TRACE***\n%+v\n***REQUEST***\n%s\n", FormatRequest(r), e, formatRequestVerbose(r))
 	default:
 		server.Info.Printf("%s - %v", FormatRequest(r), e)
 	}
@@ -278,7 +284,8 @@ func (server *Server) InitEndpoints() {
 	// Endpoint for activating auth tokens
 	server.Endpoints["/activate/"] = &Endpoint{
 		Handlers: map[string]Handler{
-			"GET": &ActivateAuthToken{server},
+			"GET":  &ActivateAuthToken{server},
+			"POST": &ActivateAuthToken{server},
 		},
 	}
 
@@ -314,7 +321,7 @@ func (server *Server) InitEndpoints() {
 		Handlers: map[string]Handler{
 			"GET": &Logout{server},
 		},
-		AuthType: "web",
+		AuthType: "universal",
 	}
 
 	// Endpoint for revoking auth tokens
@@ -322,7 +329,15 @@ func (server *Server) InitEndpoints() {
 		Handlers: map[string]Handler{
 			"POST": &Revoke{server},
 		},
-		AuthType: "web",
+		AuthType: "universal",
+	}
+
+	// Account info
+	server.Endpoints["/account/"] = &Endpoint{
+		Handlers: map[string]Handler{
+			"GET": &AccountInfo{server},
+		},
+		AuthType: "api",
 	}
 
 	server.Endpoints["/static/"] = &Endpoint{
@@ -353,7 +368,7 @@ func (server *Server) InitHandler() {
 	}
 
 	if server.Config.Cors {
-		exposedHeaders := []string{"X-Sub-Required", "X-Sub-Status", "X-Sub-Trial-End"}
+		exposedHeaders := []string{"X-Sub-Required", "X-Sub-Status", "X-Sub-Trial-End", "X-Stripe-Pub-Key"}
 		if server.Config.Test {
 			exposedHeaders = append(exposedHeaders, "X-Test-Act-Url")
 		}
@@ -395,7 +410,7 @@ func (server *Server) SendDeprecatedVersionEmail(r *http.Request) error {
 		email = r.PostFormValue("email")
 	}
 
-	if email != "" && !server.emailRateLimiter.RateLimit(getIp(r), email) {
+	if email != "" && !server.emailRateLimiter.RateLimit(IPFromRequest(r), email) {
 		var buff bytes.Buffer
 		if err := server.Templates.DeprecatedVersionEmail.Execute(&buff, nil); err != nil {
 			return err
@@ -422,9 +437,9 @@ func (server *Server) Init() error {
 
 	if server.Config.Secret != "" {
 		if s, err := base64.StdEncoding.DecodeString(server.Config.Secret); err != nil {
-			server.secret = s
-		} else {
 			return err
+		} else {
+			server.secret = s
 		}
 	} else {
 		if key, err := randomBytes(32); err != nil {
@@ -488,6 +503,15 @@ func (server *Server) Init() error {
 	}
 
 	server.cleanAuthRequests.Start(24 * time.Hour)
+
+	if server.Config.WhitelistPath != "" {
+		whitelist, err := NewWhitelist(server.Config.WhitelistPath)
+		if err != nil {
+			return err
+		}
+		server.whitelist = whitelist
+		server.Log.Info.Printf("%d Whitelist emails set.\n", len(whitelist.Emails))
+	}
 
 	return nil
 }
