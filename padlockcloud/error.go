@@ -220,7 +220,7 @@ func (e *ServerError) Format(s fmt.State, verb rune) {
 	if err, ok := e.error.(fmt.Formatter); ok {
 		err.Format(s, verb)
 	} else {
-		fmt.Fprintf(s, "%"+string(verb), e)
+		fmt.Fprintf(s, "%"+string(verb), e.error)
 	}
 }
 
