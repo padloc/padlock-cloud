@@ -538,8 +538,10 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
 
             --card: {
                 background: var(--color-background);
-                box-shadow: rgba(0, 0, 0, 0.25) 0 0 1px;
+                /* box-shadow: rgba(0, 0, 0, 0.2) 0 0 1px; */
                 border-radius: var(--border-radius);
+                border: solid 1px rgba(0, 0, 0, 0.1);
+                border-bottom-width: 2px;
                 overflow: hidden;
             }
         }
@@ -699,6 +701,10 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
                 background: linear-gradient(180deg, #f49300 0%, #f25b00 100%);
             }
 
+            section.highlight.dark {
+                background: linear-gradient(180deg, #555 0%, #222 100%);
+            }
+
             .section-header {
                 text-align: center;
                 font-weight: bold;
@@ -729,8 +735,7 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
                 font-size: var(--font-size-default);
                 position: relative;
                 z-index: 1;
-                /* border-bottom: solid 1px rgba(0, 0, 0, 0.2); */
-                box-shadow: rgba(0, 0, 0, 0.1) 0 1px 1px;
+                border-bottom: solid 1px rgba(0, 0, 0, 0.15);
             }
 
             header > .title {
@@ -848,6 +853,33 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
                 font-weight: bold;
             }
 
+            .info {
+                display: flex;
+                align-items: center;
+            }
+
+            .info-icon {
+                width: 80px;
+                height: 80px;
+                font-size: 60px;
+                margin: 10px 0 10px 10px;
+            }
+
+            .info-body {
+                padding: 20px 15px 20px 10px;
+                flex: 1;
+            }
+
+            .info-title {
+                font-size: 120%;
+                font-weight: bold;
+                margin-bottom: 5px;
+            }
+
+            .info-text {
+                font-size: var(--font-size-small);
+            }
+
             @keyframes spin {
                 to { transform: rotate(360deg); }
             }
@@ -880,7 +912,6 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
             }
 
             input {
-                height: 100%;
                 box-sizing: border-box;
                 text-overflow: ellipsis;
             }
@@ -888,6 +919,7 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
             input, textarea {
                 text-align: inherit;
                 width: 100%;
+                height: 100%;
                 min-height: inherit;
                 line-height: inherit;
             }
@@ -912,19 +944,24 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
                 margin-left: -4px;
             }
 
-            [invisible] {
+            input[disabled], textarea[disabled] {
+                opacity: 1;
+                -webkit-text-fill-color: currentColor;
+            }
+
+            input[invisible], textarea[invisible] {
                 opacity: 0;
             }
         </style>
 
         <template is="dom-if" if="[[ multiline ]]" on-dom-change="_domChange">
-            <textarea id="input" value="{{ value::input }}" placeholder$="[[ placeholder ]]" readonly$="[[ readonly ]]" rows="1" autocomplete="off" spellcheck="false" autocapitalize$="[[ _computeAutoCapitalize(autocapitalize) ]]" autocorrect="off" on-focus="_focused" on-blur="_blurred" on-change="_changeHandler" on-keydown="_keydown" on-touchend="_stopPropagation" tabindex$="[[ _tabIndex(noTab) ]]" invisible$="[[ _showMask(masked, value, focused) ]]"></textarea>
-            <textarea class="mask" value="[[ _mask(value) ]]" tabindex="-1" invisible$="[[ !_showMask(masked, value, focused) ]]"></textarea>
+            <textarea id="input" value="{{ value::input }}" placeholder$="[[ placeholder ]]" readonly$="[[ readonly ]]" rows="1" autocomplete="off" spellcheck="false" autocapitalize$="[[ _computeAutoCapitalize(autocapitalize) ]]" autocorrect="off" on-focus="_focused" on-blur="_blurred" on-change="_changeHandler" on-keydown="_keydown" on-touchend="_stopPropagation" tabindex$="[[ _tabIndex(noTab) ]]" invisible$="[[ _showMask(masked, value, focused) ]]" disabled$="[[ disabled ]]"></textarea>
+            <textarea class="mask" value="[[ _mask(value) ]]" tabindex="-1" invisible$="[[ !_showMask(masked, value, focused) ]]" disabled=""></textarea>
         </template>
 
         <template is="dom-if" if="[[ !multiline ]]" on-dom-change="_domChange">
-            <input id="input" value="{{ value::input }}" tabindex$="[[ _tabIndex(noTab) ]]" autocomplete="off" spellcheck="false" autocapitalize$="[[ _computeAutoCapitalize(autocapitalize) ]]" autocorrect="off" type$="[[ type ]]" placeholder$="[[ placeholder ]]" readonly$="[[ readonly ]]" required$="[[ required ]]" pattern$="[[ pattern ]]" on-focus="_focused" on-blur="_blurred" on-change="_changeHandler" on-keydown="_keydown" on-touchend="_stopPropagation" invisible$="[[ _showMask(masked, value, focused) ]]">
-            <input class="mask" value="[[ _mask(value) ]]" tabindex="-1" invisible$="[[ !_showMask(masked, value, focused) ]]">
+            <input id="input" value="{{ value::input }}" tabindex$="[[ _tabIndex(noTab) ]]" autocomplete="off" spellcheck="false" autocapitalize$="[[ _computeAutoCapitalize(autocapitalize) ]]" autocorrect="off" type$="[[ type ]]" placeholder$="[[ placeholder ]]" readonly$="[[ readonly ]]" required$="[[ required ]]" pattern$="[[ pattern ]]" disabled$="[[ disabled ]]" on-focus="_focused" on-blur="_blurred" on-change="_changeHandler" on-keydown="_keydown" on-touchend="_stopPropagation" invisible$="[[ _showMask(masked, value, focused) ]]">
+            <input class="mask" value="[[ _mask(value) ]]" tabindex="-1" invisible$="[[ !_showMask(masked, value, focused) ]]" disabled="">
         </template>
 
     </template>
@@ -1100,7 +1137,7 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
                 content: "\f0e7";
             }
 
-            :host([icon="category"]) > div::before {
+            :host([icon="tag"]) > div::before {
                 content: "\f02b";
             }
 
@@ -1430,11 +1467,8 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
                     text-shadow: none;
                     border: none;
                     overflow: hidden;
+                    position: relative;
                 };
-            }
-
-            pl-dialog > * {
-                border-bottom: solid 1px rgba(0, 0, 0, 0.1);
             }
 
             .charsets {
@@ -1472,15 +1506,25 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
 
             pl-toggle-button {
                 display: block;
+                border-bottom: solid 1px rgba(0, 0, 0, 0.1);
             }
 
             pl-slider {
                 display: flex;
                 height: var(--row-height);
+                border-bottom: solid 1px rgba(0, 0, 0, 0.1);
             }
 
             .confirm-button {
                 font-weight: bold;
+            }
+
+            .close-button {
+                position: absolute;
+                top: 0;
+                right: 0;
+                color: var(--color-quaternary);
+                text-shadow: rgba(0, 0, 0, 0.2) 0px 2px 0px;
             }
         </style>
 
@@ -1495,8 +1539,9 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
             <pl-toggle-button label="A-Z" active="{{ upper }}" class="tap" reverse=""></pl-toggle-button>
             <pl-toggle-button label="0-9" active="{{ numbers }}" class="tap" reverse=""></pl-toggle-button>
             <pl-toggle-button label="?()/%..." active="{{ other }}" class="tap" reverse=""></pl-toggle-button>
-            <pl-slider label="[[ $l('length') ]]" min="5" max="50" value="{{ length }}" class="tap"></pl-slider>
-            <button class="confirm-button tap" on-click="_confirm">[[ $l("Confirm") ]]</button>
+            <pl-slider label="[[ $l('length') ]]" min="5" max="50" value="{{ length }}"></pl-slider>
+            <button class="confirm-button tap" on-click="_confirm">[[ $l("Apply") ]]</button>
+            <pl-icon icon="cancel" class="close-button tap" on-click="_dismiss"></pl-icon>
         </pl-dialog>
 
     </template>
@@ -1562,7 +1607,7 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
         </style>
 
         <pl-dialog id="dialog" open="{{ open }}" prevent-dismiss="[[ preventDismiss ]]" on-dialog-dismiss="_dialogDismiss">
-            <div class="info">
+            <div class="info" hidden$="[[ _hideInfo(title, message) ]]">
                 <pl-icon class="info-icon" icon="[[ _icon(type) ]]"></pl-icon>
                 <div class="info-body">
                     <div class="info-title">[[ title ]]</div>
@@ -2409,7 +2454,7 @@ Custom property | Description | Default
         </style>
 
         <pl-dialog id="dialog" open="{{ open }}" prevent-dismiss="[[ preventDismiss ]]" on-dialog-dismiss="_dismiss">
-            <div class="message tiles-1">[[ message ]]</div>
+            <div class="message tiles-1" hidden$="[[ !_hasMessage(message) ]]">[[ message ]]</div>
             <pl-input class="tiles-2" id="input" type="[[ type ]]" placeholder="[[ placeholder ]]" on-enter="_confirm"></pl-input>
             <pl-loading-button id="confirmButton" class="tap tiles-3" on-click="_confirm">[[ confirmLabel ]]</pl-loading-button>
             <button class="tap tiles-4" on-click="_dismiss" hidden$="[[ _hideCancelButton ]]">[[ cancelLabel ]]</button>
@@ -2589,6 +2634,8 @@ Custom property | Description | Default
 
             .price {
                 font-weight: bold;
+                position: relative;
+                z-index: 1;
             }
 
             .price-amount {
@@ -2616,13 +2663,30 @@ Custom property | Description | Default
                 margin-top: 10px;
             }
 
-            .coupon-desc {
+            .price-original {
+                text-decoration: line-through;
+                color: var(--color-highlight);
+                text-shadow: none;
+                font-size: 120%;
+                position: absolute;
+                left: 0;
+                right: 0;
+                top: -20px;
+                z-index: -1;
+                transform: rotate(-8deg);
+            }
+
+            .promo-desc {
                 font-size: var(--font-size-small);
                 background: var(--color-secondary);
                 color: var(--color-quaternary);
                 font-weight: bold;
-                line-height: 30px;
+                padding: 5px;
                 text-align: center;
+            }
+
+            .redeem-within {
+                font-size: var(--font-size-tiny);
             }
 
             .secure-payment {
@@ -2718,14 +2782,18 @@ Custom property | Description | Default
                         </div>
                     </div>
                     <div class="price">
+                        <div class="price-original" hidden$="[[ !truthy(promo) ]]">$[[ _originalPrice.0 ]][[ _originalPrice.1 ]]</div>
                         <div class="price-amount">
-                            <span class="price-currency">$</span>[[ _monthlyPrice(plan.amount) ]]<span class="price-decimal">[[ _monthlyPriceDecimal(plan.amount) ]]</span>
+                            <span class="price-currency">$</span>[[ _price.0 ]]<span class="price-decimal">[[ _price.1 ]]</span>
                         </div>
                         <div class="price-period">[[ $l("per month*") ]]</div>
                     </div>
                     <div class="price-hint">[[ $l("*USD\, billed annually") ]]</div>
                 </div>
-                <div class="coupon-desc" hidden$="[[ !_hasCoupon(coupon) ]]">Coupon: [[ coupon.metadata.description ]]</div>
+                <div class="promo-desc" hidden$="[[ !truthy(promo) ]]">
+                    <div>[[ promo.title ]]</div>
+                    <div class="redeem-within" hidden$="[[ !truthy(promo.redeemWithin) ]]">[[ $l("Expires In") ]] [[ _redeemCountDown ]]</div>
+                </div>
                 <div class="message card-hint tap" hidden$="[[ _hasError(_cardError) ]]" on-click="_toggleCoupon">
                     <div>[[ $l("Please enter your credit or debit card information:") ]]</div>
                 </div>
@@ -2746,6 +2814,78 @@ Custom property | Description | Default
             <button class="trial-button" slot="after" hidden$="[[ _trialExpired(remainingTrialDays) ]]">
                 [[ $l("Continue Trial ({0} Days Left)", remainingTrialDays) ]]
             </button>
+        </pl-dialog>
+
+    </template>
+
+    </dom-module>
+<dom-module id="pl-promo" assetpath="../ui/promo/">
+
+    <template>
+
+        <style include="shared">
+
+            button {
+                width: 100%;
+                font-weight: bold;
+                height: auto;
+                padding: 15px;
+                line-height: normal;
+                font-size: 110%;
+                border-top: solid 1px rgba(0, 0, 0, 0.3);
+            }
+
+            .redeem-within {
+                font-size: var(--font-size-tiny);
+            }
+
+            .info-icon::after {
+                font-family: var(--font-family);
+                content: "%";
+                color: var(--color-secondary);
+                width: 25px;
+                height: 25px;
+                font-size: 23px;
+                position: absolute;
+                top: 27px;
+                left: 34px;
+                font-weight: bold;
+                text-shadow: none;
+                display: block;
+                transform: rotate(45deg);
+            }
+        </style>
+
+        <div class="info">
+            <pl-icon class="info-icon" icon="tag"></pl-icon>
+            <div class="info-body">
+                <div class="info-title">[[ promo.title ]]</div>
+                <div class="info-text">[[ promo.description ]]</div>
+            </div>
+        </div>
+
+        <button class="tap" on-click="_redeem">
+            <div>[[ $l("Redeem Now") ]]</div>
+            <div class="redeem-within" hidden$="[[ !truthy(promo.redeemWithin) ]]">[[ $l("Expires In") ]] [[ _redeemCountDown ]]</div>
+        </button>
+
+    </template>
+
+    </dom-module>
+
+<dom-module id="pl-promo-dialog" assetpath="../ui/promo/">
+
+    <template>
+        <style include="shared">
+            :host {
+                --pl-dialog-inner: {
+                    background: linear-gradient(180deg, #555 0%, #222 100%);
+                };
+            }
+        </style>
+
+        <pl-dialog id="dialog" on-dialog-dismiss="_dismiss">
+            <pl-promo promo="[[ promo ]]" on-promo-expire="_dismiss" on-promo-redeem="_redeem"></pl-promo>
         </pl-dialog>
 
     </template>
@@ -3010,59 +3150,54 @@ Custom property | Description | Default
 
         <main>
 
-            <dom-if if="[[ account.displaySubscription ]]">
+            <section class="highlight dark" hidden$="[[ !truthy(promo) ]]">
+                <pl-promo promo="[[ promo ]]" data-source="Dashboard - Promo" on-promo-redeem="_buySubscription" on-promo-expired="_promoExpired"></pl-promo>
+            </section>
 
-                <template>
+            <section class="highlight tiles warning" hidden$="[[ !isTrialing(account.subscription.status) ]]">
+                <div class="info">
+                    <pl-icon class="info-icon" icon="time"></pl-icon>
+                    <div class="info-body">
+                        <div class="info-title">[[ $l("Trialing ({0} days left)", remainingTrialDays) ]]</div>
+                        <div class="info-text">[[ trialingMessage(remainingTrialDays) ]]</div>
+                    </div>
+                </div>
+                <button class="tap" on-click="_buySubscription" data-source="Dashboard - Trialing">[[ $l("Upgrade Now") ]]</button>
+            </section>
 
-                    <section class="highlight tiles" hidden$="[[ !_hasCoupon(account.coupon) ]]">
-                        <div class="info">
-                            <pl-icon class="info-icon" icon="category"></pl-icon>
-                            <div class="info-body">
-                                <div class="info-title">[[ $l("Coupon Unlocked") ]]</div>
-                                <div class="info-text" inner-h-t-m-l="[[ $l('The following coupon has been unlocked for your account: **{0}**', account.coupon.metadata.description) ]]"></div>
-                            </div>
-                        </div>
-                        <button class="tap" on-click="_buySubscription">[[ $l("Claim Coupon") ]]</button>
-                    </section>
+            <section class="highlight tiles warning" hidden$="[[ !isTrialExpired(account.subscription.status) ]]">
+                <div class="info">
+                    <pl-icon class="info-icon" icon="error"></pl-icon>
+                    <div class="info-body">
+                        <div class="info-title">[[ $l("Trial Expired") ]]</div>
+                        <div class="info-text">[[ trialExpiredMessage() ]]</div>
+                    </div>
+                </div>
+                <button class="tap" on-click="_buySubscription" data-source="Dashboard - Trial Expired">[[ $l("Upgrade Now") ]]</button>
+            </section>
 
-                    <section class="highlight warning tiles" hidden$="[[ !_isTrialing(account.subscription.status) ]]">
-                        <div class="info">
-                            <pl-icon class="info-icon" icon="time"></pl-icon>
-                            <div class="info-body">
-                                <div class="info-title">[[ $l("Trialing ({0} days left)", _trialDays) ]]</div>
-                                <div class="info-text">[[ _trialInfoText(_trialDays) ]]</div>
-                            </div>
-                        </div>
-                        <button class="tap" on-click="_buySubscription">[[ $l("Upgrade Now") ]]</button>
-                    </section>
+            <section class="highlight tiles warning" hidden$="[[ !isSubUnpaid(account.subscription.status) ]]">
+                <div class="info">
+                    <pl-icon class="info-icon" icon="error"></pl-icon>
+                    <div class="info-body">
+                        <div class="info-title">[[ $l("Payment Failed") ]]</div>
+                        <div class="info-text">[[ subUnpaidMessage() ]]</div>
+                    </div>
+                </div>
+                <button class="tap" on-click="_updatePaymentMethod" data-source="Dashboard - Payment Failed">[[ $l("Update Payment Method") ]]</button>
+                <button class="tap" on-click="_contactSupport">[[ $l("Contact Support") ]]</button>
+            </section>
 
-                    <section class="highlight warning tiles" hidden$="[[ !_isInactive(account.subscription.status) ]]">
-                        <div class="info">
-                            <pl-icon class="info-icon" icon="error"></pl-icon>
-                            <div class="info-body">
-                                <div class="info-title">[[ $l("Read-Only") ]]</div>
-                                <div class="info-text">[[ _readOnlyInfoText() ]]</div>
-                            </div>
-                        </div>
-                        <button class="tap" on-click="_buySubscription">[[ $l("Upgrade Now") ]]</button>
-                    </section>
-
-                    <section hidden$="[[ !_isActive(account.subscription.status) ]]">
-                        <div class="info-2">
-                            <div>[[ $l("Subscription Status:") ]]</div>
-                            <div class="subscription-status">[[ $l("Active") ]]</div>
-                            <div>[[ $l("Payment Method") ]]:</div>
-                            <div class="payment-method">[[ _paymentMethod(account.paymentSource) ]]</div>
-                        </div>
-                        <button class="tap" on-click="_changePaymentMethod">[[ $l("Change Payment Method") ]]</button>
-                        <!-- <button class="tiles&#45;3 tap" on&#45;click="_openBillingDialog">[[ $l("Update Billing Info") ]]</button> -->
-                        <!-- <pl&#45;loading&#45;button class="tiles&#45;4 tap" on&#45;click="_showInvoices">[[ $l("Invoices") ]]</pl&#45;loading&#45;button> -->
-                        <button class="tap" on-click="_cancelSubscription">[[ $l("Cancel Subscription") ]]</button>
-                    </section>
-
-                </template>
-
-            </dom-if>
+            <section class="highlight tiles warning" hidden$="[[ !isSubCanceled(account.subscription.status) ]]">
+                <div class="info">
+                    <pl-icon class="info-icon" icon="error"></pl-icon>
+                    <div class="info-body">
+                        <div class="info-title">[[ $l("Subscription Canceled") ]]</div>
+                        <div class="info-text">[[ subCanceledMessage() ]]</div>
+                    </div>
+                </div>
+                <button class="tap" on-click="_reactivateSubscription">[[ $l("Reactivate Subscription") ]]</button>
+            </section>
 
             <section class="devices">
                 <div class="title">[[ $l("{0} Paired Devices", account.devices.length) ]]</div>
@@ -3076,6 +3211,12 @@ Custom property | Description | Default
                         </div>
                     </template>
                 </dom-repeat>
+            </section>
+
+            <section hidden$="[[ !truthy(account.paymentSource) ]]">
+                <div class="section-header">[[ $l("Billing") ]]</div>
+                <button class="tap" on-click="_updatePaymentMethod" data-source="App - Billing">[[ _paymentSourceLabel(account.paymentSource) ]]</button>
+                <button class="tap" on-click="_cancelSubscription" hidden$="[[ !isSubActive(account.subscription.status) ]]">[[ $l("Cancel Subscription") ]]</button>
             </section>
 
             <section>

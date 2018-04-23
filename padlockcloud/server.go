@@ -337,7 +337,7 @@ func (server *Server) InitEndpoints() {
 		Handlers: map[string]Handler{
 			"GET": &AccountInfo{server},
 		},
-		AuthType: "api",
+		AuthType: "universal",
 	}
 
 	server.Endpoints["/static/"] = &Endpoint{
