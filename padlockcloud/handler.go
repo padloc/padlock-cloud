@@ -103,7 +103,7 @@ func (h *RequestAuthToken) Handle(w http.ResponseWriter, r *http.Request, auth *
 	var emailBody bytes.Buffer
 	var emailSubj string
 
-	actLink := fmt.Sprintf("%s/activate/?t=%s", h.BaseUrl(r), authRequest.Token)
+	actLink := fmt.Sprintf("%s/a/?t=%s", h.BaseUrl(r), authRequest.Token)
 
 	// Compose response
 	if tType == "api" || preauth {

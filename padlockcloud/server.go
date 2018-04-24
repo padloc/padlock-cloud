@@ -289,6 +289,14 @@ func (server *Server) InitEndpoints() {
 		},
 	}
 
+	// Endpoint for activating auth tokens (alias)
+	server.Endpoints["/a/"] = &Endpoint{
+		Handlers: map[string]Handler{
+			"GET":  &ActivateAuthToken{server},
+			"POST": &ActivateAuthToken{server},
+		},
+	}
+
 	// Endpoint for reading / writing and deleting a store
 	server.Endpoints["/store/"] = &Endpoint{
 		Handlers: map[string]Handler{

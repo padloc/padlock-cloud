@@ -203,7 +203,7 @@ func (ctx *serverTestContext) extractActivationLink() (string, error) {
 	}
 
 	// Activation message should contain a valid activation link
-	linkPattern := fmt.Sprintf("%s/activate/\\?t=%s", ctx.host, tokenPattern)
+	linkPattern := fmt.Sprintf("%s/a/\\?t=%s", ctx.host, tokenPattern)
 	msgPattern := fmt.Sprintf("%s, %s", testEmail, linkPattern)
 	match, _ := regexp.MatchString(msgPattern, ctx.sender.Message)
 	if !match {
@@ -521,7 +521,7 @@ func TestAuthentication(t *testing.T) {
 
 	t.Run("invalid activation token", func(t *testing.T) {
 		// An invalid activation token should result in a bad request response
-		res, _ = ctx.request("GET", ctx.host+"/activate/?t=asdf", "", ApiVersion)
+		res, _ = ctx.request("GET", ctx.host+"/a/?t=asdf", "", ApiVersion)
 		testError(t, res, &BadRequest{"invalid activation token"})
 	})
 
