@@ -307,7 +307,13 @@ func (h *ActivateAuthToken) Success(w http.ResponseWriter, r *http.Request, auth
 func (h *ActivateAuthToken) Handle(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
 	authRequest, err := h.GetAuthRequest(r)
 	if err != nil {
-		return err
+		if strings.Contains(r.Header.Get("Accept"), "text/html") {
+			h.LogError(err, r)
+			http.Redirect(w, r, "/dashboard/", http.StatusFound)
+			return nil
+		} else {
+			return err
+		}
 	}
 
 	if err := h.Activate(authRequest); err != nil {
