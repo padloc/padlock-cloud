@@ -20047,6 +20047,14 @@ const { track } = padlock.tracking;
 
 let stripe;
 
+const stripeLoaded = new Promise((resolve) => {
+    const script = document.createElement("script");
+    script.src = "https://js.stripe.com/v3/";
+    script.async = true;
+    script.onload = resolve;
+    document.body.appendChild(script);
+});
+
 class PaymentDialog extends applyMixins(
     BaseElement,
     LocaleMixin
@@ -20066,7 +20074,7 @@ class PaymentDialog extends applyMixins(
         _needsSupport: { type: Boolean, value: false },
         _price: {
             type: Array,
-            computed: "_calcPrice(plan.amount, promo.coupon.percent_off)"
+            computed: "_calcPrice(plan.amount, promo.coupon.percent_off, promo.coupon.amount_off)"
         },
         _originalPrice: {
             type: Array,
@@ -20109,27 +20117,29 @@ class PaymentDialog extends applyMixins(
     }
 
     _setupPayment() {
-        stripe = Stripe(this.stripePubKey);
-        const elements = stripe.elements();
-        const card = this._cardElement = elements.create("card", {
-            iconStyle: "solid",
-            style: {
-                base: {
-                    fontFamily: '"Clear Sans", "Helvetica Neue", Helvetica, sans-serif',
-                    fontSmoothing: "antialiased",
-                    fontSize: "18px"
-                },
-                invalid: {
-                    textShadow: "none"
+        stripeLoaded.then(() => {
+            stripe = Stripe(this.stripePubKey);
+            const elements = stripe.elements();
+            const card = this._cardElement = elements.create("card", {
+                iconStyle: "solid",
+                style: {
+                    base: {
+                        fontFamily: '"Clear Sans", "Helvetica Neue", Helvetica, sans-serif',
+                        fontSmoothing: "antialiased",
+                        fontSize: "18px"
+                    },
+                    invalid: {
+                        textShadow: "none"
+                    }
                 }
-            }
+            });
+
+            const cardElement = document.createElement("div");
+            this.appendChild(cardElement);
+            card.mount(cardElement);
+
+            card.addEventListener("change", (e) => this._cardError = e.error && e.error.message || "");
         });
-
-        const cardElement = document.createElement("div");
-        this.appendChild(cardElement);
-        card.mount(cardElement);
-
-        card.addEventListener("change", (e) => this._cardError = e.error && e.error.message || "");
     }
 
     _submitCard() {
@@ -20192,8 +20202,8 @@ class PaymentDialog extends applyMixins(
         return !!this._cardError;
     }
 
-    _calcPrice(amount, percentOff = 0) {
-        amount = amount * (1 - percentOff / 100);
+    _calcPrice(amount, percentOff = 0, amountOff = 0) {
+        amount = percentOff ? amount * (1 - percentOff / 100) : amount - amountOff;
         const d = Math.round((amount / 12) % 100);
 
         return [
@@ -20319,7 +20329,7 @@ padlock.SubInfoMixin = (superClass) => {
             },
             promo: {
                 type: Object,
-                computed: "_getPromo(account.promo)"
+                computed: "_getPromo(account.promo, subStatus)"
             },
             subStatus: {
                 type: String,
