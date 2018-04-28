@@ -425,8 +425,8 @@ func DashboardParams(r *http.Request, auth *AuthToken) map[string]interface{} {
 		"csrfToken":     CSRFToken(r),
 	}
 
-	if tokenId := r.URL.Query().Get("token-id"); tokenId != "" {
-		_, token := acc.findAuthToken(&AuthToken{Id: tokenId})
+	tokenId := r.URL.Query().Get("token-id")
+	if _, token := acc.findAuthToken(&AuthToken{Id: tokenId}); token != nil {
 		params["token"] = token.ToMap()
 	}
 
