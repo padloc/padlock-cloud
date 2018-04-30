@@ -6,6 +6,7 @@ import (
 	"github.com/pkg/errors"
 	"net/http"
 	"strings"
+	"sync"
 )
 
 var CSRFTemplateTag = csrf.TemplateTag
@@ -43,7 +44,7 @@ type Authenticate struct {
 }
 
 func (m *Authenticate) Wrap(h Handler) Handler {
-	return HandlerFunc(func(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
+	return HandlerFunc(func(w http.ResponseWriter, r *http.Request, _ *AuthToken) error {
 		// Get auth token from request
 		auth, err := m.Authenticate(r)
 
@@ -61,6 +62,25 @@ func (m *Authenticate) Wrap(h Handler) Handler {
 		// Make sure auth token has the right type
 		if m.Type != "" && m.Type != "universal" && auth.Type != m.Type {
 			return &InvalidAuthToken{auth.Email, auth.Token}
+		}
+
+		return h.Handle(w, r, auth)
+	})
+}
+
+// Middleware for locking state for a given account, if authenticated
+type LockAccount struct {
+	*Server
+}
+
+func (m *LockAccount) Wrap(h Handler) Handler {
+	return HandlerFunc(func(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
+		if t, _ := AuthTokenFromRequest(r); t != nil {
+			if m.accountMutexes[t.Email] == nil {
+				m.accountMutexes[t.Email] = &sync.Mutex{}
+			}
+			m.accountMutexes[t.Email].Lock()
+			defer m.accountMutexes[t.Email].Unlock()
 		}
 
 		return h.Handle(w, r, auth)

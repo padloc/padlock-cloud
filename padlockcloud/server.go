@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -114,6 +115,7 @@ type Server struct {
 	emailRateLimiter  *EmailRateLimiter
 	cleanAuthRequests *Job
 	whitelist         *Whitelist
+	accountMutexes    map[string]*sync.Mutex
 }
 
 func (server *Server) BaseUrl(r *http.Request) string {
@@ -237,7 +239,7 @@ func (server *Server) HandleError(e error, w http.ResponseWriter, r *http.Reques
 func (server *Server) WrapEndpoint(endpoint *Endpoint) Handler {
 	var h Handler = endpoint
 
-	// If auth type is "web", wrap handler in csrf middleware
+	// If endpoint is authenticated, wrap handler in csrf middleware
 	if endpoint.AuthType != "" {
 		h = (&CSRF{server}).Wrap(h)
 	}
@@ -247,6 +249,9 @@ func (server *Server) WrapEndpoint(endpoint *Endpoint) Handler {
 
 	// Wrap handler in auth middleware
 	h = (&Authenticate{server, endpoint.AuthType}).Wrap(h)
+
+	// Wrap handler in auth middleware
+	h = (&LockAccount{server}).Wrap(h)
 
 	// Check if Method is supported
 	h = (&CheckMethod{endpoint.Handlers}).Wrap(h)
@@ -520,6 +525,8 @@ func (server *Server) Init() error {
 		server.whitelist = whitelist
 		server.Log.Info.Printf("%d Whitelist emails set.\n", len(whitelist.Emails))
 	}
+
+	server.accountMutexes = make(map[string]*sync.Mutex)
 
 	return nil
 }
