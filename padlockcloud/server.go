@@ -132,6 +132,22 @@ func (server *Server) BaseUrl(r *http.Request) string {
 	}
 }
 
+func (server *Server) GetAccountMutex(email string) *sync.Mutex {
+	if server.accountMutexes[email] == nil {
+		server.accountMutexes[email] = &sync.Mutex{}
+	}
+
+	return server.accountMutexes[email]
+}
+
+func (server *Server) LockAccount(email string) {
+	server.GetAccountMutex(email).Lock()
+}
+
+func (server *Server) UnlockAccount(email string) {
+	server.GetAccountMutex(email).Unlock()
+}
+
 // Retreives Account object from a http.Request object by evaluating the Authorization header and
 // cross-checking it with api keys of existing accounts. Returns an `InvalidAuthToken` error
 // if no valid Authorization header is provided or if the provided email:api_key pair does not match

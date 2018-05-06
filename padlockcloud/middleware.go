@@ -6,7 +6,6 @@ import (
 	"github.com/pkg/errors"
 	"net/http"
 	"strings"
-	"sync"
 )
 
 var CSRFTemplateTag = csrf.TemplateTag
@@ -76,11 +75,8 @@ type LockAccount struct {
 func (m *LockAccount) Wrap(h Handler) Handler {
 	return HandlerFunc(func(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
 		if t, _ := AuthTokenFromRequest(r); t != nil {
-			if m.accountMutexes[t.Email] == nil {
-				m.accountMutexes[t.Email] = &sync.Mutex{}
-			}
-			m.accountMutexes[t.Email].Lock()
-			defer m.accountMutexes[t.Email].Unlock()
+			m.LockAccount(t.Email)
+			defer m.UnlockAccount(t.Email)
 		}
 
 		return h.Handle(w, r, auth)
