@@ -148,6 +148,20 @@ func (server *Server) UnlockAccount(email string) {
 	server.GetAccountMutex(email).Unlock()
 }
 
+func (server *Server) DeleteAccount(email string) error {
+	acc := &Account{Email: email}
+
+	if err := server.Storage.Delete(&DataStore{Account: acc}); err != nil {
+		return err
+	}
+
+	if err := server.Storage.Delete(acc); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // Retreives Account object from a http.Request object by evaluating the Authorization header and
 // cross-checking it with api keys of existing accounts. Returns an `InvalidAuthToken` error
 // if no valid Authorization header is provided or if the provided email:api_key pair does not match
@@ -335,6 +349,13 @@ func (server *Server) InitEndpoints() {
 			"POST": &DeleteStore{server},
 		},
 		AuthType: "web",
+	}
+
+	server.Endpoints["/deleteaccount/"] = &Endpoint{
+		Handlers: map[string]Handler{
+			"POST": &DeleteAccount{server},
+		},
+		AuthType: "universal",
 	}
 
 	// Dashboard for managing data, auth tokens etc.

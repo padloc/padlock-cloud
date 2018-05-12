@@ -395,6 +395,14 @@ func (h *DeleteStore) Handle(w http.ResponseWriter, r *http.Request, auth *AuthT
 	return nil
 }
 
+type DeleteAccount struct {
+	*Server
+}
+
+func (h *DeleteAccount) Handle(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
+	return h.DeleteAccount(auth.Email)
+}
+
 type LoginPage struct {
 	*Server
 }

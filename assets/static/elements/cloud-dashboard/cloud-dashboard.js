@@ -20637,6 +20637,44 @@ class Dashboard extends applyMixins(
             .catch((e) => this.alert(e.message, { type: "warning" }));
     }
 
+    _deleteAccount() {
+        this.prompt(
+            $l("Are you sure you want to delete your Padlock online account?"),
+            $l("Type 'DELETE' To Confirm"),
+            "text",
+            $l("Delete Account"),
+            $l("Cancel"),
+            false,
+            (val) => {
+                return val === "DELETE" ? Promise.resolve(true) : Promise.reject("Type 'DELETE' to confirm!");
+            }
+        ).then((confirmed) => {
+            if (confirmed === true) {
+                this.$.deleteAccountButton.start();
+                const params = new URLSearchParams();
+                params.set("gorilla.csrf.Token", this.csrfToken);
+                request(
+                    "POST",
+                    "/deleteaccount/",
+                    params.toString(),
+                    new Map([
+                        ["Content-Type", "application/x-www-form-urlencoded"],
+                        ["Accept", "application/json"]
+                    ])
+                )
+                    .then(() => {
+                        this.$.deleteAccountButton.success();
+                        this.alert("Account deleted successfully. Sorry to see you go!", { type: "success" })
+                            .then(() => window.close());
+                    })
+                    .catch((e) => {
+                        this.$.deleteAccountButton.fail();
+                        this.alert(e.message, { type: "warning" });
+                    });
+            }
+        });
+    }
+
 }
 
 window.customElements.define(Dashboard.is, Dashboard);
