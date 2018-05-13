@@ -1,5 +1,4 @@
 # Project files
-padlockcloud/
 Procfile
 .vimrc
 .gitignore
@@ -7,6 +6,7 @@ README.md
 
 # Libraries
 vendor/
+!vendor/vendor.json
 
 # Git
 .git/
