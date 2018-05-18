@@ -20445,7 +20445,12 @@ class Dashboard extends applyMixins(
         token: Object,
         csrfToken: String,
         stripePubKey: String,
-        referer: String
+        referer: String,
+
+        _showAdvanced: {
+            type: Boolean,
+            value: false
+        }
 
     }; }
 
@@ -20527,14 +20532,15 @@ class Dashboard extends applyMixins(
 
     _resetDataText() {
         return $l(
-            "Want to start from scratch? Here you can reset the data stored in your Padlock Cloud " +
-            "account in case you lost your master password or simply want to start over."
+            "Want to start from scratch? Here you can reset your online vault data in case " +
+            "you lost your master password or simply want to start over. Your connected " +
+            "devices, billing information and subscription status will remain unaffected."
         );
     }
 
     _confirmResetDataText() {
         return $l(
-            "Are you sure you want to delete all your data on Padlock Cloud? " +
+            "Are you sure you want to reset your online vault data? " +
             "This action can not be undone! (Data stored locally on your devices will not be affected)"
         );
     }
@@ -20673,6 +20679,10 @@ class Dashboard extends applyMixins(
                     });
             }
         });
+    }
+
+    _showAdvancedOptions() {
+        this._showAdvanced = true;
     }
 
 }
