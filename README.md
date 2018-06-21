@@ -110,14 +110,14 @@ associated with their Padlock Cloud account may access the corresponding data.
 Now the `hostname` and `port` portion of the URL will obviously differ based on
 the environment. By default, the app will simply use the value provided by the
 `Host` header of the incoming request. But the `Host` header can easily be
-faked and unless the server is running behind a reverse proxy that sets the it
+faked and unless the server is running behind a reverse proxy that sets it
 to the correct value, this opens the app up to a vulnerability we call 'link
 spoofing'. Let's say an attacker sends an authentication request to our server
 using a targets email address, but changes the `Host` header to a server that
-he controls. The email that is sent to the target will now contain a link that
-points to the attackers server instead of our own and once the user clicks the
+he or she controls. The email that is sent to the target will now contain a link that
+points to the attacker's server instead of our own and once the user clicks the
 link the attacker is in possession of the activation token which can in turn be
-used to activate the authentication token he already has.  There is a simple
+used to activate the authentication token he or she already has.  There is a simple
 solution for this: Explicitly provide a base URL to be used for constructing
 links when starting up the server. The `runserver` command provides the
 `--base-url` flag for this. It is recommended to use this option in production
