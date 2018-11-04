@@ -138,13 +138,6 @@ log:
 [![Docker Pulls](https://img.shields.io/docker/pulls/nols1000/padlock-cloud.svg?style=flat-square)](https://hub.docker.com/r/nols1000/padlock-cloud/)
 [![Docker Stars](https://img.shields.io/docker/stars/nols1000/padlock-cloud.svg?style=flat-square)](https://hub.docker.com/r/nols1000/padlock-cloud/)
 
-### About
-
-This is a unofficial Docker-Image of 
-[Padlock Cloud](https://github.com/MaKleSoft/padlock-cloud) by 
-[MaKleSoft](https://github.com/MaKleSoft). It is is build upon the 
-[golang:alpine](https://hub.docker.com/_/golang)-image.
-
 ### Getting Started with Docker
 **NOTE**: As padlock is build upon chrome we need a valid certificate issued
 by a trusted source. For now let us assume we have a certificate named
