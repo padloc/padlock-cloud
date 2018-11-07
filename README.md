@@ -3,7 +3,7 @@
 ## What is Padlock Cloud
 
 Padlock Cloud is a cloud storage service for the
-[Padlock app](https://github.com/maklesoft/padlock/) implemented in Go. It
+[Padlock app](https://github.com/padlock/padlock/) implemented in Go. It
 provides a (mostly) RESTful api for storing and retrieving user data. Padlock
 Cloud does NOT implement any kind of diffing algorithm, nor does it attempt to
 provide any kind of cryptographic functionality. Any encryption, decryption and
@@ -197,7 +197,7 @@ First, you'll need to have [Go](https://golang.org/) installed on your system.
 Then simply run
 
 ```sh
-go get github.com/maklesoft/padlock-cloud
+go get github.com/padlock/padlock-cloud
 ```
 
 This will download the source code into your `$GOPATH` and automatically build
@@ -264,7 +264,7 @@ support. In order to enable it, simple use the `cors` option. E.g.:
 padlock-cloud runserver --cors
 ```
 
-**NOTE**: CORS is enabled by default when using this Docker-Image.
+**NOTE**: CORS is enabled by default when using the [docker image](#docker).
 
 ### Failed to load templates
 
@@ -277,5 +277,5 @@ emails, web pages etc. These are included in this repository under the `assets`
 folder. When you're running `padlock-cloud` you'll have to make sure that it
 knows where to find these assets. You can do this via the `--assets-path`
 option. By default, the server will look for the templates under
-`$GOPATH/src/github.com/maklesoft/padlock-cloud/assets/templates` which is
+`$GOPATH/src/github.com/padlock/padlock-cloud/assets/templates` which is
 where they will usually be if you installed `padlock-cloud` via `go get`.
