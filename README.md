@@ -133,10 +133,10 @@ log:
 ```
 
 ## Docker
-[![Docker Build Status](https://img.shields.io/docker/build/nols1000/padlock-cloud.svg?style=flat-square)](https://hub.docker.com/r/nols1000/padlock-cloud/)
-[![Docker Automated Build](https://img.shields.io/docker/automated/nols1000/padlock-cloud.svg?style=flat-square)](https://hub.docker.com/r/nols1000/padlock-cloud/)
-[![Docker Pulls](https://img.shields.io/docker/pulls/nols1000/padlock-cloud.svg?style=flat-square)](https://hub.docker.com/r/nols1000/padlock-cloud/)
-[![Docker Stars](https://img.shields.io/docker/stars/nols1000/padlock-cloud.svg?style=flat-square)](https://hub.docker.com/r/nols1000/padlock-cloud/)
+[![Docker Build Status](https://img.shields.io/docker/build/padlock/padlock-cloud.svg?style=flat-square)](https://hub.docker.com/r/padlock/padlock-cloud/)
+[![Docker Automated Build](https://img.shields.io/docker/automated/padlock/padlock-cloud.svg?style=flat-square)](https://hub.docker.com/r/padlock/padlock-cloud/)
+[![Docker Pulls](https://img.shields.io/docker/pulls/padlock/padlock-cloud.svg?style=flat-square)](https://hub.docker.com/r/padlock/padlock-cloud/)
+[![Docker Stars](https://img.shields.io/docker/stars/padlock/padlock-cloud.svg?style=flat-square)](https://hub.docker.com/r/padlock/padlock-cloud/)
 
 ### Getting Started with Docker
 **NOTE**: As padlock is build upon chrome we need a valid certificate issued
