@@ -43,7 +43,7 @@ RUN addgroup -g ${gid} -S ${group} &&\
 RUN mkdir -p ${WORKDIR} && mkdir -p ${WORKDIR}/db && mkdir -p ${WORKDIR}/logs &&\
     mkdir -p ${WORKDIR}/ssl && touch ${WORKDIR}/logs/info.log && touch ${WORKDIR}/logs/error.log
 
-RUN apk update && apk --no-cache add su-exec
+RUN apk update && apk --no-cache add su-exec ca-certificates
 
 WORKDIR ${WORKDIR}
 
