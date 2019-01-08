@@ -152,7 +152,7 @@ docker run -p 443:8443 -v ssl:/opt/padlock-cloud/ssl -e PC_PORT=8443 \
 -e PC_EMAIL_PORT=587 -e PC_EMAIL_USER=user@gmail.com \
 -e PC_EMAIL_PASSWORD=userpassword1234 \
 -e PC_TLS_CERT=/opt/padlock-cloud/ssl/cert.pem \
--e PC_TLS_KEY=/opt/padlock-cloud/ssl/key.pem nols1000/padlock-cloud
+-e PC_TLS_KEY=/opt/padlock-cloud/ssl/key.pem padlock/padlock-cloud
 ```
 
 ### Usage with Docker
