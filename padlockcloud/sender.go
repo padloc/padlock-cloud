@@ -55,7 +55,7 @@ func (sender *EmailSender) Send(rec string, subject string, body string) error {
 		from = sender.Config.User
 	}
 
-	message := fmt.Sprintf("Subject: %s\r\nFrom: Padlock Cloud <%s>\r\n\r\n%s", subject, from, body)
+	message := fmt.Sprintf("Subject: %s\r\nFrom: %s\r\nTo: %s\r\n\r\n%s", subject, from, rec, body)
 	return sender.SendFunc(
 		sender.Config.Server+":"+sender.Config.Port,
 		auth,
