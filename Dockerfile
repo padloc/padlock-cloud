@@ -1,6 +1,6 @@
 FROM golang:alpine as padlock-cloud
 
-WORKDIR /go/src/github.com/maklesoft/padlock-cloud
+WORKDIR /go/src/github.com/padlock/padlock-cloud
 
 COPY . .
 
@@ -47,7 +47,7 @@ RUN apk update && apk --no-cache add su-exec ca-certificates
 
 WORKDIR ${WORKDIR}
 
-COPY --from=padlock-cloud /go/src/github.com/maklesoft/padlock-cloud/padlock-cloud /usr/local/bin
+COPY --from=padlock-cloud /go/src/github.com/padlock/padlock-cloud/padlock-cloud /usr/local/bin
 COPY docker-entrypoint.sh .
 COPY assets ./assets
 

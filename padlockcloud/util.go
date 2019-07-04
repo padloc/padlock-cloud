@@ -9,7 +9,7 @@ import "path/filepath"
 const tokenPattern = `[a-zA-Z0-9\-_]{22}`
 
 var gopath = os.Getenv("GOPATH")
-var DefaultAssetsPath = filepath.Join(gopath, "src/github.com/maklesoft/padlock-cloud/assets")
+var DefaultAssetsPath = filepath.Join(gopath, "src/github.com/padlock/padlock-cloud/assets")
 
 func randomBytes(n int) ([]byte, error) {
 	b := make([]byte, n)
