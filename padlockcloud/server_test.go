@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/gorilla/csrf"
 	"html/template"
 	"io/ioutil"
 	"log"
@@ -20,6 +19,8 @@ import (
 	"regexp"
 	"testing"
 	"time"
+
+	"github.com/gorilla/csrf"
 )
 
 const (
@@ -425,7 +426,7 @@ func TestAuthentication(t *testing.T) {
 			t.Error("No auth token passed to handler")
 		} else {
 			if at.Type != "api" {
-				t.Error("Wrong token type. Expected %s, got %s", "api", at.Type)
+				t.Errorf("Wrong token type. Expected %s, got %s", "api", at.Type)
 			}
 
 			if at.Email != testEmail {
@@ -472,7 +473,7 @@ func TestAuthentication(t *testing.T) {
 			t.Error("No auth token passed to handler")
 		} else {
 			if at.Type != "web" {
-				t.Error("Wrong token type. Expected %s, got %s", "web", at.Type)
+				t.Errorf("Wrong token type. Expected %s, got %s", "web", at.Type)
 			}
 
 			if at.Email != testEmail {
