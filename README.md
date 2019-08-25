@@ -1,3 +1,7 @@
+# DEPRECATED
+
+This repo has been deprecated. All server logic in Padloc is now being developed as part of the https://github.com/padloc/padloc monorepo.
+
 # Padlock Cloud
 
 ## What is Padlock Cloud
