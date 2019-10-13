@@ -82,6 +82,8 @@ func (d *DataStore) Serialize() ([]byte, error) {
 type ServerConfig struct {
 	// Path to assets directory; used for loading templates and such
 	AssetsPath string `yaml:"assets_path"`
+	// Address to listen on
+	ListenAddr string `yaml:"listen_addr"`
 	// Port to listen on
 	Port int `yaml:"port"`
 	// Path to TLS certificate
@@ -580,11 +582,12 @@ func (server *Server) Start() error {
 
 	server.InitHandler()
 
+	listenAddr := server.Config.ListenAddr
 	port := server.Config.Port
 	tlsCert := server.Config.TLSCert
 	tlsKey := server.Config.TLSKey
 
-	server.Addr = fmt.Sprintf(":%d", port)
+	server.Addr = fmt.Sprintf("%s:%d", listenAddr, port)
 
 	// Start server
 	if tlsCert != "" && tlsKey != "" {

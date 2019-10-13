@@ -29,6 +29,7 @@ ENV PC_CONFIG_PATH="" \
     PC_EMAIL_PORT="" \
     PC_EMAIL_USER="" \
     PC_EMAIL_PASSWORD="" \
+    PC_LISTEN_ADDR="0.0.0.0" \
     PC_PORT=8080 \
     PC_ASSETS_PATH=${WORKDIR}/assets \
     PC_TLS_CERT="" \

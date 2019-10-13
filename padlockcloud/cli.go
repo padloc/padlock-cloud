@@ -290,6 +290,13 @@ func NewCliApp() *CliApp {
 			Name:  "runserver",
 			Usage: "Starts a Padlock Cloud server instance",
 			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name: "listen-addr",
+					Usage: "Address to listen on",
+					Value: "",
+					EnvVar: "PC_LISTEN_ADDR",
+					Destination: &config.Server.ListenAddr,
+				},
 				cli.IntFlag{
 					Name:        "port, p",
 					Usage:       "Port to listen on",
