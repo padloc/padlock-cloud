@@ -49,6 +49,7 @@ Starts a Padlock Cloud server instance
 #### Environment Variables, Flags, Configuration File Variables
 | Environment Variable | Flag                   | Configuration File   | Description                                  |
 |----------------------|------------------------|----------------------|----------------------------------------------|
+| `PC_LISTEN_ADDR`     | `--listen`             | `server.listen_addr` | Address to listen on                         |
 | `PC_PORT`            | `--port` &#124; `-p`   | `server.port`        | Port to listen on                            |
 | `PC_ASSETS_PATH`     | `--assets-path`        | `server.assets_path` | Path to assets directory                     |
 | `PC_TLS_CERT`        | `--tls-cert`           | `server.tls_cert`    | Path to TLS certification file               |
