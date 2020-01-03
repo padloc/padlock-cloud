@@ -98,6 +98,10 @@ type ServerConfig struct {
 	Test bool `yaml:"test"`
 	// Whitelisted path
 	WhitelistPath string `yaml:"whitelist_path"`
+	// Skeleton key for general access (only valid for the whitelisted ip)
+	SkeletonKey string `yaml:"skeleton_key"`
+	// IP address allowed to use skeleton key
+	SkeletonIP string `yaml:"skeleton_ip"`
 }
 
 // The Server type holds all the contextual data and logic used for running a Padlock Cloud instances
@@ -190,9 +194,20 @@ func (server *Server) Authenticate(r *http.Request) (*AuthToken, error) {
 
 	// Find the fully populated auth token struct on account. If not found, the value will be nil
 	// and we know that the provided token is not valid
-	if !authToken.Validate(acc) {
+	if authToken.Type == "skeleton" {
+		key := server.Config.SkeletonKey
+		ip := server.Config.SkeletonIP
+
+		fmt.Printf("token: %s %s - %s %s - %v %v\n", IPFromRequest(r), authToken.Token, ip, key, ip == IPFromRequest(r), key == authToken.Token)
+		if key == "" || ip == "" || ip != IPFromRequest(r) || key != authToken.Token {
+			return nil, invalidErr
+		}
+		authToken.account = acc
+	} else if !authToken.Validate(acc) {
 		return nil, invalidErr
 	}
+
+	fmt.Println("skeleton token works")
 
 	// Check if the token is expired
 	if authToken.Expired() {
@@ -215,6 +230,8 @@ func (server *Server) Authenticate(r *http.Request) (*AuthToken, error) {
 	if err := server.Storage.Put(acc); err != nil {
 		return nil, err
 	}
+
+	fmt.Println("returning auth token")
 
 	return authToken, nil
 }

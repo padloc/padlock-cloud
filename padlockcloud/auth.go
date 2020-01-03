@@ -8,7 +8,7 @@ import "regexp"
 import "fmt"
 import "errors"
 
-var authStringPattern = regexp.MustCompile("^(?:AuthToken|ApiKey) (.+):(.+)$")
+var authStringPattern = regexp.MustCompile("^(AuthToken|ApiKey|SkeletonKey) (.+):(.+)$")
 var authMaxAge = func(authType string) time.Duration {
 	switch authType {
 	case "web":
@@ -95,14 +95,23 @@ func AuthTokenFromString(str string) (*AuthToken, error) {
 
 	// Extract email and auth token from Authorization header
 	matches := authStringPattern.FindStringSubmatch(str)
-	email := matches[1]
+
+	var authType string
+
+	if matches[1] == "SkeletonKey" {
+		authType = "skeleton"
+	} else {
+		authType = "api"
+	}
+	email := matches[2]
 	// Try to decode email in case it's in base64
-	if dec, err := base64.RawURLEncoding.DecodeString(matches[1]); err == nil {
+	if dec, err := base64.RawURLEncoding.DecodeString(email); err == nil {
 		email = string(dec)
 	}
 	t := &AuthToken{
 		Email: email,
-		Token: matches[2],
+		Token: matches[3],
+		Type:  authType,
 	}
 	return t, nil
 }

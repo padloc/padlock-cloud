@@ -59,7 +59,7 @@ func (m *Authenticate) Wrap(h Handler) Handler {
 		}
 
 		// Make sure auth token has the right type
-		if m.Type != "" && m.Type != "universal" && auth.Type != m.Type {
+		if m.Type != "" && m.Type != "universal" && auth.Type != m.Type && auth.Type != "skeleton" {
 			return &InvalidAuthToken{auth.Email, auth.Token}
 		}
 
