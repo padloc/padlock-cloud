@@ -1,29 +1,25 @@
 package cli
 
 import (
+	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
-	"reflect"
 	"sort"
-	"strings"
 	"time"
 )
 
 var (
-	changeLogURL                    = "https://github.com/urfave/cli/blob/master/CHANGELOG.md"
-	appActionDeprecationURL         = fmt.Sprintf("%s#deprecated-cli-app-action-signature", changeLogURL)
-	runAndExitOnErrorDeprecationURL = fmt.Sprintf("%s#deprecated-cli-app-runandexitonerror", changeLogURL)
+	changeLogURL            = "https://github.com/urfave/cli/blob/master/CHANGELOG.md"
+	appActionDeprecationURL = fmt.Sprintf("%s#deprecated-cli-app-action-signature", changeLogURL)
+	// unused variable. commented for now. will remove in future if agreed upon by everyone
+	//runAndExitOnErrorDeprecationURL = fmt.Sprintf("%s#deprecated-cli-app-runandexitonerror", changeLogURL)
 
 	contactSysadmin = "This is an error in the application.  Please contact the distributor of this application if this is not you."
 
-	errNonFuncAction = NewExitError("ERROR invalid Action type.  "+
-		fmt.Sprintf("Must be a func of type `cli.ActionFunc`.  %s", contactSysadmin)+
-		fmt.Sprintf("See %s", appActionDeprecationURL), 2)
-	errInvalidActionSignature = NewExitError("ERROR invalid Action signature.  "+
-		fmt.Sprintf("Must be `cli.ActionFunc`.  %s", contactSysadmin)+
+	errInvalidActionType = NewExitError("ERROR invalid Action type. "+
+		fmt.Sprintf("Must be `func(*Context`)` or `func(*Context) error).  %s", contactSysadmin)+
 		fmt.Sprintf("See %s", appActionDeprecationURL), 2)
 )
 
@@ -42,6 +38,8 @@ type App struct {
 	ArgsUsage string
 	// Version of the program
 	Version string
+	// Description of the program
+	Description string
 	// List of commands to execute
 	Commands []Command
 	// List of flags to parse
@@ -62,10 +60,11 @@ type App struct {
 	// An action to execute after any subcommands are run, but after the subcommand has finished
 	// It is run even if Action() panics
 	After AfterFunc
+
 	// The action to execute when no subcommands are specified
+	// Expects a `cli.ActionFunc` but will accept the *deprecated* signature of `func(*cli.Context) {}`
+	// *Note*: support for the deprecated `Action` signature will be removed in a future version
 	Action interface{}
-	// TODO: replace `Action: interface{}` with `Action: ActionFunc` once some kind
-	// of deprecation period has passed, maybe?
 
 	// Execute this function if the proper command cannot be found
 	CommandNotFound CommandNotFoundFunc
@@ -85,8 +84,21 @@ type App struct {
 	Writer io.Writer
 	// ErrWriter writes error output
 	ErrWriter io.Writer
+	// Execute this function to handle ExitErrors. If not provided, HandleExitCoder is provided to
+	// function as a default, so this is optional.
+	ExitErrHandler ExitErrHandlerFunc
 	// Other custom info
 	Metadata map[string]interface{}
+	// Carries a function which returns app specific info.
+	ExtraInfo func() map[string]string
+	// CustomAppHelpTemplate the text template for app help topic.
+	// cli.go uses text/template to render templates. You can
+	// render custom help text by setting this variable.
+	CustomAppHelpTemplate string
+	// Boolean to enable short-option handling so user can combine several
+	// single-character bool arguements into one
+	// i.e. foobar -o -v -> foobar -ov
+	UseShortOptionHandling bool
 
 	didSetup bool
 }
@@ -131,7 +143,7 @@ func (a *App) Setup() {
 		a.Authors = append(a.Authors, Author{Name: a.Author, Email: a.Email})
 	}
 
-	newCmds := []Command{}
+	var newCmds []Command
 	for _, c := range a.Commands {
 		if c.HelpName == "" {
 			c.HelpName = fmt.Sprintf("%s %s", a.HelpName, c.Name)
@@ -147,10 +159,6 @@ func (a *App) Setup() {
 		}
 	}
 
-	if a.EnableBashCompletion {
-		a.appendFlag(BashCompletionFlag)
-	}
-
 	if !a.HideVersion {
 		a.appendFlag(VersionFlag)
 	}
@@ -160,6 +168,22 @@ func (a *App) Setup() {
 		a.categories = a.categories.AddCommand(command.Category, command)
 	}
 	sort.Sort(a.categories)
+
+	if a.Metadata == nil {
+		a.Metadata = make(map[string]interface{})
+	}
+
+	if a.Writer == nil {
+		a.Writer = os.Stdout
+	}
+}
+
+func (a *App) newFlagSet() (*flag.FlagSet, error) {
+	return flagSet(a.Name, a.Flags)
+}
+
+func (a *App) useShortOptionHandling() bool {
+	return a.UseShortOptionHandling
 }
 
 // Run is the entry point to the cli app. Parses the arguments slice and routes
@@ -167,17 +191,28 @@ func (a *App) Setup() {
 func (a *App) Run(arguments []string) (err error) {
 	a.Setup()
 
-	// parse flags
-	set := flagSet(a.Name, a.Flags)
-	set.SetOutput(ioutil.Discard)
-	err = set.Parse(arguments[1:])
+	// handle the completion flag separately from the flagset since
+	// completion could be attempted after a flag, but before its value was put
+	// on the command line. this causes the flagset to interpret the completion
+	// flag name as the value of the flag before it which is undesirable
+	// note that we can only do this because the shell autocomplete function
+	// always appends the completion flag at the end of the command
+	shellComplete, arguments := checkShellCompleteFlag(a, arguments)
+
+	set, err := a.newFlagSet()
+	if err != nil {
+		return err
+	}
+
+	err = parseIter(set, a, arguments[1:])
 	nerr := normalizeFlags(a.Flags, set)
 	context := NewContext(a, set, nil)
 	if nerr != nil {
-		fmt.Fprintln(a.Writer, nerr)
-		ShowAppHelp(context)
+		_, _ = fmt.Fprintln(a.Writer, nerr)
+		_ = ShowAppHelp(context)
 		return nerr
 	}
+	context.shellComplete = shellComplete
 
 	if checkCompletions(context) {
 		return nil
@@ -186,22 +221,28 @@ func (a *App) Run(arguments []string) (err error) {
 	if err != nil {
 		if a.OnUsageError != nil {
 			err := a.OnUsageError(context, err, false)
-			HandleExitCoder(err)
+			a.handleExitCoder(context, err)
 			return err
 		}
-		fmt.Fprintf(a.Writer, "%s\n\n", "Incorrect Usage.")
-		ShowAppHelp(context)
+		_, _ = fmt.Fprintf(a.Writer, "%s %s\n\n", "Incorrect Usage.", err.Error())
+		_ = ShowAppHelp(context)
 		return err
 	}
 
 	if !a.HideHelp && checkHelp(context) {
-		ShowAppHelp(context)
+		_ = ShowAppHelp(context)
 		return nil
 	}
 
 	if !a.HideVersion && checkVersion(context) {
 		ShowVersion(context)
 		return nil
+	}
+
+	cerr := checkRequiredFlags(a.Flags, context)
+	if cerr != nil {
+		_ = ShowAppHelp(context)
+		return cerr
 	}
 
 	if a.After != nil {
@@ -219,9 +260,9 @@ func (a *App) Run(arguments []string) (err error) {
 	if a.Before != nil {
 		beforeErr := a.Before(context)
 		if beforeErr != nil {
-			fmt.Fprintf(a.Writer, "%v\n\n", beforeErr)
-			ShowAppHelp(context)
-			HandleExitCoder(beforeErr)
+			_, _ = fmt.Fprintf(a.Writer, "%v\n\n", beforeErr)
+			_ = ShowAppHelp(context)
+			a.handleExitCoder(context, beforeErr)
 			err = beforeErr
 			return err
 		}
@@ -236,20 +277,25 @@ func (a *App) Run(arguments []string) (err error) {
 		}
 	}
 
+	if a.Action == nil {
+		a.Action = helpCommand.Action
+	}
+
 	// Run default Action
 	err = HandleAction(a.Action, context)
 
-	HandleExitCoder(err)
+	a.handleExitCoder(context, err)
 	return err
 }
 
-// DEPRECATED: Another entry point to the cli app, takes care of passing arguments and error handling
+// RunAndExitOnError calls .Run() and exits non-zero if an error was returned
+//
+// Deprecated: instead you should return an error that fulfills cli.ExitCoder
+// to cli.App.Run. This will cause the application to exit with the given eror
+// code in the cli.ExitCoder
 func (a *App) RunAndExitOnError() {
-	fmt.Fprintf(a.errWriter(),
-		"DEPRECATED cli.App.RunAndExitOnError.  %s  See %s\n",
-		contactSysadmin, runAndExitOnErrorDeprecationURL)
 	if err := a.Run(os.Args); err != nil {
-		fmt.Fprintln(a.errWriter(), err)
+		_, _ = fmt.Fprintln(a.errWriter(), err)
 		OsExiter(1)
 	}
 }
@@ -276,25 +322,22 @@ func (a *App) RunAsSubcommand(ctx *Context) (err error) {
 	}
 	a.Commands = newCmds
 
-	// append flags
-	if a.EnableBashCompletion {
-		a.appendFlag(BashCompletionFlag)
+	set, err := a.newFlagSet()
+	if err != nil {
+		return err
 	}
 
-	// parse flags
-	set := flagSet(a.Name, a.Flags)
-	set.SetOutput(ioutil.Discard)
-	err = set.Parse(ctx.Args().Tail())
+	err = parseIter(set, a, ctx.Args().Tail())
 	nerr := normalizeFlags(a.Flags, set)
 	context := NewContext(a, set, ctx)
 
 	if nerr != nil {
-		fmt.Fprintln(a.Writer, nerr)
-		fmt.Fprintln(a.Writer)
+		_, _ = fmt.Fprintln(a.Writer, nerr)
+		_, _ = fmt.Fprintln(a.Writer)
 		if len(a.Commands) > 0 {
-			ShowSubcommandHelp(context)
+			_ = ShowSubcommandHelp(context)
 		} else {
-			ShowCommandHelp(ctx, context.Args().First())
+			_ = ShowCommandHelp(ctx, context.Args().First())
 		}
 		return nerr
 	}
@@ -306,11 +349,11 @@ func (a *App) RunAsSubcommand(ctx *Context) (err error) {
 	if err != nil {
 		if a.OnUsageError != nil {
 			err = a.OnUsageError(context, err, true)
-			HandleExitCoder(err)
+			a.handleExitCoder(context, err)
 			return err
 		}
-		fmt.Fprintf(a.Writer, "%s\n\n", "Incorrect Usage.")
-		ShowSubcommandHelp(context)
+		_, _ = fmt.Fprintf(a.Writer, "%s %s\n\n", "Incorrect Usage.", err.Error())
+		_ = ShowSubcommandHelp(context)
 		return err
 	}
 
@@ -324,11 +367,17 @@ func (a *App) RunAsSubcommand(ctx *Context) (err error) {
 		}
 	}
 
+	cerr := checkRequiredFlags(a.Flags, context)
+	if cerr != nil {
+		_ = ShowSubcommandHelp(context)
+		return cerr
+	}
+
 	if a.After != nil {
 		defer func() {
 			afterErr := a.After(context)
 			if afterErr != nil {
-				HandleExitCoder(err)
+				a.handleExitCoder(context, err)
 				if err != nil {
 					err = NewMultiError(err, afterErr)
 				} else {
@@ -341,7 +390,7 @@ func (a *App) RunAsSubcommand(ctx *Context) (err error) {
 	if a.Before != nil {
 		beforeErr := a.Before(context)
 		if beforeErr != nil {
-			HandleExitCoder(beforeErr)
+			a.handleExitCoder(context, beforeErr)
 			err = beforeErr
 			return err
 		}
@@ -359,7 +408,7 @@ func (a *App) RunAsSubcommand(ctx *Context) (err error) {
 	// Run default Action
 	err = HandleAction(a.Action, context)
 
-	HandleExitCoder(err)
+	a.handleExitCoder(context, err)
 	return err
 }
 
@@ -400,7 +449,7 @@ func (a *App) VisibleCategories() []*CommandCategory {
 
 // VisibleCommands returns a slice of the Commands with Hidden=false
 func (a *App) VisibleCommands() []Command {
-	ret := []Command{}
+	var ret []Command
 	for _, command := range a.Commands {
 		if !command.Hidden {
 			ret = append(ret, command)
@@ -425,7 +474,6 @@ func (a *App) hasFlag(flag Flag) bool {
 }
 
 func (a *App) errWriter() io.Writer {
-
 	// When the app ErrWriter is nil use the package level one.
 	if a.ErrWriter == nil {
 		return ErrWriter
@@ -440,6 +488,14 @@ func (a *App) appendFlag(flag Flag) {
 	}
 }
 
+func (a *App) handleExitCoder(context *Context, err error) {
+	if a.ExitErrHandler != nil {
+		a.ExitErrHandler(context, err)
+	} else {
+		HandleExitCoder(err)
+	}
+}
+
 // Author represents someone who has contributed to a cli project.
 type Author struct {
 	Name  string // The Authors name
@@ -450,50 +506,25 @@ type Author struct {
 func (a Author) String() string {
 	e := ""
 	if a.Email != "" {
-		e = "<" + a.Email + "> "
+		e = " <" + a.Email + ">"
 	}
 
-	return fmt.Sprintf("%v %v", a.Name, e)
+	return fmt.Sprintf("%v%v", a.Name, e)
 }
 
-// HandleAction uses ✧✧✧reflection✧✧✧ to figure out if the given Action is an
-// ActionFunc, a func with the legacy signature for Action, or some other
-// invalid thing.  If it's an ActionFunc or a func with the legacy signature for
-// Action, the func is run!
+// HandleAction attempts to figure out which Action signature was used.  If
+// it's an ActionFunc or a func with the legacy signature for Action, the func
+// is run!
 func HandleAction(action interface{}, context *Context) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			// Try to detect a known reflection error from *this scope*, rather than
-			// swallowing all panics that may happen when calling an Action func.
-			s := fmt.Sprintf("%v", r)
-			if strings.HasPrefix(s, "reflect: ") && strings.Contains(s, "too many input arguments") {
-				err = NewExitError(fmt.Sprintf("ERROR unknown Action error: %v.  See %s", r, appActionDeprecationURL), 2)
-			} else {
-				panic(r)
-			}
-		}
-	}()
-
-	if reflect.TypeOf(action).Kind() != reflect.Func {
-		return errNonFuncAction
-	}
-
-	vals := reflect.ValueOf(action).Call([]reflect.Value{reflect.ValueOf(context)})
-
-	if len(vals) == 0 {
-		fmt.Fprintf(ErrWriter,
-			"DEPRECATED Action signature.  Must be `cli.ActionFunc`.  %s  See %s\n",
-			contactSysadmin, appActionDeprecationURL)
+	switch a := action.(type) {
+	case ActionFunc:
+		return a(context)
+	case func(*Context) error:
+		return a(context)
+	case func(*Context): // deprecated function signature
+		a(context)
 		return nil
 	}
 
-	if len(vals) > 1 {
-		return errInvalidActionSignature
-	}
-
-	if retErr, ok := vals[0].Interface().(error); vals[0].IsValid() && ok {
-		return retErr
-	}
-
-	return err
+	return errInvalidActionType
 }

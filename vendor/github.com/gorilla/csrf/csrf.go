@@ -52,6 +52,22 @@ var (
 	ErrBadToken = errors.New("CSRF token invalid")
 )
 
+// SameSiteMode allows a server to define a cookie attribute making it impossible for
+// the browser to send this cookie along with cross-site requests. The main
+// goal is to mitigate the risk of cross-origin information leakage, and provide
+// some protection against cross-site request forgery attacks.
+//
+// See https://tools.ietf.org/html/draft-ietf-httpbis-cookie-same-site-00 for details.
+type SameSiteMode int
+
+// SameSite options
+const (
+	SameSiteDefaultMode SameSiteMode = iota + 1
+	SameSiteLaxMode
+	SameSiteStrictMode
+	SameSiteNoneMode
+)
+
 type csrf struct {
 	h    http.Handler
 	sc   *securecookie.SecureCookie
@@ -66,12 +82,14 @@ type options struct {
 	Path   string
 	// Note that the function and field names match the case of the associated
 	// http.Cookie field instead of the "correct" HTTPOnly name that golint suggests.
-	HttpOnly      bool
-	Secure        bool
-	RequestHeader string
-	FieldName     string
-	ErrorHandler  http.Handler
-	CookieName    string
+	HttpOnly       bool
+	Secure         bool
+	SameSite       SameSiteMode
+	RequestHeader  string
+	FieldName      string
+	ErrorHandler   http.Handler
+	CookieName     string
+	TrustedOrigins []string
 }
 
 // Protect is HTTP middleware that provides Cross-Site Request Forgery
@@ -89,33 +107,37 @@ type options struct {
 //	package main
 //
 //	import (
-//		"github.com/elithrar/protect"
+//		"html/template"
+//
+//		"github.com/gorilla/csrf"
 //		"github.com/gorilla/mux"
 //	)
 //
+//	var t = template.Must(template.New("signup_form.tmpl").Parse(form))
+//
 //	func main() {
-//	  r := mux.NewRouter()
+//		r := mux.NewRouter()
 //
-//	  mux.HandlerFunc("/signup", GetSignupForm)
-//	  // POST requests without a valid token will return a HTTP 403 Forbidden.
-//	  mux.HandlerFunc("/signup/post", PostSignupForm)
+//		r.HandleFunc("/signup", GetSignupForm)
+//		// POST requests without a valid token will return a HTTP 403 Forbidden.
+//		r.HandleFunc("/signup/post", PostSignupForm)
 //
-//	  // Add the middleware to your router.
-//	  http.ListenAndServe(":8000",
-//            // Note that the authentication key provided should be 32 bytes
-//            // long and persist across application restarts.
+//		// Add the middleware to your router.
+//		http.ListenAndServe(":8000",
+//		// Note that the authentication key provided should be 32 bytes
+//		// long and persist across application restarts.
 //			  csrf.Protect([]byte("32-byte-long-auth-key"))(r))
 //	}
 //
 //	func GetSignupForm(w http.ResponseWriter, r *http.Request) {
 //		// signup_form.tmpl just needs a {{ .csrfField }} template tag for
 //		// csrf.TemplateField to inject the CSRF token into. Easy!
-//		t.ExecuteTemplate(w, "signup_form.tmpl", map[string]interface{
+//		t.ExecuteTemplate(w, "signup_form.tmpl", map[string]interface{}{
 //			csrf.TemplateTag: csrf.TemplateField(r),
 //		})
 //		// We could also retrieve the token directly from csrf.Token(r) and
 //		// set it in the request header - w.Header.Set("X-CSRF-Token", token)
-//		// This is useful if your sending JSON to clients or a front-end JavaScript
+//		// This is useful if you're sending JSON to clients or a front-end JavaScript
 //		// framework.
 //	}
 //
@@ -161,6 +183,7 @@ func Protect(authKey []byte, opts ...Option) func(http.Handler) http.Handler {
 				maxAge:   cs.opts.MaxAge,
 				secure:   cs.opts.Secure,
 				httpOnly: cs.opts.HttpOnly,
+				sameSite: cs.opts.SameSite,
 				path:     cs.opts.Path,
 				domain:   cs.opts.Domain,
 				sc:       cs.sc,
@@ -229,7 +252,18 @@ func (cs *csrf) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			if sameOrigin(r.URL, referer) == false {
+			valid := sameOrigin(r.URL, referer)
+
+			if !valid {
+				for _, trustedOrigin := range cs.opts.TrustedOrigins {
+					if referer.Host == trustedOrigin {
+						valid = true
+						break
+					}
+				}
+			}
+
+			if valid == false {
 				r = envError(r, ErrBadReferer)
 				cs.opts.ErrorHandler.ServeHTTP(w, r)
 				return

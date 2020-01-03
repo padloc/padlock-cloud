@@ -1,26 +1,30 @@
 # gorilla/csrf
-[![GoDoc](https://godoc.org/github.com/gorilla/csrf?status.svg)](https://godoc.org/github.com/gorilla/csrf) [![Build Status](https://travis-ci.org/gorilla/csrf.svg?branch=master)](https://travis-ci.org/gorilla/csrf)
+
+[![GoDoc](https://godoc.org/github.com/gorilla/csrf?status.svg)](https://godoc.org/github.com/gorilla/csrf)
+[![Sourcegraph](https://sourcegraph.com/github.com/gorilla/csrf/-/badge.svg)](https://sourcegraph.com/github.com/gorilla/csrf?badge)
+[![Reviewed by Hound](https://img.shields.io/badge/Reviewed_by-Hound-8E64B0.svg)](https://houndci.com)
+[![CircleCI](https://circleci.com/gh/gorilla/csrf.svg?style=svg)](https://circleci.com/gh/gorilla/csrf)
 
 gorilla/csrf is a HTTP middleware library that provides [cross-site request
 forgery](http://blog.codinghorror.com/preventing-csrf-and-xsrf-attacks/) (CSRF)
- protection. It includes:
+protection. It includes:
 
-* The `csrf.Protect` middleware/handler provides CSRF protection on routes
+- The `csrf.Protect` middleware/handler provides CSRF protection on routes
   attached to a router or a sub-router.
-* A `csrf.Token` function that provides the token to pass into your response,
+- A `csrf.Token` function that provides the token to pass into your response,
   whether that be a HTML form or a JSON response body.
-* ... and a `csrf.TemplateField` helper that you can pass into your `html/template`
+- ... and a `csrf.TemplateField` helper that you can pass into your `html/template`
   templates to replace a `{{ .csrfField }}` template tag with a hidden input
   field.
 
 gorilla/csrf is designed to work with any Go web framework, including:
 
-* The [Gorilla](http://www.gorillatoolkit.org/) toolkit
-* Go's built-in [net/http](http://golang.org/pkg/net/http/) package
-* [Goji](https://goji.io) - see the [tailored fork](https://github.com/goji/csrf)
-* [Gin](https://github.com/gin-gonic/gin)
-* [Echo](https://github.com/labstack/echo)
-* ... and any other router/framework that rallies around Go's `http.Handler` interface.
+- The [Gorilla](https://www.gorillatoolkit.org/) toolkit
+- Go's built-in [net/http](http://golang.org/pkg/net/http/) package
+- [Goji](https://goji.io) - see the [tailored fork](https://github.com/goji/csrf)
+- [Gin](https://github.com/gin-gonic/gin)
+- [Echo](https://github.com/labstack/echo)
+- ... and any other router/framework that rallies around Go's `http.Handler` interface.
 
 gorilla/csrf is also compatible with middleware 'helper' libraries like
 [Alice](https://github.com/justinas/alice) and [Negroni](https://github.com/codegangsta/negroni).
@@ -28,16 +32,18 @@ gorilla/csrf is also compatible with middleware 'helper' libraries like
 ## Install
 
 With a properly configured Go toolchain:
+
 ```sh
 go get github.com/gorilla/csrf
 ```
 
 ## Examples
 
-* [HTML Forms](#html-forms)
-* [JavaScript Apps](#javascript-applications)
-* [Google App Engine](#google-app-engine)
-* [Setting Options](#setting-options)
+- [HTML Forms](#html-forms)
+- [JavaScript Apps](#javascript-applications)
+- [Google App Engine](#google-app-engine)
+- [Setting SameSite](#setting-samesite)
+- [Setting Options](#setting-options)
 
 gorilla/csrf is easy to use: add the middleware to your router with
 the below:
@@ -77,7 +83,10 @@ func main() {
     r := mux.NewRouter()
     r.HandleFunc("/signup", ShowSignupForm)
     // All POST requests without a valid token will return HTTP 403 Forbidden.
-    r.HandleFunc("/signup/post", SubmitSignupForm)
+    // We should also ensure that our mutating (non-idempotent) handler only
+    // matches on POST requests. We can check that here, at the router level, or
+    // within the handler itself via r.Method.
+    r.HandleFunc("/signup/post", SubmitSignupForm).Methods("POST")
 
     // Add the middleware to your router by wrapping it.
     http.ListenAndServe(":8000",
@@ -89,12 +98,12 @@ func main() {
 func ShowSignupForm(w http.ResponseWriter, r *http.Request) {
     // signup_form.tmpl just needs a {{ .csrfField }} template tag for
     // csrf.TemplateField to inject the CSRF token into. Easy!
-    t.ExecuteTemplate(w, "signup_form.tmpl", map[string]interface{
+    t.ExecuteTemplate(w, "signup_form.tmpl", map[string]interface{}{
         csrf.TemplateTag: csrf.TemplateField(r),
     })
     // We could also retrieve the token directly from csrf.Token(r) and
     // set it in the request header - w.Header.Set("X-CSRF-Token", token)
-    // This is useful if your sending JSON to clients or a front-end JavaScript
+    // This is useful if you're sending JSON to clients or a front-end JavaScript
     // framework.
 }
 
@@ -112,10 +121,18 @@ body.
 ### JavaScript Applications
 
 This approach is useful if you're using a front-end JavaScript framework like
-React, Ember or Angular, or are providing a JSON API.
+React, Ember or Angular, and are providing a JSON API. Specifically, we need
+to provide a way for our front-end fetch/AJAX calls to pass the token on each
+fetch (AJAX/XMLHttpRequest) request. We achieve this by:
+
+- Parsing the token from the `<input>` field generated by the
+  `csrf.TemplateField(r)` helper, or passing it back in a response header.
+- Sending this token back on every request
+- Ensuring our cookie is attached to the request so that the form/header
+  value can be compared to the cookie value.
 
 We'll also look at applying selective CSRF protection using
-[gorilla/mux's](http://www.gorillatoolkit.org/pkg/mux) sub-routers,
+[gorilla/mux's](https://www.gorillatoolkit.org/pkg/mux) sub-routers,
 as we don't handle any POST/PUT/DELETE requests with our top-level router.
 
 ```go
@@ -128,12 +145,13 @@ import (
 
 func main() {
     r := mux.NewRouter()
+    csrfMiddleware := csrf.Protect([]byte("32-byte-long-auth-key"))
 
     api := r.PathPrefix("/api").Subrouter()
-    api.HandleFunc("/user/:id", GetUser).Methods("GET")
+    api.Use(csrfMiddleware)
+    api.HandleFunc("/user/{id}", GetUser).Methods("GET")
 
-    http.ListenAndServe(":8000",
-        csrf.Protect([]byte("32-byte-long-auth-key"))(r))
+    http.ListenAndServe(":8000", r)
 }
 
 func GetUser(w http.ResponseWriter, r *http.Request) {
@@ -154,11 +172,82 @@ func GetUser(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
+In our JavaScript application, we should read the token from the response
+headers and pass it in a request header for all requests. Here's what that
+looks like when using [Axios](https://github.com/axios/axios), a popular
+JavaScript HTTP client library:
+
+```js
+// You can alternatively parse the response header for the X-CSRF-Token, and
+// store that instead, if you followed the steps above to write the token to a
+// response header.
+let csrfToken = document.getElementsByName("gorilla.csrf.Token")[0].value
+
+// via https://github.com/axios/axios#creating-an-instance
+const instance = axios.create({
+  baseURL: "https://example.com/api/",
+  timeout: 1000,
+  headers: { "X-CSRF-Token": csrfToken }
+})
+
+// Now, any HTTP request you make will include the csrfToken from the page,
+// provided you update the csrfToken variable for each render.
+try {
+  let resp = await instance.post(endpoint, formData)
+  // Do something with resp
+} catch (err) {
+  // Handle the exception
+}
+```
+
+If you plan to host your JavaScript application on another domain, you can use the Trusted Origins
+feature to allow the host of your JavaScript application to make requests to your Go application. Observe the example below:
+
+
+```go
+package main
+
+import (
+    "github.com/gorilla/csrf"
+    "github.com/gorilla/mux"
+)
+
+func main() {
+    r := mux.NewRouter()
+    csrfMiddleware := csrf.Protect([]byte("32-byte-long-auth-key"), csrf.TrustedOrigin([]string{"ui.domain.com"}))
+
+    api := r.PathPrefix("/api").Subrouter()
+    api.Use(csrfMiddleware)
+    api.HandleFunc("/user/{id}", GetUser).Methods("GET")
+
+    http.ListenAndServe(":8000", r)
+}
+
+func GetUser(w http.ResponseWriter, r *http.Request) {
+    // Authenticate the request, get the id from the route params,
+    // and fetch the user from the DB, etc.
+
+    // Get the token and pass it in the CSRF header. Our JSON-speaking client
+    // or JavaScript framework can now read the header and return the token in
+    // in its own "X-CSRF-Token" request header on the subsequent POST.
+    w.Header().Set("X-CSRF-Token", csrf.Token(r))
+    b, err := json.Marshal(user)
+    if err != nil {
+        http.Error(w, err.Error(), 500)
+        return
+    }
+
+    w.Write(b)
+}
+```
+
+On the example above, you're authorizing requests from `ui.domain.com` to make valid CSRF requests to your application, so you can have your API server on another domain without problems.
+
 ### Google App Engine
 
 If you're using [Google App
 Engine](https://cloud.google.com/appengine/docs/go/how-requests-are-handled#Go_Requests_and_HTTP),
-which doesn't allow you to hook into the default `http.ServeMux` directly,
+(first-generation) which doesn't allow you to hook into the default `http.ServeMux` directly,
 you can still use gorilla/csrf (and gorilla/mux):
 
 ```go
@@ -172,6 +261,34 @@ func init() {
 
     // We pass our CSRF-protected router to the DefaultServeMux
     http.Handle("/", csrf.Protect([]byte(your-key))(r))
+}
+```
+
+Note: You can ignore this if you're using the
+[second-generation](https://cloud.google.com/appengine/docs/go/) Go runtime
+on App Engine (Go 1.11 and above).
+
+### Setting SameSite
+
+Go 1.11 introduced the option to set the SameSite attribute in cookies. This is
+valuable if a developer wants to instruct a browser to not include cookies during
+a cross site request. SameSiteStrictMode prevents all cross site requests from including
+the cookie. SameSiteLaxMode prevents CSRF prone requests (POST) from including the cookie
+but allows the cookie to be included in GET requests to support external linking.
+
+```go
+func main() {
+    CSRF := csrf.Protect(
+      []byte("a-32-byte-long-key-goes-here"),
+      // instruct the browser to never send cookies during cross site requests
+      csrf.SameSite(csrf.SameSiteStrictMode),
+    )
+
+    r := mux.NewRouter()
+    r.HandleFunc("/signup", GetSignupForm)
+    r.HandleFunc("/signup/post", PostSignupForm)
+
+    http.ListenAndServe(":8000", CSRF(r))
 }
 ```
 
@@ -207,22 +324,25 @@ added, open an issue.
 
 Getting CSRF protection right is important, so here's some background:
 
-* This library generates unique-per-request (masked) tokens as a mitigation
+- This library generates unique-per-request (masked) tokens as a mitigation
   against the [BREACH attack](http://breachattack.com/).
-* The 'base' (unmasked) token is stored in the session, which means that
+- The 'base' (unmasked) token is stored in the session, which means that
   multiple browser tabs won't cause a user problems as their per-request token
   is compared with the base token.
-* Operates on a "whitelist only" approach where safe (non-mutating) HTTP methods
-  (GET, HEAD, OPTIONS, TRACE) are the *only* methods where token validation is not
+- Operates on a "whitelist only" approach where safe (non-mutating) HTTP methods
+  (GET, HEAD, OPTIONS, TRACE) are the _only_ methods where token validation is not
   enforced.
-* The design is based on the battle-tested
+- The design is based on the battle-tested
   [Django](https://docs.djangoproject.com/en/1.8/ref/csrf/) and [Ruby on
   Rails](http://api.rubyonrails.org/classes/ActionController/RequestForgeryProtection.html)
   approaches.
-* Cookies are authenticated and based on the [securecookie](https://github.com/gorilla/securecookie)
+- Cookies are authenticated and based on the [securecookie](https://github.com/gorilla/securecookie)
   library. They're also Secure (issued over HTTPS only) and are HttpOnly
   by default, because sane defaults are important.
-* Go's `crypto/rand` library is used to generate the 32 byte (256 bit) tokens
+- Cookie SameSite attribute (prevents cookies from being sent by a browser
+  during cross site requests) are not set by default to maintain backwards compatibility
+  for legacy systems. The SameSite attribute can be set with the SameSite option.
+- Go's `crypto/rand` library is used to generate the 32 byte (256 bit) tokens
   and the one-time-pad used for masking them.
 
 This library does not seek to be adventurous.
