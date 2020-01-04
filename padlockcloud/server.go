@@ -198,16 +198,13 @@ func (server *Server) Authenticate(r *http.Request) (*AuthToken, error) {
 		key := server.Config.SkeletonKey
 		ip := server.Config.SkeletonIP
 
-		fmt.Printf("token: %s %s - %s %s - %v %v\n", IPFromRequest(r), authToken.Token, ip, key, ip == IPFromRequest(r), key == authToken.Token)
-		if key == "" || ip == "" || ip != IPFromRequest(r) || key != authToken.Token {
+		if key == "" || (ip != "" && ip != IPFromRequest(r)) || key != authToken.Token {
 			return nil, invalidErr
 		}
 		authToken.account = acc
 	} else if !authToken.Validate(acc) {
 		return nil, invalidErr
 	}
-
-	fmt.Println("skeleton token works")
 
 	// Check if the token is expired
 	if authToken.Expired() {
