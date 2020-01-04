@@ -1,4 +1,4 @@
-module github.com/maklesoft/padlock-cloud
+module github.com/padloc/padlock-cloud
 
 go 1.13
 
