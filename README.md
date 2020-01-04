@@ -7,7 +7,7 @@ This repo has been deprecated. All server logic in Padloc is now being developed
 ## What is Padlock Cloud
 
 Padlock Cloud is a cloud storage service for the
-[Padlock app](https://github.com/padlock/padlock/) implemented in Go. It
+[Padlock app](https://github.com/padloc/padloc/) implemented in Go. It
 provides a (mostly) RESTful api for storing and retrieving user data. Padlock
 Cloud does NOT implement any kind of diffing algorithm, nor does it attempt to
 provide any kind of cryptographic functionality. Any encryption, decryption and
@@ -44,41 +44,51 @@ padlock-cloud command --help
 ## Commands
 
 ### runserver
+
 Starts a Padlock Cloud server instance
 
 #### Environment Variables, Flags, Configuration File Variables
-| Environment Variable | Flag                   | Configuration File   | Description                                  |
-|----------------------|------------------------|----------------------|----------------------------------------------|
-| `PC_PORT`            | `--port` &#124; `-p`   | `server.port`        | Port to listen on                            |
-| `PC_ASSETS_PATH`     | `--assets-path`        | `server.assets_path` | Path to assets directory                     |
-| `PC_TLS_CERT`        | `--tls-cert`           | `server.tls_cert`    | Path to TLS certification file               |
-| `PC_TLS_KEY`         | `--tls-key`            | `server.tls_key`     | Path to TLS key file                         |
-| `PC_BASE_URL`        | `--base-url`           | `server.base_url`    | Base url for constructing urls               |
-| `PC_CORS`            | `--cors`               | `server.cors`        | Enable Cross-Origin Resource Sharing         |
-| `PC_TEST`            | `--test`               |                      | Enable test mode                             |
+
+| Environment Variable | Flag                 | Configuration File   | Description                          |
+| -------------------- | -------------------- | -------------------- | ------------------------------------ |
+| `PC_PORT`            | `--port` &#124; `-p` | `server.port`        | Port to listen on                    |
+| `PC_ASSETS_PATH`     | `--assets-path`      | `server.assets_path` | Path to assets directory             |
+| `PC_TLS_CERT`        | `--tls-cert`         | `server.tls_cert`    | Path to TLS certification file       |
+| `PC_TLS_KEY`         | `--tls-key`          | `server.tls_key`     | Path to TLS key file                 |
+| `PC_BASE_URL`        | `--base-url`         | `server.base_url`    | Base url for constructing urls       |
+| `PC_CORS`            | `--cors`             | `server.cors`        | Enable Cross-Origin Resource Sharing |
+| `PC_TEST`            | `--test`             |                      | Enable test mode                     |
 
 ### accounts
+
 Commands for managing accounts.
 
 #### list
+
 List existing accounts.
 
 #### create
+
 Create new account.
 
 #### display
+
 Display account.
 
 #### delete
+
 Delete account.
 
 ### gensecret
+
 Generate random 32 byte secret.
 
 ## Configuration
-This image provides multiple options to configure the application. 
+
+This image provides multiple options to configure the application.
 
 ### Precedence
+
 The precedence for flag value sources is as follows (highest to lowest):
 
 1. Command line flag value from user
@@ -89,8 +99,8 @@ The precedence for flag value sources is as follows (highest to lowest):
 ### Environment Variables, Flags, Configuration File Variables
 
 | Environment Variable | Flag                   | Configuration File   | Description                                  |
-|----------------------|------------------------|----------------------|----------------------------------------------|
-| Global                                                                                                              |
+| -------------------- | ---------------------- | -------------------- | -------------------------------------------- |
+| Global               |
 | `PC_CONFIG_PATH`     | `--config` &#124; `-c` |                      | Path to configuration file.                  |
 | `PC_LOG_FILE`        | `--log-file`           | `log.log_file`       | Path to log file                             |
 | `PC_ERR_FILE`        | `--err-file`           | `log.err_file`       | Path to error log file                       |
@@ -100,7 +110,7 @@ The precedence for flag value sources is as follows (highest to lowest):
 | `PC_EMAIL_PORT`      | `--email-port`         | `email.port`         | Port to use with mail server                 |
 | `PC_EMAIL_USER`      | `--email-user`         | `email.user`         | Username for authentication with mail server |
 | `PC_EMAIL_PASSWORD`  | `--email-password`     | `email.password`     | Password for authentication with mail server |
-| Command: runserver                                                                                                  |
+| Command: runserver   |
 | `PC_PORT`            | `--port` &#124; `-p`   | `server.port`        | Port to listen on                            |
 | `PC_ASSETS_PATH`     | `--assets-path`        | `server.assets_path` | Path to assets directory                     |
 | `PC_TLS_CERT`        | `--tls-cert`           | `server.tls_cert`    | Path to TLS certification file               |
@@ -126,7 +136,7 @@ leveldb:
   path: path/to/db
 email:
   server: smtp.gmail.com
-  port: "587"
+  port: '587'
   user: mail_user
   password: secret
   from: mail@example.com
@@ -137,17 +147,19 @@ log:
 ```
 
 ## Docker
+
 [![Docker Build Status](https://img.shields.io/docker/build/padlock/padlock-cloud.svg?style=flat-square)](https://hub.docker.com/r/padlock/padlock-cloud/)
 [![Docker Automated Build](https://img.shields.io/docker/automated/padlock/padlock-cloud.svg?style=flat-square)](https://hub.docker.com/r/padlock/padlock-cloud/)
 [![Docker Pulls](https://img.shields.io/docker/pulls/padlock/padlock-cloud.svg?style=flat-square)](https://hub.docker.com/r/padlock/padlock-cloud/)
 [![Docker Stars](https://img.shields.io/docker/stars/padlock/padlock-cloud.svg?style=flat-square)](https://hub.docker.com/r/padlock/padlock-cloud/)
 
 ### Getting Started with Docker
+
 **NOTE**: As padlock is build upon chrome we need a valid certificate issued
 by a trusted source. For now let us assume we have a certificate named
 `cert.pem` and a key named `key.pem` in the directory `./ssl/`.
 
-**NOTE**: The email-settings can be found out by searching for 
+**NOTE**: The email-settings can be found out by searching for
 `[email-provider] smtp login`.
 
 ```sh
@@ -160,29 +172,37 @@ docker run -p 443:8443 -v ssl:/opt/padlock-cloud/ssl -e PC_PORT=8443 \
 ```
 
 ### Usage with Docker
+
 This image can be used like the cli. Just prepend `docker run`.
 
 ### Volumes
-**NOTE**: This image uses a user `padlock-cloud` with uid `1000` and group 
-`padlock-cloud` with gid `1000` to run padlock-cloud. You should check your 
+
+**NOTE**: This image uses a user `padlock-cloud` with uid `1000` and group
+`padlock-cloud` with gid `1000` to run padlock-cloud. You should check your
 permission before mounting a volume.  
-**NOTE**: This image will try to change the ownership of it's WORKDIR to 
-`1000:1000`. This won't work when mounting a volume from Windows.  
+**NOTE**: This image will try to change the ownership of it's WORKDIR to
+`1000:1000`. This won't work when mounting a volume from Windows.
 
 This image contains 4 volumes.
+
 #### /opt/padlock-cloud/assets
+
 Contains assets used by padlock-cloud to render the frontend and the emails.
 
 #### /opt/padlock-cloud/db
+
 Contains the data stored in the cloud.
 
 #### /opt/padlock-cloud/logs
+
 Contains the logs.
 
 #### /opt/padlock-cloud/ssl
+
 Contains the certificate and key.
 
 ### Bindings
+
 This image exposes ports `8080` and `8443`, because this image uses a non-root
 user. By default the padlock-cloud listens at port `8080`, because it doesn't
 use SSL by default. It is highly suggested to provide a TLS-Certificate and
@@ -190,10 +210,11 @@ Key to enable SSL and listen at `8443`. This could be done by setting `PC_PORT`
 to `8443`.
 
 ### Security
-This image uses a user `padlock-cloud` with uid `1000` and group 
+
+This image uses a user `padlock-cloud` with uid `1000` and group
 `padlock-cloud` with gid `1000` to run padlock-cloud.  
-**It will try to change the ownership of your mounted volumes to 
-`1000:1000`.**  
+**It will try to change the ownership of your mounted volumes to
+`1000:1000`.**
 
 ## How to install/build
 
@@ -245,7 +266,7 @@ using a targets email address, but changes the `Host` header to a server that
 he or she controls. The email that is sent to the target will now contain a link that
 points to the attacker's server instead of our own and once the user clicks the
 link the attacker is in possession of the activation token which can in turn be
-used to activate the authentication token he or she already has.  There is a simple
+used to activate the authentication token he or she already has. There is a simple
 solution for this: Explicitly provide a base URL to be used for constructing
 links when starting up the server. The `runserver` command provides the
 `--base-url` flag for this. It is recommended to use this option in production
@@ -257,7 +278,7 @@ environments at all times!
 
 When trying to connect to a custom server instance, the Chrome app fails with
 the error message "Failed to connect to Padlock Cloud. Please check your
-internet and try again!".  This is due to the same-origin policy in Chrome
+internet and try again!". This is due to the same-origin policy in Chrome
 preventing requests to domains other than cloud.padlock.io that do not
 implement [Cross-Origin Resource
 Sharing](https://developer.mozilla.org/en-US/docs/Web/HTTP/Access_control_CORS).
