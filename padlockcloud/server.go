@@ -355,7 +355,7 @@ func (server *Server) InitEndpoints() {
 			"POST": &WriteStore{server},
 		},
 		Version:  ApiVersion,
-		AuthType: "api",
+		AuthType: "universal",
 	}
 
 	server.Endpoints["/deletestore/"] = &Endpoint{

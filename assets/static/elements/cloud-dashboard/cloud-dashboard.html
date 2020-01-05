@@ -3205,6 +3205,14 @@ Custom property | Description | Default
             <div hidden$="[[ !_showAdvanced ]]">
 
                 <section>
+                    <div class="info-2">
+                      Download your data as an encrypted backup file that can be imported into the new <a href="https://web.padloc.app" target="_blank">web client</a>
+                      or into any of our desktop apps. Check out <a href="https://padloc.app/guides/import/">this guide</a> to learn more about how to import files!
+                    </div>
+                    <button class="tap"><a href="/store/?v=1" download="padlock-backup.pls">[[ $l("Download Encrypted Backup") ]]</a></button>
+                </section>
+
+                <section>
                     <div class="info-2">[[ _resetDataText() ]]</div>
                     <button class="tap" on-click="_resetData">[[ $l("Reset Data") ]]</button>
                 </section>

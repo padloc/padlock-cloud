@@ -101,7 +101,7 @@ func AuthTokenFromString(str string) (*AuthToken, error) {
 	if matches[1] == "SkeletonKey" {
 		authType = "skeleton"
 	} else {
-		authType = "api"
+		authType = ""
 	}
 	email := matches[2]
 	// Try to decode email in case it's in base64
