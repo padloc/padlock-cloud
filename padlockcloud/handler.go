@@ -66,23 +66,20 @@ func (h *RequestAuthToken) Handle(w http.ResponseWriter, r *http.Request, auth *
 		}
 	}
 
-	// If the client does not explicitly state that the server should create a new account for this email
-	// address in case it does not exist, we have to check if an account exists first
-	if !create {
-		acc := &Account{Email: email}
-		if err := h.Storage.Get(acc); err != nil {
-			if err == ErrNotFound {
-				// See if there exists a data store for this account
-				if err := h.Storage.Get(&DataStore{Account: acc}); err != nil {
-					if err == ErrNotFound {
-						return &AccountNotFound{email}
-					} else {
-						return err
-					}
+	// New accounts are disabled
+	acc := &Account{Email: email}
+	if err := h.Storage.Get(acc); err != nil {
+		if err == ErrNotFound {
+			// See if there exists a data store for this account
+			if err := h.Storage.Get(&DataStore{Account: acc}); err != nil {
+				if err == ErrNotFound {
+					return &AccountNotFound{email}
+				} else {
+					return err
 				}
-			} else {
-				return err
 			}
+		} else {
+			return err
 		}
 	}
 
