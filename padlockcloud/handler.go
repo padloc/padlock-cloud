@@ -32,7 +32,7 @@ type RequestAuthToken struct {
 // email address with an activation url. Expects `email` and `device_name` parameters through either
 // multipart/form-data or application/x-www-urlencoded parameters
 func (h *RequestAuthToken) Handle(w http.ResponseWriter, r *http.Request, auth *AuthToken) error {
-	create := r.Method == "POST"
+	// create := r.Method == "POST"
 
 	var tType string
 	if tType = r.PostFormValue("type"); tType == "" {
